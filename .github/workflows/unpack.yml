@@ -1,0 +1,136 @@
+name: Unpack ZIP from repository root
+
+on:
+  push:
+    paths:
+      - "*.zip"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find ZIP in repository root
+        id: find_zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t ZIPS < <(
+            find . \
+              -maxdepth 1 \
+              -type f \
+              -iname "*.zip" \
+              -printf "%f\n"
+          )
+
+          if [ "${#ZIPS[@]}" -eq 0 ]; then
+            echo "ERROR: ZIP archive not found in repository root."
+            exit 1
+          fi
+
+          if [ "${#ZIPS[@]}" -gt 1 ]; then
+            echo "ERROR: More than one ZIP archive found:"
+            printf ' - %s\n' "${ZIPS[@]}"
+            echo "Please leave only one ZIP in the repository root."
+            exit 1
+          fi
+
+          ZIP="${ZIPS[0]}"
+
+          echo "Found ZIP: $ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Validate ZIP
+        env:
+          ZIP: ${{ steps.find_zip.outputs.zip }}
+        run: |
+          set -euo pipefail
+          unzip -t "$ZIP"
+
+      - name: Extract ZIP
+        env:
+          ZIP: ${{ steps.find_zip.outputs.zip }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf .unpack
+          mkdir -p .unpack
+
+          unzip -q "$ZIP" -d .unpack
+
+      - name: Remove single top-level directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s dotglob nullglob
+
+          entries=(.unpack/*)
+
+          if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
+            echo "Removing single top-level directory: ${entries[0]}"
+
+            mkdir -p .unpack_flat
+            cp -a "${entries[0]}"/. .unpack_flat/
+
+            rm -rf .unpack
+            mv .unpack_flat .unpack
+          fi
+
+      - name: Copy project to repository root
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Never copy Git metadata from the ZIP.
+          rm -rf .unpack/.git
+
+          # Copy everything except .github.
+          find .unpack \
+            -mindepth 1 \
+            -maxdepth 1 \
+            ! -name ".github" \
+            -exec cp -a {} . \;
+
+          # Merge .github separately so the current workflow is not deleted.
+          if [ -d ".unpack/.github" ]; then
+            find .unpack/.github \
+              -mindepth 1 \
+              -maxdepth 1 \
+              ! -name "workflows" \
+              -exec cp -a {} .github/ \;
+          fi
+
+      - name: Remove temporary files
+        run: |
+          rm -rf .unpack
+
+      - name: Commit extracted project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Unpack project ZIP into repository root"
+          git push
