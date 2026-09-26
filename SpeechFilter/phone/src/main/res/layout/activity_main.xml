@@ -1,0 +1,35 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="24dp">
+        <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Speech Filter" android:textSize="28sp" android:textStyle="bold"/>
+        <RadioGroup android:id="@+id/sourceGroup" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:layout_marginTop="24dp">
+            <RadioButton android:id="@+id/autoSource" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Автоматически: часы → телефон"/>
+            <RadioButton android:id="@+id/phoneSource" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Микрофон телефона"/>
+            <RadioButton android:id="@+id/watchSource" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Galaxy Watch 8"/>
+        </RadioGroup>
+        <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:text="Готов"/>
+        <Button android:id="@+id/startStop" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="24dp" android:text="START"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="28dp" android:text="Последние записи" android:textSize="20sp" android:textStyle="bold"/>
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/playerView"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:show_buffering="when_playing"
+            app:show_shuffle_button="false"
+            app:show_subtitle_button="false" />
+        <LinearLayout android:id="@+id/recordingsContainer"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+</ScrollView>
