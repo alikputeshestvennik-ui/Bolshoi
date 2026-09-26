@@ -44,6 +44,7 @@ jobs:
           fi
 
           echo "zip=${ZIPS[0]}" >> "$GITHUB_OUTPUT"
+          echo "Found ZIP: ${ZIPS[0]}"
 
       - name: Extract ZIP
         env:
@@ -56,22 +57,41 @@ jobs:
 
           unzip -q "$ZIP" -d project
 
-      - name: Find Gradle project
-        id: gradle
+          echo "Extracted project:"
+          find project -maxdepth 3 -type f | head -100
+
+      - name: Find Android project
+        id: project
         shell: bash
         run: |
           set -euo pipefail
 
-          GRADLEW=$(find project -type f -name "gradlew" | head -n 1)
+          GRADLEW=$(find project -type f -name "gradlew" | head -n 1 || true)
 
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: gradlew not found."
-            exit 1
+          if [ -n "$GRADLEW" ]; then
+            PROJECT_DIR=$(dirname "$GRADLEW")
+            echo "Found Gradle Wrapper: $GRADLEW"
+            echo "use_wrapper=true" >> "$GITHUB_OUTPUT"
+          else
+            SETTINGS=$(find project \
+              -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              | head -n 1 || true)
+
+            if [ -z "$SETTINGS" ]; then
+              echo "ERROR: Android/Gradle project not found."
+              echo "Neither gradlew nor settings.gradle/settings.gradle.kts exists."
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$SETTINGS")
+            echo "Gradle Wrapper not found."
+            echo "Using system Gradle."
+            echo "use_wrapper=false" >> "$GITHUB_OUTPUT"
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLEW")
-
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Project directory: $PROJECT_DIR"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -81,6 +101,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
 
       - name: Decode permanent keystore
         env:
@@ -93,22 +118,37 @@ jobs:
             exit 1
           fi
 
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/release.keystore"
 
           test -s "$RUNNER_TEMP/release.keystore"
 
+          echo "Keystore loaded successfully."
+
       - name: Build signed Release APK
         env:
-          PROJECT_DIR: ${{ steps.gradle.outputs.project_dir }}
+          PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
           ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        working-directory: ${{ steps.gradle.outputs.project_dir }}
+          USE_WRAPPER: ${{ steps.project.outputs.use_wrapper }}
+        working-directory: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          ./gradlew \
+          if [ "$USE_WRAPPER" = "true" ]; then
+            chmod +x ./gradlew
+            GRADLE="./gradlew"
+          else
+            GRADLE="gradle"
+          fi
+
+          echo "Gradle command: $GRADLE"
+
+          "$GRADLE" \
             assembleRelease \
             -Pandroid.injected.signing.store.file="$ANDROID_KEYSTORE_FILE" \
             -Pandroid.injected.signing.store.password="$ANDROID_STORE_PASSWORD" \
@@ -116,20 +156,56 @@ jobs:
             -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
             --stacktrace
 
-      - name: Collect APKs
+      - name: Find APKs
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p artifacts
 
-          find project \
-            -type f \
-            -path "*/build/outputs/apk/*.apk" \
-            -exec cp {} artifacts/ \;
+          mapfile -t APKS < <(
+            find project \
+              -type f \
+              -path "*/build/outputs/apk/*.apk"
+          )
+
+          if [ "${#APKS[@]}" -eq 0 ]; then
+            echo "ERROR: No APK files found."
+            exit 1
+          fi
 
           echo "Generated APKs:"
-          ls -lh artifacts/
+          printf ' - %s\n' "${APKS[@]}"
+
+          for APK in "${APKS[@]}"; do
+            NAME=$(basename "$APK")
+            DIR=$(dirname "$APK" | sed 's#/#_#g')
+            cp "$APK" "artifacts/${DIR}_${NAME}"
+          done
+
+      - name: Verify APK signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            | sort -V \
+            | tail -n 1)
+
+          if [ -z "$BUILD_TOOLS" ]; then
+            echo "ERROR: Android build-tools not found."
+            exit 1
+          fi
+
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+
+          for APK in artifacts/*.apk; do
+            echo "Verifying: $APK"
+            "$APKSIGNER" verify --verbose "$APK"
+          done
 
       - name: Upload signed APKs
         uses: actions/upload-artifact@v4
