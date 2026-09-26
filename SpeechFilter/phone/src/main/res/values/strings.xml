@@ -1,4 +1,0 @@
-<resources>
-    <string name="app_name">Speech Filter</string>
-    <string name="channel_path">/speech-audio</string>
-</resources>
