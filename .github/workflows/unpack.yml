@@ -223,7 +223,7 @@ jobs:
           set -euo pipefail
 
           [ -n "$KEYSTORE" ] || {
-            echo "ERROR: ANDROID_KEYSTORE_BASE64 is missing."
+            echo "ERROR: ANDROID_KEYSTORE_B64 is missing."
             exit 1
           }
 
@@ -251,14 +251,14 @@ jobs:
 
       - name: Decode permanent keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         shell: bash
         run: |
           set -euo pipefail
 
           KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
 
-          printf '%s' "$KEYSTORE_BASE64" \
+          printf '%s' "$KEYSTORE_B64" \
             | base64 --decode \
             > "$KEYSTORE_FILE"
 
