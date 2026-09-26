@@ -1,4 +1,4 @@
-name: Build signed APK from ZIP
+name: Build Android APK
 
 on:
   push:
@@ -74,12 +74,11 @@ jobs:
 
           unzip -q "$ZIP" -d project
 
-          echo "Extracted files:"
-          find project -maxdepth 4 -type f | sort | head -200
+          echo "Archive extracted."
 
 
       # =========================================================
-      # Find Gradle project
+      # Find Android project
       # =========================================================
 
       - name: Find Android project
@@ -97,7 +96,7 @@ jobs:
                 -name "settings.gradle.kts" \
               \) \
               | head -n 1
-          )"
+          )
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "ERROR: settings.gradle or settings.gradle.kts not found."
@@ -134,9 +133,7 @@ jobs:
       # =========================================================
       # Android SDK
       #
-      # IMPORTANT:
-      # We intentionally DO NOT use android-actions/setup-android.
-      # GitHub ubuntu-latest already has Android SDK installed.
+      # Do NOT use android-actions/setup-android here.
       # =========================================================
 
       - name: Configure Android SDK
@@ -152,13 +149,15 @@ jobs:
             exit 1
           fi
 
-          if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
             echo "ERROR: sdkmanager not found."
             exit 1
           fi
 
-          echo "sdkmanager:"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
+          echo "sdkmanager version:"
+          "$SDKMANAGER" --version
 
 
       # =========================================================
@@ -170,15 +169,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --licenses \
-            >/dev/null 2>&1 || true
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           echo "Android SDK licenses processed."
 
 
       # =========================================================
-      # Install SDK components
+      # Android SDK packages
       # =========================================================
 
       - name: Install Android SDK packages
@@ -195,7 +194,7 @@ jobs:
             "build-tools;35.0.0" \
             "build-tools;36.0.0"
 
-          echo "Required Android SDK packages installed."
+          echo "Android SDK packages installed."
 
 
       # =========================================================
@@ -209,81 +208,79 @@ jobs:
 
 
       # =========================================================
-      # Check secrets
+      # CHECK SIGNING SECRETS
+      #
+      # IMPORTANT:
+      # The repository uses ANDROID_KEYSTORE_B64
       # =========================================================
 
       - name: Check signing secrets
         shell: bash
         env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        - name: Check signing secrets
-  shell: bash
-  env:
-    KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-    KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-    STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-    KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-  run: |
-    set -euo pipefail
+        run: |
+          set -euo pipefail
 
-    echo "Keystore secret length: ${#KEYSTORE}"
-    echo "Alias length: ${#KEY_ALIAS}"
-    echo "Store password length: ${#STORE_PASSWORD}"
-    echo "Key password length: ${#KEY_PASSWORD}"
+          echo "Checking signing secrets..."
+          echo "Keystore secret length: ${#KEYSTORE}"
+          echo "Alias length: ${#KEY_ALIAS}"
+          echo "Store password length: ${#STORE_PASSWORD}"
+          echo "Key password length: ${#KEY_PASSWORD}"
 
-    if [ -z "$KEYSTORE" ]; then
-      echo "ERROR: ANDROID_KEYSTORE_B64 is empty or unavailable."
-      exit 1
-    fi
+          if [ -z "$KEYSTORE" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_B64 is empty or unavailable."
+            exit 1
+          fi
 
-    if [ -z "$KEY_ALIAS" ]; then
-      echo "ERROR: ANDROID_KEY_ALIAS is empty."
-      exit 1
-    fi
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "ERROR: ANDROID_KEY_ALIAS is empty."
+            exit 1
+          fi
 
-    if [ -z "$STORE_PASSWORD" ]; then
-      echo "ERROR: ANDROID_STORE_PASSWORD is empty."
-      exit 1
-    fi
+          if [ -z "$STORE_PASSWORD" ]; then
+            echo "ERROR: ANDROID_STORE_PASSWORD is empty."
+            exit 1
+          fi
 
-    if [ -z "$KEY_PASSWORD" ]; then
-      echo "ERROR: ANDROID_KEY_PASSWORD is empty."
-      exit 1
-    fi
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: ANDROID_KEY_PASSWORD is empty."
+            exit 1
+          fi
 
-    echo "All signing secrets are available."
-          
+          echo "All signing secrets are available."
+
 
       # =========================================================
-      # Restore permanent keystore
+      # Decode permanent keystore
       # =========================================================
 
       - name: Decode permanent keystore
         env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         shell: bash
         run: |
           set -euo pipefail
 
           KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
 
-          printf '%s' "$KEYSTORE_B64" \
+          printf '%s' "$KEYSTORE_BASE64" \
             | base64 --decode \
             > "$KEYSTORE_FILE"
 
           if [ ! -s "$KEYSTORE_FILE" ]; then
-            echo "ERROR: Keystore is empty."
+            echo "ERROR: Decoded keystore is empty."
             exit 1
           fi
 
-          echo "Keystore restored."
+          echo "Keystore restored successfully."
+          echo "Keystore size: $(stat -c%s "$KEYSTORE_FILE") bytes"
 
 
       # =========================================================
-      # Validate keystore
+      # Validate permanent keystore
       # =========================================================
 
       - name: Validate keystore
@@ -294,6 +291,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "Validating keystore..."
 
           keytool \
             -list \
@@ -333,7 +332,7 @@ jobs:
 
 
       # =========================================================
-      # Find APKs
+      # Find generated APKs
       # =========================================================
 
       - name: Find generated APKs
@@ -357,7 +356,7 @@ jobs:
 
 
       # =========================================================
-      # Sign APKs
+      # Sign APKs with permanent key
       # =========================================================
 
       - name: Sign APKs
@@ -446,7 +445,7 @@ jobs:
 
 
       # =========================================================
-      # Show result
+      # Show final APKs
       # =========================================================
 
       - name: Show final APKs
@@ -466,7 +465,7 @@ jobs:
 
 
       # =========================================================
-      # Upload artifact
+      # Upload signed APKs
       # =========================================================
 
       - name: Upload signed APKs
@@ -479,7 +478,7 @@ jobs:
 
 
       # =========================================================
-      # Security cleanup
+      # Cleanup
       # =========================================================
 
       - name: Remove keystore
