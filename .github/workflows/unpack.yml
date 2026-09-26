@@ -17,17 +17,17 @@ jobs:
 
     steps:
 
-      # ---------------------------------------------------------
-      # 1. Checkout
-      # ---------------------------------------------------------
+      # =========================================================
+      # Checkout
+      # =========================================================
 
       - name: Checkout repository
         uses: actions/checkout@v5
 
 
-      # ---------------------------------------------------------
-      # 2. Find ZIP in repository root
-      # ---------------------------------------------------------
+      # =========================================================
+      # Find ZIP
+      # =========================================================
 
       - name: Find ZIP
         id: find_zip
@@ -50,19 +50,17 @@ jobs:
 
           if [ "${#ZIPS[@]}" -gt 1 ]; then
             echo "ERROR: More than one ZIP found:"
-            printf '  - %s\n' "${ZIPS[@]}"
+            printf ' - %s\n' "${ZIPS[@]}"
             exit 1
           fi
 
-          ZIP="${ZIPS[0]}"
-
-          echo "Found ZIP: $ZIP"
-          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "ZIP: ${ZIPS[0]}"
+          echo "zip=${ZIPS[0]}" >> "$GITHUB_OUTPUT"
 
 
-      # ---------------------------------------------------------
-      # 3. Extract ZIP
-      # ---------------------------------------------------------
+      # =========================================================
+      # Extract ZIP
+      # =========================================================
 
       - name: Extract ZIP
         env:
@@ -76,13 +74,13 @@ jobs:
 
           unzip -q "$ZIP" -d project
 
-          echo "Extracted project:"
+          echo "Extracted files:"
           find project -maxdepth 4 -type f | sort | head -200
 
 
-      # ---------------------------------------------------------
-      # 4. Find Android / Gradle project
-      # ---------------------------------------------------------
+      # =========================================================
+      # Find Gradle project
+      # =========================================================
 
       - name: Find Android project
         id: project
@@ -108,14 +106,11 @@ jobs:
 
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
 
-          echo "Android project:"
-          echo "$PROJECT_DIR"
+          echo "Android project: $PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-          GRADLEW="$PROJECT_DIR/gradlew"
-
-          if [ -f "$GRADLEW" ]; then
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
             echo "Gradle Wrapper found."
             echo "use_wrapper=true" >> "$GITHUB_OUTPUT"
           else
@@ -125,9 +120,9 @@ jobs:
           fi
 
 
-      # ---------------------------------------------------------
-      # 5. Java 17
-      # ---------------------------------------------------------
+      # =========================================================
+      # Java
+      # =========================================================
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -136,42 +131,76 @@ jobs:
           java-version: "17"
 
 
-      # ---------------------------------------------------------
-      # 6. Android SDK
+      # =========================================================
+      # Android SDK
       #
       # IMPORTANT:
-      # No "packages: tools" here.
-      # That package is obsolete and caused the previous failure.
-      # ---------------------------------------------------------
+      # We intentionally DO NOT use android-actions/setup-android.
+      # GitHub ubuntu-latest already has Android SDK installed.
+      # =========================================================
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configure Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "ERROR: ANDROID_HOME is not defined."
+            exit 1
+          fi
+
+          if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
+
+          echo "sdkmanager:"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
 
 
-      # ---------------------------------------------------------
-      # 7. Install Android SDK components
-      # ---------------------------------------------------------
+      # =========================================================
+      # Android SDK licenses
+      # =========================================================
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --licenses \
+            >/dev/null 2>&1 || true
+
+          echo "Android SDK licenses processed."
+
+
+      # =========================================================
+      # Install SDK components
+      # =========================================================
 
       - name: Install Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
 
-          yes | sdkmanager --licenses >/dev/null || true
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-          sdkmanager \
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "platforms;android-36" \
             "build-tools;35.0.0" \
             "build-tools;36.0.0"
 
-          echo "Android SDK packages installed."
+          echo "Required Android SDK packages installed."
 
 
-      # ---------------------------------------------------------
-      # 8. Gradle
-      # ---------------------------------------------------------
+      # =========================================================
+      # Gradle
+      # =========================================================
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -179,9 +208,9 @@ jobs:
           gradle-version: "8.13"
 
 
-      # ---------------------------------------------------------
-      # 9. Check signing secrets
-      # ---------------------------------------------------------
+      # =========================================================
+      # Check secrets
+      # =========================================================
 
       - name: Check signing secrets
         shell: bash
@@ -193,32 +222,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "$KEYSTORE" ]; then
+          [ -n "$KEYSTORE" ] || {
             echo "ERROR: ANDROID_KEYSTORE_BASE64 is missing."
             exit 1
-          fi
+          }
 
-          if [ -z "$KEY_ALIAS" ]; then
+          [ -n "$KEY_ALIAS" ] || {
             echo "ERROR: ANDROID_KEY_ALIAS is missing."
             exit 1
-          fi
+          }
 
-          if [ -z "$STORE_PASSWORD" ]; then
+          [ -n "$STORE_PASSWORD" ] || {
             echo "ERROR: ANDROID_STORE_PASSWORD is missing."
             exit 1
-          fi
+          }
 
-          if [ -z "$KEY_PASSWORD" ]; then
+          [ -n "$KEY_PASSWORD" ] || {
             echo "ERROR: ANDROID_KEY_PASSWORD is missing."
             exit 1
-          fi
+          }
 
           echo "All signing secrets are present."
 
 
-      # ---------------------------------------------------------
-      # 10. Restore permanent keystore
-      # ---------------------------------------------------------
+      # =========================================================
+      # Restore permanent keystore
+      # =========================================================
 
       - name: Decode permanent keystore
         env:
@@ -234,16 +263,16 @@ jobs:
             > "$KEYSTORE_FILE"
 
           if [ ! -s "$KEYSTORE_FILE" ]; then
-            echo "ERROR: Keystore file is empty."
+            echo "ERROR: Keystore is empty."
             exit 1
           fi
 
           echo "Keystore restored."
 
 
-      # ---------------------------------------------------------
-      # 11. Validate keystore
-      # ---------------------------------------------------------
+      # =========================================================
+      # Validate keystore
+      # =========================================================
 
       - name: Validate keystore
         env:
@@ -261,24 +290,18 @@ jobs:
             -storepass "$STORE_PASSWORD" \
             >/dev/null
 
-          echo "Keystore and alias are valid."
+          echo "Keystore is valid."
+          echo "Alias is valid."
 
 
-      # ---------------------------------------------------------
-      # 12. Build Release
-      # ---------------------------------------------------------
+      # =========================================================
+      # Build Release APK
+      # =========================================================
 
       - name: Build Release APK
         working-directory: ${{ steps.project.outputs.project_dir }}
         env:
           USE_WRAPPER: ${{ steps.project.outputs.use_wrapper }}
-
-          # Available to Gradle projects that use environment-based
-          # signing configuration.
-          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -290,19 +313,18 @@ jobs:
             GRADLE="gradle"
           fi
 
-          echo "Using Gradle: $GRADLE"
+          echo "Gradle command: $GRADLE"
 
           "$GRADLE" \
             assembleRelease \
             --stacktrace
 
 
-      # ---------------------------------------------------------
-      # 13. Find generated APKs
-      # ---------------------------------------------------------
+      # =========================================================
+      # Find APKs
+      # =========================================================
 
-      - name: Find APKs
-        id: find_apks
+      - name: Find generated APKs
         shell: bash
         run: |
           set -euo pipefail
@@ -314,22 +336,19 @@ jobs:
           )
 
           if [ "${#APKS[@]}" -eq 0 ]; then
-            echo "ERROR: No APK files were generated."
+            echo "ERROR: No APK files generated."
             exit 1
           fi
 
           echo "Generated APKs:"
-          printf '  - %s\n' "${APKS[@]}"
+          printf ' - %s\n' "${APKS[@]}"
 
 
-      # ---------------------------------------------------------
-      # 14. Sign APKs with permanent keystore
-      #
-      # Gradle can produce unsigned or differently signed APKs.
-      # We align them first and then apply our permanent signature.
-      # ---------------------------------------------------------
+      # =========================================================
+      # Sign APKs
+      # =========================================================
 
-      - name: Sign APKs with permanent keystore
+      - name: Sign APKs
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -348,11 +367,6 @@ jobs:
               | tail -n 1
           )"
 
-          if [ -z "$BUILD_TOOLS" ]; then
-            echo "ERROR: Android build-tools not found."
-            exit 1
-          fi
-
           ZIPALIGN="$BUILD_TOOLS/zipalign"
           APKSIGNER="$BUILD_TOOLS/apksigner"
 
@@ -366,6 +380,7 @@ jobs:
             exit 1
           fi
 
+          rm -rf signed
           mkdir -p signed
 
           mapfile -t APKS < <(
@@ -378,19 +393,18 @@ jobs:
 
             NAME="$(basename "$APK")"
 
-            SAFE_PATH="$(
+            REL_DIR="$(
               dirname "$APK" \
               | sed 's#^project/##' \
               | tr '/' '_'
             )"
 
-            ALIGNED="signed/${SAFE_PATH}_${NAME%.apk}-aligned.apk"
-            SIGNED="signed/${SAFE_PATH}_${NAME%.apk}.apk"
+            ALIGNED="signed/${REL_DIR}_${NAME%.apk}-aligned.apk"
+            OUTPUT="signed/${REL_DIR}_${NAME%.apk}.apk"
 
             echo ""
-            echo "========================================"
-            echo "Processing: $APK"
-            echo "========================================"
+            echo "Signing:"
+            echo "$APK"
 
             "$ZIPALIGN" \
               -f \
@@ -399,46 +413,49 @@ jobs:
               "$APK" \
               "$ALIGNED"
 
+            STORE_PASSWORD="$STORE_PASSWORD" \
+            KEY_PASSWORD="$KEY_PASSWORD" \
             "$APKSIGNER" sign \
               --ks "$KEYSTORE_FILE" \
               --ks-key-alias "$KEY_ALIAS" \
-              --ks-pass "env:STORE_PASSWORD" \
-              --key-pass "env:KEY_PASSWORD" \
-              --out "$SIGNED" \
+              --ks-pass env:STORE_PASSWORD \
+              --key-pass env:KEY_PASSWORD \
+              --out "$OUTPUT" \
               "$ALIGNED"
 
             rm -f "$ALIGNED"
 
             "$APKSIGNER" verify \
               --verbose \
-              "$SIGNED"
+              "$OUTPUT"
 
-            echo "SIGNED: $SIGNED"
+            echo "SIGNED: $OUTPUT"
           done
 
 
-      # ---------------------------------------------------------
-      # 15. Show final APKs
-      # ---------------------------------------------------------
+      # =========================================================
+      # Show result
+      # =========================================================
 
       - name: Show final APKs
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Final signed APKs:"
+          echo "========================================"
+          echo "FINAL APK FILES"
+          echo "========================================"
 
           ls -lh signed/*.apk
 
           echo ""
           echo "SHA-256:"
-
           sha256sum signed/*.apk
 
 
-      # ---------------------------------------------------------
-      # 16. Upload APKs
-      # ---------------------------------------------------------
+      # =========================================================
+      # Upload artifact
+      # =========================================================
 
       - name: Upload signed APKs
         uses: actions/upload-artifact@v4
@@ -449,9 +466,9 @@ jobs:
           retention-days: 30
 
 
-      # ---------------------------------------------------------
-      # 17. Delete keystore from runner
-      # ---------------------------------------------------------
+      # =========================================================
+      # Security cleanup
+      # =========================================================
 
       - name: Remove keystore
         if: always()
