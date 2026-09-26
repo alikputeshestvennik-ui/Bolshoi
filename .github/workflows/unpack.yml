@@ -1,4 +1,4 @@
-name: Unpack ZIP from repository root
+name: Build signed APK from ZIP
 
 on:
   push:
@@ -8,19 +8,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  unpack:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Find ZIP in repository root
+      - name: Find ZIP
         id: find_zip
         shell: bash
         run: |
@@ -35,102 +33,112 @@ jobs:
           )
 
           if [ "${#ZIPS[@]}" -eq 0 ]; then
-            echo "ERROR: ZIP archive not found in repository root."
+            echo "ERROR: ZIP not found in repository root."
             exit 1
           fi
 
           if [ "${#ZIPS[@]}" -gt 1 ]; then
-            echo "ERROR: More than one ZIP archive found:"
+            echo "ERROR: More than one ZIP found:"
             printf ' - %s\n' "${ZIPS[@]}"
-            echo "Please leave only one ZIP in the repository root."
             exit 1
           fi
 
-          ZIP="${ZIPS[0]}"
-
-          echo "Found ZIP: $ZIP"
-          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
-
-      - name: Validate ZIP
-        env:
-          ZIP: ${{ steps.find_zip.outputs.zip }}
-        run: |
-          set -euo pipefail
-          unzip -t "$ZIP"
+          echo "zip=${ZIPS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Extract ZIP
         env:
           ZIP: ${{ steps.find_zip.outputs.zip }}
+        run: |
+          set -euo pipefail
+
+          rm -rf project
+          mkdir -p project
+
+          unzip -q "$ZIP" -d project
+
+      - name: Find Gradle project
+        id: gradle
         shell: bash
         run: |
           set -euo pipefail
 
-          rm -rf .unpack
-          mkdir -p .unpack
+          GRADLEW=$(find project -type f -name "gradlew" | head -n 1)
 
-          unzip -q "$ZIP" -d .unpack
-
-      - name: Remove single top-level directory
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          shopt -s dotglob nullglob
-
-          entries=(.unpack/*)
-
-          if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
-            echo "Removing single top-level directory: ${entries[0]}"
-
-            mkdir -p .unpack_flat
-            cp -a "${entries[0]}"/. .unpack_flat/
-
-            rm -rf .unpack
-            mv .unpack_flat .unpack
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: gradlew not found."
+            exit 1
           fi
 
-      - name: Copy project to repository root
+          PROJECT_DIR=$(dirname "$GRADLEW")
+
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Decode permanent keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 secret is not configured."
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+
+          test -s "$RUNNER_TEMP/release.keystore"
+
+      - name: Build signed Release APK
+        env:
+          PROJECT_DIR: ${{ steps.gradle.outputs.project_dir }}
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: ${{ steps.gradle.outputs.project_dir }}
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            assembleRelease \
+            -Pandroid.injected.signing.store.file="$ANDROID_KEYSTORE_FILE" \
+            -Pandroid.injected.signing.store.password="$ANDROID_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
+            --stacktrace
+
+      - name: Collect APKs
         shell: bash
         run: |
           set -euo pipefail
 
-          # Never copy Git metadata from the ZIP.
-          rm -rf .unpack/.git
+          mkdir -p artifacts
 
-          # Copy everything except .github.
-          find .unpack \
-            -mindepth 1 \
-            -maxdepth 1 \
-            ! -name ".github" \
-            -exec cp -a {} . \;
+          find project \
+            -type f \
+            -path "*/build/outputs/apk/*.apk" \
+            -exec cp {} artifacts/ \;
 
-          # Merge .github separately so the current workflow is not deleted.
-          if [ -d ".unpack/.github" ]; then
-            find .unpack/.github \
-              -mindepth 1 \
-              -maxdepth 1 \
-              ! -name "workflows" \
-              -exec cp -a {} .github/ \;
-          fi
+          echo "Generated APKs:"
+          ls -lh artifacts/
 
-      - name: Remove temporary files
+      - name: Upload signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeechFilter-signed-release
+          path: artifacts/*.apk
+          if-no-files-found: error
+
+      - name: Remove keystore
+        if: always()
         run: |
-          rm -rf .unpack
-
-      - name: Commit extracted project
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Unpack project ZIP into repository root"
-          git push
+          rm -f "$RUNNER_TEMP/release.keystore"
