@@ -1,0 +1,61 @@
+name: Build Route Planner APK from ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'route_planner_android_github.zip'
+      - '.github/workflows/build-from-zip.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Unpack project archive
+        run: |
+          rm -rf route_planner_android
+          unzip -q route_planner_android_github.zip
+          test -f route_planner_android/settings.gradle.kts
+          test -f route_planner_android/app/build.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-provider: basic
+
+      - name: Download Russian OCR model
+        working-directory: route_planner_android
+        run: |
+          mkdir -p app/src/main/assets/tessdata
+          curl -L --fail --retry 3 \
+            -o app/src/main/assets/tessdata/rus.traineddata \
+            https://raw.githubusercontent.com/tesseract-ocr/tessdata/3.04.00/rus.traineddata
+          ls -lh app/src/main/assets/tessdata/rus.traineddata
+
+      - name: Build debug APK
+        working-directory: route_planner_android
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: route-planner-debug-apk
+          path: route_planner_android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
