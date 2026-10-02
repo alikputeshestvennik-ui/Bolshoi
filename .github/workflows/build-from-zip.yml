@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'route_planner_android_github.zip'
+      - 'route_planner_android_github_v0.7.zip'
       - '.github/workflows/build-from-zip.yml'
 
 permissions:
