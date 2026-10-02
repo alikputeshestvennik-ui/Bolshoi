@@ -1,10 +1,10 @@
-name: Build Route Planner APK v0.4
+name: Build Route Planner APK v0.7
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "route_planner_android_github_v0.4.zip"
+      - "route_planner_android_github_v0.7.zip"
       - ".github/workflows/build-from-zip.yml"
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
         run: |
           rm -rf project
           mkdir project
-          unzip -q route_planner_android_github_v0.4.zip -d project
+          unzip -q route_planner_android_github_v0.7.zip -d project
 
           SETTINGS="$(find project -type f -name settings.gradle.kts -print -quit)"
           if [ -z "$SETTINGS" ]; then
@@ -51,19 +51,19 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Download Tesseract 3.04 Russian OCR model
+      - name: Download Tesseract best Russian OCR model
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           mkdir -p app/src/main/assets/tessdata
           curl -L --fail --retry 5 --retry-delay 2 \
             -o app/src/main/assets/tessdata/rus.traineddata \
-            https://raw.githubusercontent.com/tesseract-ocr/tessdata/3.04.00/rus.traineddata
+            https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/4.1.0/rus.traineddata
 
           SIZE=$(stat -c%s app/src/main/assets/tessdata/rus.traineddata)
           echo "rus.traineddata size: $SIZE bytes"
 
-          if [ "$SIZE" -lt 1000000 ]; then
+          if [ "$SIZE" -lt 5000000 ]; then
             echo "OCR model is missing or too small"
             exit 1
           fi
@@ -81,7 +81,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: route-planner-v0.4-debug-apk
+          name: route-planner-v0.7-debug-apk
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
