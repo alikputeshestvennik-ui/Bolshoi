@@ -1,0 +1,97 @@
+name: Build Route Planner APK from ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'route_planner_android_github.zip'
+      - 'BUILD_FROM_ZIP_WORKFLOW.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Unpack project archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf route_planner_android
+          mkdir -p route_planner_android
+
+          unzip -q route_planner_android_github.zip -d /tmp/route-planner-zip
+
+          if [[ -f /tmp/route-planner-zip/settings.gradle.kts && -f /tmp/route-planner-zip/app/build.gradle.kts ]]; then
+            cp -a /tmp/route-planner-zip/. route_planner_android/
+          elif [[ -f /tmp/route-planner-zip/route_planner_android/settings.gradle.kts && -f /tmp/route-planner-zip/route_planner_android/app/build.gradle.kts ]]; then
+            cp -a /tmp/route-planner-zip/route_planner_android/. route_planner_android/
+          else
+            echo 'ERROR: ZIP does not contain a valid Android Gradle project.'
+            find /tmp/route-planner-zip -maxdepth 3 -type f | sort | head -100
+            exit 1
+          fi
+
+          test -f route_planner_android/settings.gradle.kts
+          test -f route_planner_android/app/build.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-provider: basic
+
+      - name: Prepare release keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_B64"
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/route-planner-release.keystore"
+          test -s "$RUNNER_TEMP/route-planner-release.keystore"
+
+      - name: Download Russian OCR model
+        working-directory: route_planner_android
+        run: |
+          mkdir -p app/src/main/assets/tessdata
+          curl -L --fail --retry 3 \
+            -o app/src/main/assets/tessdata/rus.traineddata \
+            https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/4.1.0/rus.traineddata
+          ls -lh app/src/main/assets/tessdata/rus.traineddata
+
+      - name: Build signed release APK
+        working-directory: route_planner_android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/route-planner-release.keystore
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Verify APK exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          find route_planner_android/app/build/outputs/apk -type f -name '*.apk' -print -exec ls -lh {} \;
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: route-planner-release-apk
+          path: route_planner_android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
