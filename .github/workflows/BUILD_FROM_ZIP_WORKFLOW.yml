@@ -64,15 +64,6 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/route-planner-release.keystore"
           test -s "$RUNNER_TEMP/route-planner-release.keystore"
 
-      - name: Download Russian OCR model
-        working-directory: route_planner_android
-        run: |
-          mkdir -p app/src/main/assets/tessdata
-          curl -L --fail --retry 3 \
-            -o app/src/main/assets/tessdata/rus.traineddata \
-            https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/4.1.0/rus.traineddata
-          ls -lh app/src/main/assets/tessdata/rus.traineddata
-
       - name: Build signed release APK
         working-directory: route_planner_android
         env:
