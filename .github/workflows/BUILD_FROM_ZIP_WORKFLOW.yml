@@ -71,6 +71,10 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
+          QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
         run: gradle --no-daemon --stacktrace assembleRelease
 
       - name: Verify APK exists
