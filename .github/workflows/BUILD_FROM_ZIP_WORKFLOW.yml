@@ -75,6 +75,8 @@ jobs:
           DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          YANDEX_OAUTH_CLIENT_ID: ${{ secrets.YANDEX_OAUTH_CLIENT_ID }}
+          YANDEX_OAUTH_CLIENT_SECRET: ${{ secrets.YANDEX_OAUTH_CLIENT_SECRET }}
         run: gradle --no-daemon --stacktrace assembleRelease
 
       - name: Verify APK exists
