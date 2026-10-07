@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - 'route_planner_android_github.zip'
-      - 'BUILD_FROM_ZIP_WORKFLOW.yml'
+      - '.github/workflows/BUILD_FROM_ZIP_WORKFLOW.yml'
 
 permissions:
   contents: read
@@ -75,6 +75,8 @@ jobs:
           DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          YANDEX_OAUTH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          YANDEX_OAUTH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
         run: gradle --no-daemon --stacktrace assembleRelease
 
       - name: Verify APK exists
