@@ -74,6 +74,7 @@ jobs:
           YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
           DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
+          GPTUNNEL_KEY: ${{ secrets.GPTUNNEL_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           YANDEX_OAUTH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
           YANDEX_OAUTH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
