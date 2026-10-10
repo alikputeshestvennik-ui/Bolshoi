@@ -41,6 +41,15 @@ jobs:
           test -f route_planner_android/settings.gradle.kts
           test -f route_planner_android/app/build.gradle.kts
 
+      - name: Handwriting font for sheet marks
+        shell: bash
+        run: |
+          # Caveat (OFL) с кириллицей — для пометок на фото листа. Без него приложение рисует курсивом.
+          mkdir -p route_planner_android/app/src/main/assets/fonts
+          curl -fsSL --retry 3 -o route_planner_android/app/src/main/assets/fonts/caveat.ttf \
+            "https://github.com/google/fonts/raw/main/ofl/caveat/Caveat%5Bwght%5D.ttf" \
+            || { echo "font download failed, using fallback"; rm -f route_planner_android/app/src/main/assets/fonts/caveat.ttf; }
+
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
