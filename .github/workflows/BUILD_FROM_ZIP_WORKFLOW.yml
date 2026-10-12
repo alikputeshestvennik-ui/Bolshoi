@@ -85,6 +85,7 @@ jobs:
           QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
           GPTUNNEL_KEY: ${{ secrets.GPTUNNEL_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          GIS_API: ${{ secrets.GIS_API }}
           YANDEX_OAUTH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
           YANDEX_OAUTH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           SHARED_DB: ${{ secrets.SHARED_DB }}
