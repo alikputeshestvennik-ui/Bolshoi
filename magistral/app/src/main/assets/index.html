@@ -1,0 +1,1253 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<style>[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}</style>
+<title>Магистраль</title>
+</head><body>
+<style>
+/* Layout: one-screen game. 3D hub or map fills the screen, resource bar on top, tab bar at the bottom, sheets slide up over it */
+:root{
+  --ink:#2a2018; --muted:#7b6a55; --cream:#fff8e8; --cream2:#f7e9c9; --line:#e6d1a7;
+  --red:#d9412b; --red-d:#a8301e; --green:#4fa83a; --green-d:#357a25; --gold:#ffc23d; --gold-d:#c98d0a;
+  --blue:#2f7fbf; --blue-d:#1f5b8f; --sea:#8fd0ec; --land:#f3e5bd; --shore:#c9ad78; --river:#7cc4e6;
+  --display:"Russo One",system-ui,sans-serif; --body:"Rubik",system-ui,sans-serif;
+  color-scheme:light;
+}
+html,body{height:100%;overflow:hidden;background:#9fdcf5;color:var(--ink);font-family:var(--body)}
+body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+button:disabled{cursor:default}
+#hub,#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#map{background:var(--sea)}
+#hub[hidden],#map[hidden]{display:none}
+
+/* top bar */
+.bar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;gap:6px;align-items:center;flex-wrap:wrap;pointer-events:none;
+  padding-top:calc(env(safe-area-inset-top,0px) + 8px);padding-bottom:6px;
+  padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px))}
+.chip{pointer-events:auto;display:flex;align-items:center;gap:6px;background:var(--cream);border:2px solid var(--line);border-radius:12px;
+  padding:4px 9px;font-weight:800;font-size:14px;font-variant-numeric:tabular-nums;box-shadow:0 3px 0 rgba(60,40,10,.15);white-space:nowrap}
+.chip.neg{color:var(--red)}
+.chip small{font-weight:500;color:var(--muted);font-size:12px}
+.sp{flex:1}
+.sites{pointer-events:auto;flex-basis:100%;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.sites::-webkit-scrollbar{display:none}
+.sites button{flex:none;background:var(--cream);border:2px solid var(--line);border-radius:999px;padding:5px 12px;font-weight:700;font-size:13px;box-shadow:0 3px 0 rgba(60,40,10,.15)}
+.sites button.on{background:var(--blue);border-color:var(--blue-d);color:#fff;box-shadow:0 3px 0 var(--blue-d)}
+.sites[hidden]{display:none}
+.coin{width:17px;height:17px;flex:none;border-radius:50%;background:var(--gold);border:2px solid var(--gold-d);display:grid;place-items:center;font-size:9px;font-weight:800;color:#7a5200;line-height:1}
+.val{width:16px;height:15px;flex:none;background:linear-gradient(90deg,var(--blue) 0 28%,transparent 28% 36%,var(--blue) 36% 64%,transparent 64% 72%,var(--blue) 72%);clip-path:polygon(0 60%,28% 60%,28% 35%,64% 35%,64% 0,100% 0,100% 100%,0 100%)}
+.goalbar{height:10px;background:var(--cream2);border-radius:5px;overflow:hidden}
+.goalbar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--red));border-radius:5px}
+.tag.compact .n{display:none}
+.pbar{display:block;width:64px;height:5px;background:var(--cream2);border-radius:3px;overflow:hidden;margin-top:3px}.pbar b{display:block;height:100%;background:var(--green)}
+.bub.timer{flex-direction:column;align-items:stretch}
+.sw{display:flex;gap:8px;flex-wrap:wrap}.sw button{width:38px;height:38px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px var(--line)}.sw button.on{box-shadow:0 0 0 3px var(--ink)}
+.inp{width:100%;box-sizing:border-box;font:inherit;font-size:16px;font-weight:700;padding:11px 13px;border-radius:12px;border:2px solid var(--line);background:#fff;color:var(--ink)}
+.inp:focus{outline:none;border-color:var(--blue)}
+.prev{display:flex;align-items:center;gap:10px;background:#fff;border:2px solid var(--line);border-radius:14px;padding:10px 12px}
+.prev .bodyc{flex:1;height:34px;border-radius:17px 8px 8px 17px;background:#eef0f2;position:relative;overflow:hidden;display:flex;align-items:center;padding-left:14px;font-weight:800;font-size:14px}
+.prev .bodyc i{position:absolute;left:0;right:0;bottom:3px;height:4px}
+#win{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(40,25,10,.55);padding:20px}
+#win .card{background:var(--cream);border-radius:22px;padding:24px 20px;max-width:360px;text-align:center;display:flex;flex-direction:column;gap:10px}
+#win h2{margin:0;font-family:var(--display);font-weight:400;font-size:26px}
+#win p{margin:0;line-height:1.45}
+.hammer{width:14px;height:14px;flex:none;border-radius:3px;background:var(--muted)}
+.hammer.on{background:var(--gold-d);animation:pulse 1s infinite alternate}
+@keyframes pulse{to{transform:scale(.75)}}
+
+/* bottom nav */
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;gap:8px;justify-content:center;
+  padding-top:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px);
+  padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px));pointer-events:none}
+.nav button{pointer-events:auto;flex:1;max-width:140px;background:var(--cream);border:2px solid var(--line);border-radius:14px;padding:9px 6px;
+  font-family:var(--display);font-size:13px;box-shadow:0 4px 0 rgba(60,40,10,.18)}
+.nav button.on{background:var(--red);border-color:var(--red-d);color:#fff;box-shadow:0 4px 0 var(--red-d)}
+.nav button:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(60,40,10,.18)}
+
+/* hub overlays */
+#tags{position:fixed;inset:0;pointer-events:none;z-index:2;overflow:hidden}
+.tag{position:absolute;left:0;top:0;transform:translate(-50%,-100%);pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tag .nm{background:rgba(255,248,232,.92);border:1.5px solid var(--line);border-radius:9px;padding:2px 7px;font-size:11.5px;font-weight:700;white-space:nowrap;display:flex;gap:5px;align-items:center}
+.tag .lv{background:var(--blue);color:#fff;border-radius:6px;padding:0 5px;font-size:10.5px;font-weight:800}
+.tag .lv.zero{background:var(--muted)}
+.bub{display:flex;align-items:center;gap:4px;background:var(--gold);border:2px solid var(--gold-d);border-radius:999px;padding:3px 9px 3px 4px;font-weight:800;font-size:12.5px;
+  box-shadow:0 3px 0 var(--gold-d);animation:bob 1.2s ease-in-out infinite alternate;font-variant-numeric:tabular-nums}
+.bub.full{background:#ffdf8a;border-color:var(--red);box-shadow:0 3px 0 var(--red)}
+.bub.timer{background:var(--cream);border-color:var(--line);box-shadow:0 3px 0 rgba(60,40,10,.18);padding:3px 9px;animation:none}
+@keyframes bob{to{transform:translateY(-4px)}}
+
+/* sheet */
+#backdrop{position:fixed;inset:0;z-index:19;background:rgba(40,25,10,.18)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;max-height:74%;overflow-y:auto;background:var(--cream);border-top:3px solid var(--line);
+  border-radius:22px 22px 0 0;box-shadow:0 -8px 24px rgba(40,25,10,.18);
+  padding-top:16px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet .sx{position:sticky;top:0;float:right;width:34px;height:34px;border-radius:50%;background:var(--cream2);font-size:20px;line-height:1;font-weight:700;z-index:1}
+#sheetBody{display:flex;flex-direction:column;gap:10px;max-width:560px;margin:0 auto}
+.sh-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-right:40px}
+.sh-h h2{margin:0;font-family:var(--display);font-weight:400;font-size:21px;line-height:1.15;text-wrap:balance}
+.pill{background:var(--blue);color:#fff;border-radius:8px;padding:2px 8px;font-size:12px;font-weight:800}
+.pill.grey{background:var(--muted)}
+.sub{margin:0;color:var(--muted);font-size:14px;line-height:1.45}
+.rows{display:flex;flex-direction:column;background:#fff;border:2px solid var(--line);border-radius:14px;overflow:hidden}
+.row{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;font-size:14px;border-top:1px solid var(--cream2)}
+.row:first-child{border-top:0}
+.row span{color:var(--muted)}
+.row b{text-align:right;font-variant-numeric:tabular-nums}
+.sec{font-family:var(--display);font-size:14px;margin:6px 0 0;letter-spacing:.02em}
+.note{background:var(--cream2);border-radius:12px;padding:9px 12px;font-size:13.5px;line-height:1.4}
+.note.warn{background:#fde3dc;color:var(--red-d)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:13px;padding:10px 14px;font-weight:800;font-size:14.5px;
+  background:var(--green);color:#fff;box-shadow:0 4px 0 var(--green-d);text-align:center}
+.btn:active{transform:translateY(2px);box-shadow:0 2px 0 var(--green-d)}
+.btn.gold{background:var(--gold);color:#4a3200;box-shadow:0 4px 0 var(--gold-d)}
+.btn.red{background:var(--red);box-shadow:0 4px 0 var(--red-d)}
+.btn.ghost{background:var(--cream2);color:var(--ink);box-shadow:0 4px 0 var(--line)}
+.btn:disabled{background:#d9cfbd;color:#8b7d68;box-shadow:0 4px 0 #bfb29b;transform:none}
+.btn.w{width:100%}
+.btn.sm{padding:7px 10px;font-size:13px;border-radius:10px}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:flex;gap:10px;align-items:center;background:#fff;border:2px solid var(--line);border-radius:14px;padding:10px 12px}
+.opt .t{flex:1;min-width:0}
+.opt .t b{display:block;font-size:14.5px}
+.opt .t small{display:block;color:var(--muted);font-size:12.5px;line-height:1.35;margin-top:2px}
+.opt .pos{color:var(--green-d);font-weight:800}
+.opt .ng{color:var(--red);font-weight:800}
+.opt.locked{opacity:.55}
+.seg{display:flex;background:var(--cream2);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;border-radius:9px;padding:7px 4px;font-size:13px;font-weight:700}
+.seg button.on{background:#fff;box-shadow:0 2px 0 var(--line)}
+.bar2{height:6px;background:var(--cream2);border-radius:3px;overflow:hidden;margin-top:6px}
+.bar2 i{display:block;height:100%;background:var(--blue);border-radius:3px}
+
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 140px);z-index:40;transform:translate(-50%,-8px);opacity:0;pointer-events:none;
+  background:var(--ink);color:var(--cream);font-weight:700;font-size:14px;padding:9px 15px;border-radius:13px;max-width:calc(100% - 32px);text-align:center;
+  transition:opacity .2s,transform .2s}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* map svg */
+.ct text{font-family:var(--body);font-weight:700;fill:var(--ink);paint-order:stroke;stroke:var(--cream);stroke-width:3px;stroke-linejoin:round;display:none}
+.ct .show text,.ct.zoomed text{display:block}
+.ct text.hid{display:none!important}
+.ct .dot{fill:#fff;stroke:var(--ink);stroke-width:1.5px}
+.ct .reach .dot{fill:var(--gold)}
+.ct .dim .dot{fill:#d8ccb4;stroke:#a89878}
+.ct .dim text{fill:#8b7d68}
+.ct .route .dot{fill:var(--green)}
+.ct .sel .dot{fill:var(--red)}
+.ct .startc .dot{fill:var(--gold);stroke:var(--red-d)}
+.sea-lbl{font-family:var(--body);font-style:italic;font-size:14px;fill:#4b98bd;letter-spacing:.08em}
+
+/* start screen */
+#start{position:fixed;inset:0;z-index:30;overflow-y:auto;background:var(--cream);
+  background-image:repeating-linear-gradient(90deg,transparent 0 22px,rgba(201,173,120,.12) 22px 26px);}
+.st-in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:14px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 22px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 28px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.logo .eb{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
+.logo h1{margin:2px 0 6px;font-family:var(--display);font-weight:400;font-size:44px;line-height:1;color:var(--ink);
+  text-shadow:0 3px 0 var(--gold)}
+.logo p{margin:0;color:var(--muted);font-size:15px;line-height:1.45;max-width:46ch}
+.st-in h3{margin:10px 0 0;font-family:var(--display);font-weight:400;font-size:18px;display:flex;align-items:center;gap:8px}
+.num{width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;display:grid;place-items:center;font-size:14px}
+.smap{display:block;width:100%;height:240px;border-radius:16px;border:3px solid var(--line);background:var(--sea);touch-action:none}
+.cities{display:flex;flex-wrap:wrap;gap:6px}
+.cities button{background:#fff;border:2px solid var(--line);border-radius:999px;padding:6px 11px;font-size:13.5px;font-weight:700}
+.cities button.on{background:var(--red);border-color:var(--red-d);color:#fff}
+.ccard{background:#fff;border:2px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.ccard h4{margin:0;font-family:var(--display);font-weight:400;font-size:19px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ccard p{margin:0;font-size:14px;line-height:1.4}
+.ccard .k{color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.stars{color:var(--gold-d);letter-spacing:2px;font-size:16px;white-space:nowrap}
+.pick{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pick button{text-align:left;background:#fff;border:2px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:4px}
+.pick button b{font-family:var(--display);font-weight:400;font-size:16px}
+.pick button small{color:var(--muted);font-size:12.5px;line-height:1.35}
+.pick button.on{border-color:var(--red);box-shadow:0 0 0 3px rgba(217,65,43,.2)}
+.go{display:flex;flex-direction:column;gap:10px;background:var(--cream2);border-radius:18px;padding:14px;margin-top:6px}
+.go .d{display:flex;justify-content:space-between;align-items:center;font-weight:800}
+.btn.big{font-family:var(--display);font-weight:400;font-size:18px;padding:14px;border-radius:16px}
+@media (prefers-reduced-motion:reduce){.bub,.hammer.on{animation:none}#toast{transition:none}}
+</style>
+
+<canvas id="hub" aria-label="3D-хаб"></canvas>
+<svg id="map" hidden aria-label="Карта России"></svg>
+<div id="tags"></div>
+
+<header class="bar" id="bar" hidden>
+  <div class="chip" id="cMoney"><span class="coin">₽</span><span id="vMoney">0</span></div>
+  <button class="chip" id="cVal" type="button"><span class="val"></span><span id="vVal">0</span></button>
+  <button class="chip" id="cBuild" type="button"><span class="hammer" id="hm"></span><span id="vBuild">Свободен</span></button>
+  <div class="sp"></div>
+  <div class="chip"><small id="vTime">День 1 · 08:00</small></div>
+  <button class="chip" id="bMenu" type="button" aria-label="Меню">⋯</button>
+  <div class="sites" id="sites" hidden></div>
+  <div class="sites" id="mapSeg" hidden></div>
+</header>
+
+<nav class="nav" id="nav" hidden>
+  <button type="button" data-tab="hub" class="on">Базы</button>
+  <button type="button" data-tab="map">Карта</button>
+  <button type="button" data-tab="routes">Маршруты</button>
+</nav>
+
+<div id="backdrop" hidden></div>
+<section class="sheet" id="sheet" hidden><button class="sx" id="sx" type="button" aria-label="Закрыть">×</button><div id="sheetBody"></div></section>
+<div id="toast"></div>
+<div id="win" hidden><div class="card"><h2>100 трлн!</h2><p id="winText">Ваша компания стала транспортной империей.</p><button class="btn w" id="winOk" type="button">Играть дальше</button></div></div>
+
+<section id="start" hidden>
+  <div class="st-in">
+    <div class="logo">
+      <div class="eb">Транспортная империя</div>
+      <h1>Магистраль</h1>
+      <p>Постройте вокзал или аэропорт, запустите первые рейсы и растите сеть от одного города до всего мира.</p>
+    </div>
+    <h3><span class="num">1</span>Игра</h3>
+    <div class="pick" id="kindPick"></div>
+    <div id="contBox"></div>
+    <div id="newBox" style="display:flex;flex-direction:column;gap:14px">
+    <h3><span class="num">2</span>Компания</h3>
+    <input class="inp" id="compName" maxlength="24" placeholder="AlimTransport" autocomplete="off">
+    <div class="sw" id="compCols"></div>
+    <h3><span class="num">3</span>Стартовый город</h3>
+    <svg class="smap" id="smap" aria-label="Выбор города на карте"></svg>
+    <div class="cities" id="cityChips"></div>
+    <div class="ccard" id="cityCard"></div>
+        <h3><span class="num">4</span>Время</h3>
+    <div class="pick" id="modePick"></div>
+    <div class="go">
+      <div class="d"><span>Сложность</span><span class="stars" id="diffStars"></span></div>
+      <button class="btn big w" id="startBtn" type="button">Начать игру</button>
+    </div>
+    </div>
+  </div>
+</section>
+
+<script src="three.min.js"></script>
+<script>
+(function(){
+"use strict";
+/* ================= DATA ================= */
+const CITIES={
+  msk:{n:'Москва',x:230,y:270,lat:55.75,lon:37.62,a:13},
+  spb:{n:'Петербург',x:170,y:170,lat:59.94,lon:30.31,a:5.6},
+  kzn:{n:'Казань',x:400,y:275,lat:55.79,lon:49.12,a:1.3},
+  rnd:{n:'Ростов-на-Дону',x:255,y:398,lat:47.23,lon:39.72,a:1.1},
+  krd:{n:'Краснодар',x:226,y:445,lat:45.04,lon:38.98,a:1.1},
+  sochi:{n:'Сочи',x:252,y:505,lat:43.59,lon:39.73,a:1.5},
+  sev:{n:'Севастополь',x:76,y:494,lat:44.62,lon:33.52,a:0.9},
+  yalta:{n:'Ялта',x:140,y:506,lat:44.50,lon:34.17,a:1.0},
+  smf:{n:'Симферополь',x:116,y:452,lat:44.95,lon:34.10,a:0.5},
+  nsk:{n:'Новосибирск',x:770,y:300,lat:55.03,lon:82.92,a:1.6},
+  vvo:{n:'Владивосток',x:965,y:405,lat:43.12,lon:131.89,a:0.7},
+  nn:{n:'Нижний Новгород',x:315,y:262,lat:56.33,lon:44.0,a:1.2},
+  ekb:{n:'Екатеринбург',x:560,y:240,lat:56.84,lon:60.6,a:1.5},
+  sam:{n:'Самара',x:420,y:338,lat:53.2,lon:50.15,a:1.15},
+  vlg:{n:'Волгоград',x:330,y:385,lat:48.71,lon:44.51,a:1.0},
+  mur:{n:'Мурманск',x:225,y:62,lat:68.97,lon:33.07,a:0.3},
+  arh:{n:'Архангельск',x:320,y:115,lat:64.54,lon:40.54,a:0.35},
+  prm:{n:'Пермь',x:485,y:218,lat:58.01,lon:56.25,a:1.0},
+  ufa:{n:'Уфа',x:495,y:300,lat:54.74,lon:55.97,a:1.1},
+  tmn:{n:'Тюмень',x:625,y:252,lat:57.15,lon:65.53,a:0.85},
+  oms:{n:'Омск',x:690,y:292,lat:54.99,lon:73.37,a:1.1},
+  krs:{n:'Красноярск',x:840,y:255,lat:56.01,lon:92.87,a:1.1},
+  irk:{n:'Иркутск',x:885,y:345,lat:52.29,lon:104.3,a:0.65},
+  khv:{n:'Хабаровск',x:950,y:300,lat:48.48,lon:135.07,a:0.65},
+  kgd:{n:'Калининград',x:45,y:250,lat:54.71,lon:20.51,a:0.55,airOnly:true},
+  mrv:{n:'Минеральные Воды',x:322,y:470,lat:44.21,lon:43.13,a:0.6}
+};
+const START_ORDER=['msk','spb','kzn','rnd','krd','sochi','sev','yalta','nsk','vvo'];
+const START={
+  msk:{diff:3,demand:1.3,cost:1.6,style:{wall:0xf0e2c4,roof:0xc8372d,shape:'spire',tree:'fir'},look:'Сталинские высотки, рубиновые звёзды',
+    bonus:'Самый большой поток пассажиров: спрос ×1,3',minus:'Дорогая земля: стройка дороже на 60%',local:{n:'Высотка',d:'+10% к выручке с билетов за уровень',eff:'ticket'}},
+  spb:{diff:2,demand:1.15,cost:1.3,railSpeed:1.15,style:{wall:0xf4d58d,roof:0x3f7f6e,shape:'dome',tree:'fir'},look:'Классические фасады, разводные мосты',
+    bonus:'Поезда на 15% быстрее, спрос ×1,15',minus:'Стройка дороже на 30%',local:{n:'Разводной мост',d:'+15% к доходу от грузов за уровень',eff:'cargo'}},
+  kzn:{diff:2,demand:1.05,cost:1.0,reach:300,style:{wall:0xfaf3e8,roof:0x2f9e6e,shape:'tent',tree:'fir'},look:'Татарские узоры, башни в стиле Кремля',
+    bonus:'На середине пути: дальность маршрутов +300 км',minus:'Средний спрос, позже сильная конкуренция',local:{n:'Татарский двор',d:'+10% к спросу за уровень',eff:'demand'}},
+  rnd:{diff:2,demand:0.9,cost:0.9,cargo:1.5,style:{wall:0xf0e0c0,roof:0x2f5fa8,shape:'gable',tree:'round'},look:'Казачий колорит, Дон',
+    bonus:'Грузы ×1,5, стройка на 10% дешевле',minus:'Меньше пассажиров: спрос ×0,9',local:{n:'Донская пристань',d:'+15% к доходу от грузов за уровень',eff:'cargo'}},
+  krd:{diff:1,demand:0.85,cost:0.75,cargo:1.3,style:{wall:0xfff1d0,roof:0xd9822b,shape:'gable',tree:'round'},look:'Кубанский колорит, поля',
+    bonus:'Дешёвая земля: стройка на 25% дешевле, грузы ×1,3',minus:'Пассажиры в основном транзитные: спрос ×0,85',local:{n:'Кубанский рынок',d:'+8% к доходу гостиницы и кафе за уровень',eff:'hotel'}},
+  sochi:{diff:2,demand:1.1,cost:1.4,style:{wall:0xffffff,roof:0x2a8fbd,shape:'flat',tree:'palm'},look:'Олимпийский стиль, пальмы, горы',
+    bonus:'Туристы и зимой, и летом: спрос ×1,1',minus:'Стройка у моря и в горах дороже на 40%',local:{n:'Олимпийский парк',d:'+10% к спросу за уровень',eff:'demand'}},
+  sev:{diff:2,demand:1.0,cost:1.0,style:{wall:0xf7f4ea,roof:0x2c5d8f,shape:'flat',tree:'palm'},look:'Белый камень, морская тема',
+    bonus:'Поток туристов на юг',minus:'Мало соседних городов',local:{n:'Графская пристань',d:'+10% к спросу за уровень',eff:'demand'}},
+  yalta:{diff:3,demand:1.2,cost:1.1,station:'smf',style:{wall:0xfdfaf2,roof:0x7a9e3c,shape:'dome',tree:'palm'},look:'Дворцы, набережная, горы над морем',
+    bonus:'Курортный спрос ×1,2 почти круглый год',minus:'Вокзал и аэропорт в Симферополе: −20% к выручке, пока нет трансфера',local:{n:'Трансфер в Симферополь',d:'Убирает штраф −20%, дальше +5% к выручке за уровень',eff:'transfer'}},
+  nsk:{diff:2,demand:0.95,cost:0.9,cargo:1.6,fuel:1.15,style:{wall:0xd9d4cc,roof:0x8a3b2e,shape:'flat',tree:'fir'},look:'Конструктивизм, мост через Обь',
+    bonus:'Сердце Транссиба: грузы ×1,6',minus:'Большие расстояния: топливо дороже на 15%',local:{n:'Мост через Обь',d:'−7% к расходу топлива за уровень',eff:'fuel'}},
+  vvo:{diff:3,demand:0.95,cost:1.1,cargo:1.4,reach:1500,style:{wall:0xe6edf2,roof:0x2b4c7e,shape:'flat',tree:'fir'},look:'Портовые краны, вантовый мост',
+    bonus:'Порт: грузы ×1,4, дальность +1500 км',minus:'Очень долгий путь до остальной России',local:{n:'Портовые краны',d:'+15% к доходу от грузов за уровень',eff:'cargo'}}
+};
+const WORLD={minsk:{n:'Минск',lat:53.9,lon:27.57,a:1.5,rail:1},warsaw:{n:'Варшава',lat:52.23,lon:21.01,a:1.8,rail:1},berlin:{n:'Берлин',lat:52.52,lon:13.4,a:3,rail:1},
+  paris:{n:'Париж',lat:48.86,lon:2.35,a:5,rail:1},london:{n:'Лондон',lat:51.51,lon:-0.13,a:6,rail:1},rome:{n:'Рим',lat:41.9,lon:12.5,a:3,rail:1},madrid:{n:'Мадрид',lat:40.42,lon:-3.7,a:3,rail:1},
+  istanbul:{n:'Стамбул',lat:41.01,lon:28.98,a:5,rail:1},helsinki:{n:'Хельсинки',lat:60.17,lon:24.94,a:1.3,rail:1},astana:{n:'Астана',lat:51.17,lon:71.45,a:1,rail:1},
+  almaty:{n:'Алматы',lat:43.24,lon:76.95,a:1.5,rail:1},tashkent:{n:'Ташкент',lat:41.3,lon:69.24,a:2,rail:1},baku:{n:'Баку',lat:40.41,lon:49.87,a:1.6,rail:1},
+  tbilisi:{n:'Тбилиси',lat:41.72,lon:44.79,a:1,rail:1},yerevan:{n:'Ереван',lat:40.18,lon:44.51,a:1,rail:1},tehran:{n:'Тегеран',lat:35.69,lon:51.39,a:3,rail:1},
+  ulaanbaatar:{n:'Улан-Батор',lat:47.92,lon:106.92,a:0.8,rail:1},beijing:{n:'Пекин',lat:39.9,lon:116.4,a:8,rail:1},shanghai:{n:'Шанхай',lat:31.23,lon:121.47,a:8,rail:1},
+  dubai:{n:'Дубай',lat:25.2,lon:55.27,a:5},delhi:{n:'Дели',lat:28.61,lon:77.21,a:6},bangkok:{n:'Бангкок',lat:13.76,lon:100.5,a:5},tokyo:{n:'Токио',lat:35.68,lon:139.69,a:10},
+  seoul:{n:'Сеул',lat:37.57,lon:126.98,a:5},cairo:{n:'Каир',lat:30.04,lon:31.24,a:4},antalya:{n:'Анталья',lat:36.9,lon:30.7,a:2.5},newyork:{n:'Нью-Йорк',lat:40.71,lon:-74.0,a:9},
+  la:{n:'Лос-Анджелес',lat:34.05,lon:-118.24,a:6},havana:{n:'Гавана',lat:23.11,lon:-82.37,a:1.5},saopaulo:{n:'Сан-Паулу',lat:-23.55,lon:-46.63,a:6},
+  capetown:{n:'Кейптаун',lat:-33.92,lon:18.42,a:2},sydney:{n:'Сидней',lat:-33.87,lon:151.21,a:5}};
+for(const k in WORLD){WORLD[k].w=1;CITIES[k]=WORLD[k]}
+const VEH={
+  tem2:{n:'ТЭМ2 с вагонами',k:'rail',tier:1,seats:90,v:55,max:450,price:3000,fuel:0.8},
+  er2:{n:'Электричка ЭР2',k:'rail',tier:1,seats:200,v:90,max:850,price:7000,fuel:1.2},
+  te10:{n:'2ТЭ10 с вагонами',k:'rail',tier:2,seats:350,v:80,max:99999,price:18000,fuel:2.0},
+  chs2:{n:'ЧС2 с вагонами',k:'rail',tier:2,seats:450,v:100,max:99999,price:30000,fuel:2.2},
+  ep2k:{n:'ЭП2К с вагонами',k:'rail',tier:3,seats:550,v:115,max:99999,price:60000,fuel:2.6},
+  lastochka:{n:'«Ласточка»',k:'rail',tier:3,seats:440,v:140,max:900,price:80000,fuel:2.4},
+  sapsan:{n:'«Сапсан»',k:'rail',tier:4,seats:600,v:220,max:1000,price:220000,fuel:4,only:['msk','spb','nn']},
+  an2:{n:'Ан-2',k:'air',tier:1,seats:12,v:190,max:900,price:4000,fuel:0.6},
+  yak40:{n:'Як-40',k:'air',tier:1,seats:32,v:500,max:1500,price:12000,fuel:2.2},
+  an24:{n:'Ан-24',k:'air',tier:2,seats:48,v:450,max:2400,price:25000,fuel:2.6},
+  tu134:{n:'Ту-134',k:'air',tier:2,seats:76,v:800,max:3000,price:45000,fuel:4.5},
+  tu154:{n:'Ту-154',k:'air',tier:3,seats:160,v:900,max:5200,price:95000,fuel:9},
+  ssj:{n:'Суперджет-100',k:'air',tier:3,seats:98,v:830,max:4500,price:85000,fuel:4.4},
+  ms21:{n:'МС-21',k:'air',tier:4,seats:190,v:870,max:6000,price:190000,fuel:7.5},
+  il96:{n:'Ил-96',k:'air',tier:4,seats:300,v:870,max:11000,price:260000,fuel:14},
+  flirt:{n:'Stadler FLIRT',k:'rail',tier:2,seats:250,v:160,max:1200,price:90000,fuel:1.8,foreign:1},
+  talgo:{n:'Talgo',k:'rail',tier:3,seats:300,v:160,max:99999,price:150000,fuel:2.2,foreign:1},
+  velaro:{n:'Siemens Velaro',k:'rail',tier:4,seats:460,v:300,max:1500,price:600000,fuel:5,foreign:1},
+  crh380:{n:'CRH380',k:'rail',tier:4,seats:556,v:300,max:2500,price:700000,fuel:5.5,foreign:1},
+  atr72:{n:'ATR 72',k:'air',tier:2,seats:70,v:510,max:1500,price:60000,fuel:2.4,foreign:1},
+  e190:{n:'Embraer E190',k:'air',tier:3,seats:100,v:830,max:4000,price:120000,fuel:4.2,foreign:1},
+  a320:{n:'Airbus A320',k:'air',tier:3,seats:180,v:840,max:6100,price:220000,fuel:6.8,foreign:1},
+  b737:{n:'Boeing 737-800',k:'air',tier:3,seats:189,v:840,max:5400,price:210000,fuel:7,foreign:1},
+  a350:{n:'Airbus A350',k:'air',tier:4,seats:325,v:900,max:15000,price:900000,fuel:13,foreign:1},
+  b777:{n:'Boeing 777-300ER',k:'air',tier:4,seats:396,v:905,max:13600,price:1100000,fuel:16,foreign:1},
+  b747:{n:'Boeing 747-8',k:'air',tier:4,seats:467,v:910,max:14300,price:1500000,fuel:20,foreign:1}
+};
+const CLS={eco:{n:'Эконом',p:1,d:1,r:1},std:{n:'Стандарт',p:1.5,d:0.7,r:1.3},biz:{n:'Бизнес',p:2.5,d:0.35,r:1.8}};
+const BIDS=['main','kassa','depot','cargo','hotel','local','intl'];
+const HBIDS=BIDS;
+const BMAX={main:10,depot:10,kassa:10,cargo:10,hotel:10,local:5,intl:5};
+const BBASE={main:20000,depot:6000,kassa:4000,cargo:5000,hotel:8000,local:12000,intl:2000000};
+const HBASE={main:30000,kassa:6000,depot:8000,cargo:6000,hotel:10000,local:15000,intl:2500000};
+const LOCALS={nn:{n:'Стрелка',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},ekb:{n:'Уральская высотка',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'},sam:{n:'Волжская набережная',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},vlg:{n:'Волжская пристань',d:'+15% к доходу от грузов за уровень',eff:'cargo'},mur:{n:'Ледокольный причал',d:'+15% к доходу от грузов за уровень',eff:'cargo'},arh:{n:'Северная пристань',d:'+15% к доходу от грузов за уровень',eff:'cargo'},prm:{n:'Камский мост',d:'−7% к расходу топлива рейсов из хаба за уровень',eff:'fuel'},ufa:{n:'Башкирский двор',d:'+8% к доходу гостиницы хаба за уровень',eff:'hotel'},tmn:{n:'Нефтяная биржа',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'},oms:{n:'Иртышская набережная',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},krs:{n:'Мост через Енисей',d:'−7% к расходу топлива рейсов из хаба за уровень',eff:'fuel'},irk:{n:'Байкальская пристань',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},khv:{n:'Амурский утёс',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},kgd:{n:'Янтарная гавань',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'},mrv:{n:'Курортная галерея',d:'+8% к доходу гостиницы хаба за уровень',eff:'hotel'},smf:{n:'Крымский вокзал',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'}};
+const LMODEL={nn:'rnd',ekb:'msk',sam:'sev',vlg:'rnd',mur:'vvo',arh:'rnd',prm:'nsk',ufa:'kzn',tmn:'msk',oms:'sev',krs:'nsk',irk:'rnd',khv:'sev',kgd:'krd',mrv:'sochi',smf:'sev'};
+const STARTS_AT_ONE={main:1,depot:1,kassa:1};
+const BTIME=[2,4,10,24,48,72,100,140,190,250];   // game hours to reach level 1..10
+const GOALS=[1e6,1e7,1e8,1e9,1e10,1e11,1e12,1e13,1e14];
+const CRIMEA_SET={sev:1,yalta:1,smf:1},KERCH={lat:45.33,lon:36.47},K1={x:168,y:452},K2={x:206,y:452};
+const REACH=[900,1300,1700,2200,3000,4000,5500,7000,9000,12000];
+const HREACH=[700,1000,1400,1900,2600,3500,4600,6000,8000,10000];
+const TIER_AT=[1,1,2,2,3,3,4,4,4,4];
+const KCAP=[8000,25000,70000,2e5,5e5,1.3e6,3.5e6,9e6,2.5e7,7e7];
+const CCAP=[0,5000,15000,40000,1e5,2.5e5,6.5e5,1.7e6,4.5e6,1.2e7,3e7];
+const SLOT={main:[0,-0.6],kassa:[4.7,-3.7],hotel:[-4.7,-3.7],depot:[-4.6,2.8],cargo:[4.6,2.8],local:[0,-5.4],intl:[0,3.7]};
+const keyFor=k=>'magistral-'+k;
+const BUILDER_COST=[0,50000,250000,1200000,6000000];
+const HUB_COST=n=>Math.round(150000*Math.pow(2.5,n)/1000)*1000;
+const RAIL_RATE=0.06,AIR_RATE=0.15;
+
+/* ================= HELPERS ================= */
+const $=s=>document.querySelector(s);
+function fm(n){n=Math.floor(n);const a=Math.abs(n);
+  if(a>=1e12)return (n/1e12).toFixed(a>=1e13?0:1).replace('.',',')+' трлн';
+  if(a>=1e9)return (n/1e9).toFixed(a>=1e10?0:1).replace('.',',')+' млрд';
+  if(a>=1e6)return (n/1e6).toFixed(a>=1e7?0:1).replace('.',',')+' млн';
+  if(a>=1e5)return Math.round(n/1e3)+' тыс';
+  return n.toLocaleString('ru-RU')}
+function hav(a,b){const t=Math.PI/180,dLat=(b.lat-a.lat)*t,dLon=(b.lon-a.lon)*t;
+  const x=Math.sin(dLat/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLon/2)**2;return 2*6371*Math.asin(Math.sqrt(x))}
+const stars=n=>'★'.repeat(n)+'☆'.repeat(5-n);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let tt;function toast(m){if(/^(Не хватает|Нужн|Сначала|Нет мест|Все строители|Такой маршрут|Сюда|Максимальн|Уже строится|Хабы откр|Следующий хаб|Путь )/.test(m))sfx('error');const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2600)}
+
+/* ================= AUDIO (synthesized, no files) ================= */
+const AU={ctx:null,master:null,sfxG:null,musG:null,noiseBuf:null,timer:null,next:0,step:0,bar:0,
+  pref:(()=>{try{return Object.assign({music:true,sfx:true},JSON.parse(localStorage.getItem('magistral-audio')||'{}'))}catch(e){return{music:true,sfx:true}}})()};
+function audioPrefSave(){try{localStorage.setItem('magistral-audio',JSON.stringify(AU.pref))}catch(e){}}
+function audioInit(){if(AU.ctx)return;try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const c=AU.ctx=new C();
+  AU.master=c.createGain();AU.master.gain.value=0.9;const comp=c.createDynamicsCompressor();AU.master.connect(comp);comp.connect(c.destination);
+  AU.sfxG=c.createGain();AU.sfxG.gain.value=AU.pref.sfx?0.55:0;AU.sfxG.connect(AU.master);
+  AU.musG=c.createGain();AU.musG.gain.value=AU.pref.music?0.16:0;AU.musG.connect(AU.master);
+  const len=c.sampleRate*1.5,b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;AU.noiseBuf=b;
+  AU.next=c.currentTime+0.1;AU.timer=setInterval(musicTick,90)}catch(e){AU.ctx=null}}
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev,()=>{audioInit();if(AU.ctx&&AU.ctx.state==='suspended'&&!document.hidden)AU.ctx.resume()},{passive:true}));
+document.addEventListener('visibilitychange',()=>{if(!AU.ctx)return;if(document.hidden)AU.ctx.suspend();else AU.ctx.resume()});
+function setAudio(kind,on){AU.pref[kind]=on;audioPrefSave();if(!AU.ctx)return;const g=kind==='music'?AU.musG:AU.sfxG,t=AU.ctx.currentTime;g.gain.cancelScheduledValues(t);g.gain.setTargetAtTime(on?(kind==='music'?0.16:0.55):0,t,0.15)}
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+function tone(f,dur,o){if(!AU.ctx)return;o=o||{};const c=AU.ctx,t=(o.at!=null?o.at:c.currentTime)+0.005,osc=c.createOscillator(),g=c.createGain();
+  osc.type=o.type||'sine';osc.frequency.setValueAtTime(f,t);if(o.to)osc.frequency.exponentialRampToValueAtTime(o.to,t+dur);if(o.det)osc.detune.value=o.det;
+  const v=o.vol||0.3,a=o.att||0.005;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(v,t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  let node=osc;if(o.lp){const fl=c.createBiquadFilter();fl.type='lowpass';fl.frequency.value=o.lp;osc.connect(fl);node=fl}
+  node.connect(g);g.connect(o.bus||AU.sfxG);osc.start(t);osc.stop(t+dur+0.05)}
+function noise(dur,o){if(!AU.ctx)return;o=o||{};const c=AU.ctx,t=(o.at!=null?o.at:c.currentTime)+0.005,s=c.createBufferSource(),f=c.createBiquadFilter(),g=c.createGain();
+  s.buffer=AU.noiseBuf;f.type=o.ft||'bandpass';f.frequency.setValueAtTime(o.f||1000,t);if(o.fto)f.frequency.exponentialRampToValueAtTime(o.fto,t+dur);f.Q.value=o.q||1;
+  const v=o.vol||0.3,a=o.att||0.005;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(v,t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  s.connect(f);f.connect(g);g.connect(o.bus||AU.sfxG);s.start(t,Math.random()*0.5);s.stop(t+dur+0.05)}
+const SFX={
+  tap(){tone(1500,0.05,{type:'triangle',vol:0.08})},
+  coin(){tone(988,0.12,{type:'square',vol:0.07,lp:4000});tone(1319,0.35,{type:'square',vol:0.07,lp:4000,at:AU.ctx&&AU.ctx.currentTime+0.08})},
+  build(){if(!AU.ctx)return;const t=AU.ctx.currentTime;for(let i=0;i<3;i++){noise(0.09,{f:900,q:3,vol:0.35,at:t+i*0.16});tone(180,0.08,{type:'triangle',vol:0.2,at:t+i*0.16})}},
+  done(){if(!AU.ctx)return;const t=AU.ctx.currentTime;[72,76,79,84].forEach((m,i)=>tone(mtof(m),0.35,{type:'triangle',vol:0.18,at:t+i*0.09}))},
+  goal(){if(!AU.ctx)return;const t=AU.ctx.currentTime;[[67,0],[72,0.15],[76,0.3],[79,0.45],[84,0.6]].forEach(([m,d])=>{tone(mtof(m),0.5,{type:'sawtooth',vol:0.09,lp:3000,at:t+d});tone(mtof(m-12),0.5,{type:'triangle',vol:0.12,at:t+d})})},
+  error(){tone(220,0.18,{type:'square',vol:0.07,to:140,lp:1500})},
+  horn(v){if(!AU.ctx)return;const t=AU.ctx.currentTime;v=v||1;for(const f of[311,370,466])tone(f,0.9,{type:'sawtooth',vol:0.05*v,lp:1400,att:0.06,at:t});for(const f of[311,370,466])tone(f,0.5,{type:'sawtooth',vol:0.05*v,lp:1400,att:0.05,at:t+1.0})},
+  rumble(v){noise(2.2,{ft:'lowpass',f:220,vol:0.22*(v||1),att:0.6})},
+  jet(v){noise(2.6,{f:300,fto:2200,q:0.8,vol:0.25*(v||1),att:0.8});noise(2.6,{ft:'lowpass',f:160,vol:0.2*(v||1),att:0.8})}
+};
+/* generative background music */
+const PROG={rail:[[57,60,64],[53,57,60],[48,52,55],[55,59,62]],air:[[48,52,55,59],[45,48,52,55],[53,57,60,64],[55,59,62,65]]};
+function musicTick(){const c=AU.ctx;if(!c||c.state!=='running')return;const kind=(S&&S.kind)||setup.kind||'rail',bpm=kind==='air'?76:84,st=60/bpm/2;
+  while(AU.next<c.currentTime+0.4){const t=AU.next,ch=PROG[kind][AU.bar%4],s=AU.step;
+    if(s===0){for(const m of ch){tone(mtof(m),st*8.2,{type:'triangle',vol:0.05,att:0.6,lp:1600,bus:AU.musG,at:t});tone(mtof(m),st*8.2,{type:'sawtooth',vol:0.012,att:0.8,lp:900,det:7,bus:AU.musG,at:t})}}
+    if(s%4===0)tone(mtof(ch[0]-12),st*3.6,{type:'sine',vol:0.12,att:0.02,bus:AU.musG,at:t});
+    if(kind==='rail'?(s%2===0):(s%3!==2)){const m=ch[Math.floor(Math.random()*ch.length)]+12+(Math.random()<0.25?12:0);tone(mtof(m),st*1.8,{type:'sine',vol:0.05,att:0.01,bus:AU.musG,at:t})}
+    if(kind==='rail'&&s%2===1)noise(0.05,{f:6000,q:0.7,vol:0.025,bus:AU.musG,at:t});
+    AU.next+=st;AU.step=(s+1)%8;if(AU.step===0)AU.bar++}}
+function sfx(n,v){if(!AU.pref.sfx)return;audioInit();if(AU.ctx&&SFX[n])try{SFX[n](v)}catch(e){}}
+
+/* ================= STATE ================= */
+let S=null,view='hq';
+const msPerH=()=>S.mode==='fast'?3000:60000;
+function diffOf(city,kind,mode){return Math.min(5,START[city].diff+(kind==='air'?1:0)+(mode==='real'?1:0))}
+function newGame(city,kind,mode){
+  const dm={1:1.2,2:1,3:0.85}[START[city].diff];
+  S={v:1,city,kind,mode,money:Math.round((kind==='rail'?15000:20000)*dm),h:8,last:Date.now(),
+    b:{main:{l:1},kassa:{l:1,st:0},depot:{l:1},cargo:{l:0,st:0},hotel:{l:0},local:{l:0},intl:{l:0}},
+    hubs:{},hubSpent:0,test:true,company:{name:setup.name||'AlimTransport',color:setup.color||COLORS[0]},builds:[],builders:1,veh:[{id:1,type:kind==='rail'?'er2':'an2',route:null}],routes:[],nid:2,legs:0};
+}
+function save(){if(!S)return;S.last=Date.now();try{localStorage.setItem(keyFor(S.kind),JSON.stringify(S));localStorage.setItem('magistral-last',S.kind)}catch(e){}}
+function load(kind){try{const s=JSON.parse(localStorage.getItem(keyFor(kind)));if(s&&s.v===1&&START[s.city]&&s.b){
+  if(!s.builds)s.builds=s.build?[s.build]:[];delete s.build;s.builders=s.builders||1;
+  s.builds.forEach(b=>{if(!b.site)b.site='hq'});s.routes.forEach(r=>{if(!r.site)r.site='hq'});
+  s.hubs=s.hubs||{};for(const k in s.hubs){const b=s.hubs[k].b;b.local=b.local||{l:0};b.intl=b.intl||{l:0};delete b.second;b.cargo=b.cargo||{l:0,st:0}}
+  if(s.test==null)s.test=true;s.hubSpent=s.hubSpent||0;return s}}catch(e){}return null}
+
+/* sites: 'hq' is the Штаб, any city id is a хаб */
+const SC=()=>START[S.city];
+const hubStation=()=>SC().station||S.city;
+const siteCity=s=>s==='hq'?hubStation():s;
+const siteB=s=>s==='hq'?S.b:S.hubs[s].b;
+const siteIds=s=>s==='hq'?BIDS:HBIDS;
+const siteName=s=>s==='hq'?'Штаб':'Хаб '+CITIES[s].n;
+const sites=()=>['hq',...Object.keys(S.hubs)];
+const vehOf=r=>S.veh.find(x=>x.id===r.vid);
+const bOf=(s,id)=>S.builds.find(b=>b.site===s&&b.id===id);
+const freeBuilders=()=>S.builders-S.builds.length;
+function siteStyle(s){if(s==='hq')return SC().style;if(START[s])return START[s].style;
+  const c=CITIES[s],i=Object.keys(CITIES).indexOf(s),roofs=[0x2f7fbf,0x8a3b2e,0x3f7f6e,0xc8372d,0x7a9e3c,0xd9822b];
+  return{wall:0xf3ead8,roof:roofs[i%roofs.length],shape:['gable','flat','tent','dome'][i%4],tree:c.lat<45.6?'palm':c.lat<50?'round':'fir'}}
+const localDef=s=>{const c=s==='hq'?S.city:s;return START[c]?START[c].local:LOCALS[c]};
+function lbs(eff,s){const d=localDef(s);let e=d.eff;if(e==='transfer'&&s!=='hq')e='ticket';return e===eff?siteB(s).local.l:0}
+function bname(id,s){if(id==='main')return S.kind==='rail'?'Вокзал':'Аэропорт';if(id==='depot')return S.kind==='rail'?'Депо':'Ангар';
+  if(id==='intl')return 'Международный терминал';if(id==='local')return localDef(s||view).n;
+  return {kassa:'Касса',cargo:'Грузовой терминал',hotel:'Гостиница и кафе'}[id]}
+function ticketMul(s){let m=(1+0.1*lbs('ticket','hq'))*(s!=='hq'?1+0.1*lbs('ticket',s):1);if(s==='hq'&&S.city==='yalta')m*=S.b.local.l===0?0.8:1+0.05*(S.b.local.l-1);return m}
+function demandMul(s){return (s==='hq'?SC().demand:1)*(1+0.1*lbs('demand',s))*(1+0.05*siteB(s).hotel.l)}
+const cargoMul=()=>(SC().cargo||1)*(1+0.15*sites().reduce((a,s)=>a+lbs('cargo',s),0));
+const fuelMul=s=>(SC().fuel||1)*(1-0.07*lbs('fuel','hq'))*(s&&s!=='hq'?1-0.07*lbs('fuel',s):1);
+const hotelMul=s=>1+0.08*lbs('hotel',s||'hq');
+const reachOf=l=>REACH[l-1]+(SC().reach||0);
+const siteReach=s=>s==='hq'?reachOf(S.b.main.l):HREACH[siteB(s).main.l-1];
+const slots=()=>sites().reduce((a,s)=>a+siteB(s).depot.l+1,0);
+const kindAvail=k=>k===S.kind;
+function tierAvail(k,s){s=s||'hq';let t=TIER_AT[S.b.main.l-1];if(s!=='hq')t=Math.min(t,TIER_AT[siteB(s).main.l-1]);
+  if(k!==S.kind)t=0;return t}
+const crosses=(a,b)=>!!CRIMEA_SET[a]!==!!CRIMEA_SET[b];
+function dist(from,to,k){const A=CITIES[from],B=CITIES[to];if(k==='rail'&&crosses(from,to))return Math.round((hav(A,KERCH)+hav(KERCH,B))*1.2);const d=hav(A,B);return Math.round(k==='rail'?d*1.25:d)}
+function canServe(type,s,to){const v=VEH[type],c=CITIES[to],from=siteCity(s);
+  if(!kindAvail(v.k))return 'Не тот вид транспорта';
+  if(v.foreign&&S.b.intl.l<1)return 'Зарубежная техника доступна после международного терминала в штабе';
+  if(c.w&&siteB(s).intl.l<1)return 'Нужен международный терминал в '+(s==='hq'?'штабе':'этом хабе');
+  if(v.k==='rail'&&c.w&&!c.rail)return 'Сюда нет пути по суше, только самолётом';
+  const ta=tierAvail(v.k,s);if(v.tier>ta)return 'Нужно '+v.tier+'-е поколение техники, у базы '+ta+'-е';
+  if(v.k==='rail'&&(c.airOnly||CITIES[from].airOnly))return 'Сюда только самолётом';
+  const d=dist(from,to,v.k);if(d>v.max)return 'Путь '+fm(d)+' км, а техника ходит до '+fm(v.max)+' км';
+  if(v.only&&!(v.only.includes(from)&&v.only.includes(to)))return 'Ходит только между Москвой, Петербургом и Нижним Новгородом';
+  return ''}
+function est(type,s,to,cls,used){const v=VEH[type],from=siteCity(s),d=dist(from,to,v.k),c=CLS[cls];
+  const fa=s==='hq'?Math.max(1,CITIES[S.city].a):Math.max(0.6,CITIES[from].a);
+  let dem=90*Math.sqrt(fa*CITIES[to].a)*demandMul(s)*0.9*c.d;
+  if(v.k==='rail'&&d>2500)dem*=2500/d;
+  if(v.k==='air'&&d<400)dem*=0.5;
+  const pax=Math.max(1,Math.min(v.seats,Math.round(dem)));
+  const intl=CITIES[to].w?1.3*(1+0.1*Math.max(0,siteB(s).intl.l-1)):1;
+  const rev=pax*d*(v.k==='rail'?RAIL_RATE:AIR_RATE)*c.p*ticketMul(s)*intl;
+  const hotel=siteB(s).hotel.l*pax*0.6*hotelMul(s);
+  const cost=d*v.fuel*fuelMul(s)*(used?1.3:1);
+  const time=d/(v.v*(used?0.95:1)*(v.k==='rail'?(SC().railSpeed||1):1))+(v.k==='rail'?0.5:1);
+  const net=rev+hotel-cost;
+  return {d,pax,load:pax/v.seats,rev,hotel,cost,net,time,perH:net/time}}
+const routeEst=r=>{const v=vehOf(r);return est(v.type,r.site,r.to,r.cls,v.used)};
+const usedPrice=t=>Math.round(VEH[t].price*0.55/100)*100;
+function bcost(s,id,L){const base=(s==='hq'?BBASE:HBASE)[id]*Math.pow(2.6,L-(STARTS_AT_ONE[id]?2:1));return Math.round(base*(s==='hq'?SC().cost:1)/100)*100}
+const maxL=(s,id)=>BMAX[id];
+const paused=r=>false;
+const cargoUnits=s=>S.routes.reduce((a,r)=>a+(r.site===s&&!paused(r)?(VEH[vehOf(r).type].k==='rail'?3:1):0),0);
+function cargoRate(s){if(s==null)return sites().reduce((a,x)=>a+cargoRate(x),0);return siteB(s).cargo.l*45*cargoMul()*cargoUnits(s)}
+function valuation(){const p={cash:S.money,bld:S.hubSpent*0.7,veh:0,rt:0};
+  for(const s of sites()){const b=siteB(s);p.cash+=b.kassa.st+b.cargo.st;for(const id of siteIds(s))for(let L=STARTS_AT_ONE[id]?2:1;L<=b[id].l;L++)p.bld+=bcost(s,id,L)*0.7}
+  for(const x of S.veh)p.veh+=VEH[x.type].price*(x.used?0.3:0.6);
+  for(let i=1;i<S.builders;i++)p.bld+=BUILDER_COST[i]*0.7;
+  for(const r of S.routes){if(paused(r))continue;const e=routeEst(r);if(e.perH>0)p.rt+=e.perH*24*5}
+  p.total=p.cash+p.bld+p.veh+p.rt;return p}
+function checkGoal(V){if(S.goal==null){S.goal=GOALS.filter(g=>V>=g).length;return}
+  while(S.goal<GOALS.length&&V>=GOALS[S.goal]){S.goal++;
+    if(S.goal===GOALS.length){$('#winText').textContent='Ваша компания стоит '+fm(V)+' ₽. На это ушло '+(Math.floor(S.h/24)+1)+' игровых дней.';$('#win').hidden=false;sfx('goal')}
+    else{toast('Компания стоит '+fm(GOALS[S.goal-1])+' ₽! Следующая цель: '+fm(GOALS[S.goal])+' ₽');sfx('goal')}}}
+
+/* ================= SIMULATION ================= */
+function sim(dh){
+  S.h+=dh;
+  for(const bd of S.builds.filter(b=>S.h>=b.end)){S.builds.splice(S.builds.indexOf(bd),1);if(bd.site!=='hq'&&!S.hubs[bd.site])continue;
+    siteB(bd.site)[bd.id].l=bd.to;if(bd.site===view){rebuildBuilding(bd.id);if(bd.id==='intl'){rebuildBuilding(bd.id)}else if(bd.id==='main'||bd.id==='hotel'){people.forEach(p=>{if(!p.userData.worker)world.remove(p)});people=people.filter(p=>p.userData.worker);spawnPeople()}}mapDirty=true;
+    toast(siteName(bd.site)+': '+bname(bd.id,bd.site)+', уровень '+bd.to+' готов');sfx('done');refreshSheet()}
+  for(const r of S.routes){if(paused(r))continue;const e=routeEst(r);r.t+=dh;
+    while(r.t>=e.time){r.t-=e.time;r.dir^=1;S.legs++;
+      if(e.net>=0){const k=siteB(r.site).kassa;k.st=Math.min(KCAP[k.l-1],k.st+e.net)}else S.money+=e.net}}
+  for(const s of sites()){const c=siteB(s).cargo;if(c.l>0)c.st=Math.min(CCAP[c.l],c.st+cargoRate(s)*dh)}
+}
+function simChunked(dh){while(dh>0){const s=Math.min(dh,1);sim(s);dh-=s}}
+
+/* ================= ACTIONS ================= */
+function upgradeBlock(s,id){const b=siteB(s),to=b[id].l+1;
+  if(to>maxL(s,id))return 'Максимальный уровень';
+  if(bOf(s,id))return 'Уже строится';
+  if(freeBuilders()<=0)return 'Все строители заняты. Нанять ещё можно, коснувшись кнопки строителей вверху';
+  if(id==='intl'&&s==='hq'&&S.b.main.l<5+to)return 'Нужен '+bname('main')+' штаба '+(5+to)+' уровня';
+  if(id==='intl'&&s!=='hq'&&!S.b.intl.l)return 'Сначала постройте международный терминал в штабе';
+  if(id!=='main'&&to>b.main.l)return 'Сначала '+bname('main')+(s==='hq'?'':' хаба')+' до уровня '+to;
+  if(s!=='hq'&&id!=='local'&&to>S.b[id].l)return S.b[id].l?'Сначала '+bname(id,'hq')+' штаба до уровня '+to:'Сначала постройте '+bname(id,'hq').toLowerCase()+' в штабе';
+  return ''}
+function doUpgrade(s,id){const why=upgradeBlock(s,id);if(why){toast(why);return}
+  const to=siteB(s)[id].l+1,c=bcost(s,id,to);if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}
+  S.money-=c;S.builds.push({site:s,id,to,start:S.h,end:S.h+BTIME[to-1]});if(s===view)rebuildBuilding(id);save();refreshSheet();hud();toast('Стройка началась');sfx('build')}
+function collect(s,id){const b=siteB(s)[id];if(b.st<1)return;const v=Math.floor(b.st);S.money+=v;b.st-=v;toast('+'+fm(v)+' ₽');sfx('coin');hud();refreshSheet();save()}
+function buy(type){let used=false;if(type.startsWith('u:')){used=true;type=type.slice(2)}const v=VEH[type],price=used?usedPrice(type):v.price;if(S.veh.length>=slots()){toast('Нет мест для техники. Улучшите '+(S.kind==='rail'?'депо':'ангар')+' в штабе или хабе');return null}
+  if(S.money<price){toast('Не хватает '+fm(price-S.money)+' ₽');return null}
+  S.money-=price;const o={id:S.nid++,type,route:null};if(used)o.used=1;S.veh.push(o);hud();save();return o}
+function sell(vid){const i=S.veh.findIndex(v=>v.id===vid);if(i<0||S.veh[i].route)return;const v=S.veh[i];const sv=Math.round(VEH[v.type].price*(v.used?0.25:0.5));S.money+=sv;S.veh.splice(i,1);toast('Продано за '+fm(sv)+' ₽');hud();refreshSheet();save()}
+function launch(s,to,choice,cls){let v;const type=choice.startsWith('v:')?(S.veh.find(x=>x.id===+choice.slice(2))||{}).type:choice.slice(2);
+  if(!type)return;const why=canServe(type,s,to);if(why){toast(why);return}
+  const k=VEH[type].k;if(S.routes.some(r=>r.site===s&&r.to===to&&VEH[vehOf(r).type].k===k)){toast('Такой маршрут уже есть');return}
+  if(choice.startsWith('v:'))v=S.veh.find(x=>x.id===+choice.slice(2));else{v=buy(type);if(!v)return}
+  if(!v||v.route)return;
+  const r={id:S.nid++,site:s,to,vid:v.id,cls,t:0,dir:0};v.route=r.id;S.routes.push(r);mapDirty=true;if(s===view)buildVehicles();
+  toast('Рейс '+CITIES[siteCity(s)].n+' — '+CITIES[to].n+' запущен');sfx(S.kind==='rail'?'horn':'jet');hud();refreshSheet();save()}
+function closeRoute(rid){const i=S.routes.findIndex(r=>r.id===rid);if(i<0)return;const r=S.routes[i];const v=vehOf(r);if(v)v.route=null;S.routes.splice(i,1);mapDirty=true;if(r.site===view)buildVehicles();toast('Маршрут закрыт, техника вернулась');refreshSheet();save()}
+function setCls(rid,cls){const r=S.routes.find(x=>x.id===rid);if(r){r.cls=cls;refreshSheet();save()}}
+function hubBlock(id){if(S.hubs[id])return 'Здесь уже ваш хаб';if(id===S.city||id===hubStation())return 'Здесь ваш штаб';
+  if(!S.routes.some(r=>r.to===id))return 'Сначала запустите сюда хотя бы один рейс';
+  if(S.b.main.l<3)return 'Хабы открываются с '+bname('main')+'ом штаба 3 уровня';
+  const n=Object.keys(S.hubs).length;if(n>=S.b.main.l-2)return 'Следующий хаб откроет '+bname('main')+' штаба '+(n+3)+' уровня';
+  return ''}
+function openHub(id){const why=hubBlock(id);if(why){toast(why);return}const c=HUB_COST(Object.keys(S.hubs).length);
+  if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}
+  S.money-=c;S.hubSpent+=c;S.hubs[id]={b:{main:{l:1},kassa:{l:1,st:0},depot:{l:1},cargo:{l:0,st:0},hotel:{l:0},local:{l:0},intl:{l:0}}};mapDirty=true;
+  toast('Открыт хаб '+CITIES[id].n);sfx('done');hud();refreshSheet();renderSites();save()}
+
+/* ================= DURATIONS ================= */
+function rdur(gh){const s=Math.max(0,Math.ceil(gh*msPerH()/1000));
+  if(s<60)return s+' с';const m=Math.floor(s/60);
+  if(m<60)return m+' мин'+(m<10&&s%60?' '+(s%60)+' с':'');
+  const h=Math.floor(m/60);return h+' ч'+(m%60?' '+(m%60)+' мин':'')}
+const ghr=h=>h<10?h.toFixed(1).replace('.',','):Math.round(h);
+
+
+/* ================= 3D BASE ================= */
+const canvas=$('#hub');
+const DPR=Math.min(window.devicePixelRatio||1,2),SMALL=Math.min(innerWidth,innerHeight)<700;
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(DPR);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;
+const scene=new THREE.Scene();
+function canvasTex(w,h,draw,rep){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');draw(g,w,h);const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;if(rep){t.wrapS=t.wrapT=THREE.RepeatWrapping}t.anisotropy=4;return t}
+scene.background=canvasTex(2,256,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#5a8cc2');gr.addColorStop(0.62,'#aac8de');gr.addColorStop(1,'#dce5ea');g.fillStyle=gr;g.fillRect(0,0,w,h)});
+scene.fog=new THREE.Fog(0xd3dfe7,48,120);
+const camera=new THREE.PerspectiveCamera(38,1,0.1,400);
+scene.add(new THREE.HemisphereLight(0xdce7f2,0x4a5638,0.72));
+const sun=new THREE.DirectionalLight(0xfff0d8,1.6);sun.position.set(16,26,12);sun.castShadow=true;
+sun.shadow.mapSize.set(SMALL?1024:2048,SMALL?1024:2048);Object.assign(sun.shadow.camera,{left:-20,right:20,top:20,bottom:-20,near:1,far:80});sun.shadow.bias=-0.0008;sun.shadow.normalBias=0.02;scene.add(sun);
+
+function speckle(g,w,h,base,amt,n){g.fillStyle=base;g.fillRect(0,0,w,h);for(let i=0;i<n;i++){const a=Math.random()*amt;g.fillStyle=Math.random()<0.5?`rgba(0,0,0,${a})`:`rgba(255,255,255,${a*0.6})`;const s=1+Math.random()*2;g.fillRect(Math.random()*w,Math.random()*h,s,s)}}
+const TX={
+  grass:canvasTex(256,256,(g,w,h)=>{speckle(g,w,h,'#5d7d3a',0.22,9000);for(let i=0;i<70;i++){g.fillStyle=`rgba(${70+Math.random()*50|0},${100+Math.random()*40|0},45,0.22)`;g.beginPath();g.arc(Math.random()*w,Math.random()*h,8+Math.random()*26,0,7);g.fill()}},1),
+  asphalt:canvasTex(128,128,(g,w,h)=>speckle(g,w,h,'#4a4c4f',0.18,4000),1),
+  paving:canvasTex(128,128,(g,w,h)=>{speckle(g,w,h,'#b9b3a7',0.12,2500);g.strokeStyle='rgba(60,55,50,.3)';for(let i=0;i<=w;i+=32){g.beginPath();g.moveTo(i,0);g.lineTo(i,h);g.stroke();g.beginPath();g.moveTo(0,i);g.lineTo(w,i);g.stroke()}},1),
+  concrete:canvasTex(128,128,(g,w,h)=>{speckle(g,w,h,'#a9a8a2',0.12,2500);g.strokeStyle='rgba(40,40,40,.28)';g.strokeRect(0.5,0.5,w-1,h-1)},1),
+  ballast:canvasTex(128,128,(g,w,h)=>speckle(g,w,h,'#7b746a',0.38,6000),1),
+  dirt:canvasTex(128,128,(g,w,h)=>speckle(g,w,h,'#8a7254',0.25,4000),1),
+  brick:canvasTex(128,128,(g,w,h)=>{g.fillStyle='#d8d0c4';g.fillRect(0,0,w,h);for(let y=0;y<h;y+=16)for(let x=-((y/16)%2)*16;x<w;x+=32){g.fillStyle=`hsl(${10+Math.random()*8},${38+Math.random()*12}%,${34+Math.random()*8}%)`;g.fillRect(x+1,y+1,30,14)}},1),
+  corr:canvasTex(64,64,(g,w,h)=>{for(let x=0;x<w;x+=8){g.fillStyle='#ffffff';g.fillRect(x,0,5,h);g.fillStyle='#b8b8b8';g.fillRect(x+5,0,3,h)}},1)
+};
+const TM={};function texMat(name,rx,ry,o){const k=name+rx+'x'+ry+(o?JSON.stringify(o):'');if(TM[k])return TM[k];const t=TX[name].clone();t.needsUpdate=true;t.repeat.set(rx,ry);return TM[k]=new THREE.MeshStandardMaterial(Object.assign({map:t,roughness:0.95},o||{}))}
+const MC={};function mat(c,o){const k=c+(o?JSON.stringify(o):'');return MC[k]||(MC[k]=new THREE.MeshStandardMaterial(Object.assign({color:new THREE.Color(c).convertSRGBToLinear(),roughness:0.82,metalness:0},o||{})))}
+const GLO={roughness:0.12,metalness:0.6},MTO={roughness:0.42,metalness:0.65};
+const GLASS=()=>mat(0x5f7d93,GLO),STEEL=()=>mat(0x8d949b,MTO),WATER=()=>mat(0x3d6f86,{roughness:0.08,metalness:0.35});
+function add(g,geo,m,x,y,z,sh){const mesh=new THREE.Mesh(geo,(m&&m.isMaterial)?m:mat(m));mesh.position.set(x||0,y||0,z||0);mesh.castShadow=sh!==false;mesh.receiveShadow=true;g.add(mesh);return mesh}
+const bx=(g,w,h,d,c,x,y,z,sh)=>add(g,new THREE.BoxGeometry(w,h,d),c,x,(y||0)+h/2,z,sh);
+const cy=(g,rt,rb,h,c,x,y,z,s)=>add(g,new THREE.CylinderGeometry(rt,rb,h,s||16),c,x,(y||0)+h/2,z);
+const cn=(g,r,h,c,x,y,z,s)=>add(g,new THREE.ConeGeometry(r,h,s||16),c,x,(y||0)+h/2,z);
+const sp=(g,r,c,x,y,z)=>add(g,new THREE.SphereGeometry(r,18,14),c,x,y,z);
+function gable(g,w,d,hh,c,x,y,z){const s=d/Math.SQRT2,p=new THREE.Group();const m=add(p,new THREE.BoxGeometry(w,s,s),c,0,0,0);m.rotation.x=Math.PI/4;
+  p.position.set(x||0,y||0,z||0);p.scale.y=hh/(d/2);g.add(p);return p}
+function vault(g,len,r,c,x,y,z){const m=add(g,new THREE.CylinderGeometry(r,r,len,24,1,false,0,Math.PI),c,x,y,z);m.rotation.z=Math.PI/2;return m}
+const COLORS=['#c8102e','#0b5fa5','#1f7a4c','#e07a10','#5b2a86','#202428'];
+const brandColor=()=>(S&&S.company&&S.company.color)||COLORS[0];
+const brandName=()=>(S&&S.company&&S.company.name)||'AlimTransport';
+const BT={};function brandTex(fg,bg){const key=brandName()+fg+bg;if(BT[key])return BT[key];
+  return BT[key]=canvasTex(512,96,(g,w,h)=>{if(bg){g.fillStyle=bg;g.fillRect(0,0,w,h)}g.fillStyle=fg;let fs=60;g.font=`800 ${fs}px Rubik, Arial, sans-serif`;
+    while(g.measureText(brandName()).width>w-24&&fs>20){fs-=4;g.font=`800 ${fs}px Rubik, Arial, sans-serif`}g.textBaseline='middle';g.textAlign='center';g.fillText(brandName(),w/2,h/2+2)})}
+function decal(g,w,h,tex,x,y,z,ry){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshStandardMaterial({map:tex,transparent:true,roughness:0.5}));m.position.set(x,y,z);m.rotation.y=ry||0;g.add(m);return m}
+function signTex(text,fg,bg){const k='s'+text+fg+bg;if(BT[k])return BT[k];return BT[k]=canvasTex(256,64,(g,w,h)=>{g.fillStyle=bg;g.fillRect(0,0,w,h);g.fillStyle=fg;g.font='700 34px Rubik, Arial, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,w/2,h/2+2)})}
+
+const world=new THREE.Group();scene.add(world);
+const B={};let cranes=[],people=[],trains=[],planes=[],props=[];
+function winGrid(g,w,y0,rows,rowH,cols,z,ww,wh){for(let r=0;r<rows;r++)for(let i=0;i<cols;i++){const x=-w/2+w*(i+0.5)/cols;bx(g,ww,wh,0.04,GLASS(),x,y0+r*rowH,z,false)}}
+function towerTop(g,st,y,L,k,x,z){
+  if(st.shape==='spire'){const c=cn(g,0.6*k,(1.1+0.1*L)*k,st.roof,x,y,z,4);c.rotation.y=Math.PI/4;add(g,new THREE.OctahedronGeometry(0.15*k),mat(0xb3121b,{emissive:new THREE.Color(0x5a0000),roughness:0.4}),x,y+(1.22+0.1*L)*k,z)}
+  else if(st.shape==='dome'){add(g,new THREE.SphereGeometry(0.54*k,24,14,0,Math.PI*2,0,Math.PI/2),mat(st.roof,MTO),x,y,z);cy(g,0.03,0.05,0.45*k,mat(0xc9a43a,MTO),x,y+0.48*k,z)}
+  else if(st.shape==='tent'){cn(g,0.64*k,(1.15+0.1*L)*k,st.roof,x,y,z,8);sp(g,0.07*k,mat(0xc9a43a,MTO),x,y+(1.2+0.1*L)*k,z)}
+  else if(st.shape==='gable'){gable(g,1.05*k,1.0*k,0.5*k,st.roof,x,y,z)}
+  else{bx(g,1.15*k,0.12*k,1.15*k,0x6b6e72,x,y,z);cy(g,0.02,0.02,0.9*k,STEEL(),x+0.35*k,y,z);decal(g,0.42*k,0.26*k,signTex('',brandColor(),brandColor()),x+0.57*k,y+0.72*k,z,0)}}
+function mStation(g,L,st,k){const w=3.6*k,d=1.9*k,h=(1.1+0.12*Math.min(L,8))*k,p=0.18*k,trim=0xe6e1d6;
+  bx(g,w+0.24*k,p,d+0.24*k,0x8a847a);bx(g,w,h,d,st.wall,0,p,0);bx(g,w+0.16*k,0.1*k,d+0.16*k,trim,0,p+h,0);
+  const n=Math.max(4,Math.round(w/0.55));for(let i=0;i<n;i++){const x=-w/2+w*(i+0.5)/n;if(Math.abs(x)<0.62*k)continue;for(const f of[1,-1])bx(g,0.26*k,h*0.56,0.04,GLASS(),x,p+h*0.2,f*(d/2+0.01),false)}
+  bx(g,1.1*k,h*0.8,0.14,trim,0,p,d/2+0.06);bx(g,0.62*k,h*0.62,0.05,GLASS(),0,p,d/2+0.14,false);
+  decal(g,1.9*k,0.34*k,brandTex('#ffffff',brandColor()),0,p+h*0.86,d/2+0.08,0);
+  if(st.shape==='flat')bx(g,w,0.14*k,d,0x6b6e72,0,p+h+0.1*k,0);else gable(g,w,d,0.62*k,st.roof,0,p+h+0.1*k,0);
+  const th=h+(0.95+0.1*Math.min(L,8))*k;bx(g,1.0*k,th,1.0*k,st.wall,0,p,-0.15*k);bx(g,1.06*k,0.08*k,1.06*k,trim,0,p+th,-0.15*k);
+  for(const f of[1,-1]){const c=add(g,new THREE.CylinderGeometry(0.28*k,0.28*k,0.04,24),mat(0xf4f1ea),0,p+th-0.45*k,-0.15*k+f*0.52*k);c.rotation.x=Math.PI/2}
+  towerTop(g,st,p+th+0.08*k,L,k,0,-0.15*k);
+  if(L>=3)for(const s of[-1,1]){const wx=s*(w/2+0.62*k);bx(g,1.2*k,h*0.8,1.5*k,st.wall,wx,p,0);winGrid(g,1.0*k,p+h*0.18,2,h*0.36,3,0.76*k,0.2*k,0.22*k);if(st.shape==='flat')bx(g,1.2*k,0.12*k,1.5*k,0x6b6e72,wx,p+h*0.8,0);else gable(g,1.2*k,1.5*k,0.42*k,st.roof,wx,p+h*0.8,0)}
+  if(L>=5)for(const s of[-1,1]){const tx=s*(w/2+1.35*k);bx(g,0.62*k,h+0.6*k,0.62*k,st.wall,tx,p,0);towerTop(g,st,p+h+0.6*k,2,k*0.6,tx,0)}
+  if(L>=7){bx(g,w*0.8,h*0.85,1.1*k,GLASS(),0,p,-(d/2+0.55*k));bx(g,w*0.84,0.1*k,1.2*k,0xe9e9e6,0,p+h*0.85,-(d/2+0.55*k))}
+  if(L>=9)bx(g,w*1.2,0.08*k,0.9*k,STEEL(),0,p+h*0.62,d/2+0.6*k)}
+function mAirport(g,L,st,k){const w=(3.8+0.12*Math.min(L,8))*k,d=1.7*k,h=(0.95+0.08*L)*k,b=0.12*k;
+  bx(g,w+0.2*k,b,d+0.6*k,0x99968f);bx(g,w,h,d,0xd9d6cf,0,b,0);
+  for(const f of[1,-1])bx(g,w*0.97,h*0.74,0.05,GLASS(),0,b+h*0.1,f*(d/2+0.01),false);
+  for(let x=-w/2+0.3*k;x<w/2;x+=0.45*k)bx(g,0.04*k,h*0.74,0.07,STEEL(),x,b+h*0.1,d/2+0.02,false);
+  bx(g,w+0.7*k,0.1*k,d+0.9*k,0xeeeeea,0,b+h,0.15*k);for(let x=-w/2;x<=w/2+0.01;x+=w/4)cy(g,0.05*k,0.05*k,h,0xe5e5e2,x,b,d/2+0.55*k,10);
+  decal(g,2.2*k,0.36*k,brandTex(brandColor(),'#ffffff'),0,b+h+0.32*k,d/2+0.6*k,0);bx(g,2.3*k,0.42*k,0.04,0xffffff,0,b+h+0.11*k,d/2+0.58*k,false);
+  const tx=w/2+0.55*k,th=(1.9+0.32*L)*k;cy(g,0.17*k,0.24*k,th,0xd5d2ca,tx,0,-0.2*k);cy(g,0.5*k,0.38*k,0.42*k,GLASS(),tx,th,-0.2*k);cy(g,0.54*k,0.54*k,0.07*k,0x55585c,tx,th+0.42*k,-0.2*k);cy(g,0.015,0.015,0.6*k,STEEL(),tx,th+0.49*k,-0.2*k,6);
+  if(L>=3)for(const s of[-1,1]){const j=bx(g,0.26*k,0.26*k,1.3*k,0xcfd2d6,s*w/4,b+h*0.42,-(d/2+0.65*k));cy(g,0.05,0.05,b+h*0.42,STEEL(),s*w/4,0,-(d/2+1.2*k),8)}
+  if(L>=5){bx(g,1.8*k,h*0.9,1.3*k,0xd9d6cf,-(w/2+0.95*k),b,0.1*k);bx(g,1.7*k,h*0.6,0.05,GLASS(),-(w/2+0.95*k),b+h*0.14,0.76*k,false);bx(g,1.9*k,0.1*k,1.4*k,0xeeeeea,-(w/2+0.95*k),b+h*0.9,0.1*k)}
+  if(L>=8)bx(g,w*0.7,h*0.5,0.9*k,GLASS(),0,b+h+0.1*k,-0.2*k)}
+function mDepot(g,L){const s=1+0.05*L;
+  if(S.kind==='rail'||view===null){const h=0.85+0.07*L;bx(g,2.6*s,h,2.4,texMat('brick',3,1.2),0,0,0);vault(g,2.6*s,1.2,STEEL(),0,h,0);
+    for(const x of[-0.62,0.62]){bx(g,0.66,0.72,0.06,0x3c3f43,x*s,0,1.22);bx(g,0.66,0.2,0.065,GLASS(),x*s,0.52,1.22,false)}
+    for(const x of[-0.62,0.62])for(const dx of[-0.18,0.18])bx(g,0.04,0.03,1.4,STEEL(),x*s+dx,0,1.9,false)}
+  else{vault(g,2.8*s,1.35*s,mat(0xb6bdc4,MTO),0,0,0);for(let i=0;i<4;i++)bx(g,0.44*s,1.05*s,0.05,0x8a939c,(-0.72+i*0.48)*s,0,1.36*s,false);
+    decal(g,1.6*s,0.28*s,brandTex(brandColor(),null),0,1.18*s,1.37*s,0);bx(g,3.2*s,0.03,1.6,texMat('concrete',2,1),0,0,2.1*s,false)}}
+function mKassa(g,L,st){const w=1.25+0.14*L;bx(g,w+0.2,0.08,1.25,texMat('concrete',1,1));bx(g,w,0.82,1.0,GLASS(),0,0.08,0);
+  for(let x=-w/2;x<=w/2+0.01;x+=w/3)bx(g,0.05,0.82,1.02,STEEL(),x,0.08,0,false);bx(g,w+0.25,0.1,1.2,st.roof,0,0.9,0);
+  decal(g,w*0.8,0.22,signTex('КАССЫ','#ffffff',brandColor()),0,0.78,0.52,0)}
+function mCargo(g,L){const cols=[0x8f3a2a,0x2d5d8a,0x6b6f73,0x3f6b4a,0xa8742a];const n=Math.min(2+L*2,18);
+  for(let i=0;i<n;i++){const layer=Math.floor(i/6),j=i%6;const m=new THREE.MeshStandardMaterial({map:TX.corr,color:new THREE.Color(cols[i%5]).convertSRGBToLinear(),roughness:0.7,metalness:0.3});
+    bx(g,1.0,0.44,0.42,m,-1.0+(j%3)*1.05,layer*0.44,-0.45+Math.floor(j/3)*0.5)}
+  bx(g,3.6,0.03,2.0,texMat('concrete',2,1),0,0,0,false);
+  if(L>=2){const y=mat(0xd9a520,MTO);for(const x of[-1.7,1.7]){bx(g,0.12,2.0,0.12,y,x,0,-0.9);bx(g,0.12,2.0,0.12,y,x,0,0.5)}bx(g,3.5,0.14,0.14,y,0,2.0,-0.9);bx(g,3.5,0.14,0.14,y,0,2.0,0.5);bx(g,0.5,0.25,1.6,0x3f4347,0.3,1.86,-0.2)}
+  if(L>=4){bx(g,2.2,1.0,1.4,mat(0xc4c7c9,MTO),0.2,0,-2.0);vault(g,2.2,0.7,STEEL(),0.2,1.0,-2.0)}}
+function mHotel(g,L,st){const f=Math.min(1+L,9),fh=0.4;bx(g,2.0,0.5,1.5,GLASS(),0,0,0);bx(g,2.0,fh*f,1.4,st.wall,0,0.5,0);
+  for(const z of[0.71,-0.71])winGrid(g,1.7,0.62,f,fh,4,z,0.26,0.24);
+  for(const x of[1.01,-1.01])for(let r=0;r<f;r++){const m=bx(g,0.04,0.24,0.3,GLASS(),x,0.62+r*fh,0,false)}
+  bx(g,2.1,0.12,1.5,0x5f6265,0,0.5+fh*f,0);decal(g,1.4,0.26,signTex('ОТЕЛЬ','#ffffff','#2b2f33'),0,0.5+fh*f+0.26,0.76,0);bx(g,1.5,0.32,0.04,0x2b2f33,0,0.5+fh*f+0.1,0.74,false);
+  for(let i=0;i<4;i++){const a=bx(g,0.5,0.04,0.7,i%2?0xf2f0ea:0xa8322a,-0.75+i*0.5,0.5,1.05,false);a.rotation.x=-0.22}
+  for(const x of[-0.6,0.2,0.9]){cy(g,0.16,0.16,0.03,0xf2f0ea,x,0.32,1.6,14);cy(g,0.02,0.02,0.32,STEEL(),x,0,1.6,6)}}
+function palm(g,x,z,h){cy(g,0.06,0.09,h,0x7a5a3a,x,0,z,6);for(let i=0;i<6;i++){const a=i/6*Math.PI*2,l=bx(g,0.8,0.03,0.2,0x4f7f3a,x+0.32*Math.cos(a),h-0.1,z+0.32*Math.sin(a));l.rotation.y=-a;l.rotation.z=-0.38}}
+function mLocal(g,L){const st=siteStyle(view),q=new THREE.Group();q.scale.setScalar(0.8+0.1*L);g.add(q);const W=WATER();const c=siteCity(view)==='smf'&&view==='hq'?S.city:(view==='hq'?S.city:view);
+  switch(LMODEL[c]||c){
+  case 'msk':bx(q,1.5,1.0,1.5,0xe8dcc2);bx(q,1.1,1.0,1.1,0xe8dcc2,0,1.0);bx(q,0.75,0.9,0.75,0xe8dcc2,0,2.0);cn(q,0.22,1.1,0xd9c79a,0,2.9,0,8);add(q,new THREE.OctahedronGeometry(0.17),0xe02424,0,4.15,0);break;
+  case 'spb':bx(q,3.4,0.04,1.6,W);for(const s of[-1,1]){bx(q,0.35,1.3,0.5,0xf4d58d,s*1.0,0,0);const a=bx(q,0.9,0.1,0.7,0x4a5a6a,s*0.5,0.7,0);a.rotation.z=s*0.45;bx(q,0.8,0.1,0.7,0x4a5a6a,s*1.55,0.6,0)}break;
+  case 'kzn':cy(q,0.55,0.6,0.9,0xfaf3e8,0,0,0,8);cy(q,0.42,0.45,0.8,0xfaf3e8,0,0.9,0,8);cy(q,0.3,0.33,0.7,0xc9493a,0,1.7,0,8);cn(q,0.34,0.8,0x2f9e6e,0,2.4,0,8);sp(q,0.07,0xffc23d,0,3.25,0);break;
+  case 'rnd':bx(q,3.2,0.04,1.8,W);for(const x of[-1,0,1])cy(q,0.05,0.05,0.3,0x6b4226,x,0,0.2,6);bx(q,2.4,0.1,0.8,0xa8784a,0,0.3,0.2);bx(q,1.0,0.3,0.45,0xffffff,0.6,0,-0.55);bx(q,0.4,0.25,0.35,0x2f5fa8,0.5,0.3,-0.55);break;
+  case 'krd':[0xd9412b,0xffc23d,0x4fa83a].forEach((c,i)=>{const x=(i-1)*0.95;bx(q,0.8,0.6,0.6,0xa8784a,x,0,0);const a=bx(q,0.9,0.08,0.8,c,x,0.95,0.1);a.rotation.x=-0.25;sp(q,0.1,[0xe8452c,0xf2c12e,0x7ab648][i],x,0.68,0.1)});break;
+  case 'sochi':{const d=sp(q,1.1,0xf4f8fb,0,0,0);d.scale.y=0.45;cy(q,1.12,1.12,0.12,0x2a8fbd,0,0.02,0,24);palm(q,-1.5,0.8,1.2);palm(q,1.5,0.8,1.0);break}
+  case 'sev':bx(q,2.6,0.15,1.2,0xf2efe6);bx(q,2.2,0.15,0.9,0xf2efe6,0,0.15,-0.1);for(let i=0;i<6;i++)cy(q,0.08,0.08,1.0,0xffffff,-0.9+i*0.36,0.3,-0.2,10);bx(q,2.2,0.18,0.5,0xf7f4ea,0,1.3,-0.2);bx(q,3,0.04,1,W,0,0,1.1);break;
+  case 'yalta':bx(q,3.2,0.03,0.9,0x777777,0,0,0.4);bx(q,1.4,0.55,0.5,0x3fa34d,0,0.1,0.4);bx(q,1.2,0.18,0.52,0xbfe6f5,0,0.4,0.4);for(const x of[-0.3,0.3])bx(q,0.03,0.5,0.03,0x333333,x,0.65,0.4);bx(q,1.0,0.7,0.8,st.wall,0,0,-0.6);add(q,new THREE.SphereGeometry(0.4,16,10,0,Math.PI*2,0,Math.PI/2),st.roof,0,0.7,-0.6);break;
+  case 'nsk':bx(q,3.6,0.04,1.4,W);add(q,new THREE.TorusGeometry(1.2,0.07,8,24,Math.PI),0xb5523b,0,0.15,0);bx(q,3.4,0.1,0.6,0x777777,0,0.55,0);break;
+  case 'vvo':bx(q,3.4,0.04,1.6,W,0,0,0.4);for(const x of[-0.9,0.4]){bx(q,0.15,1.8,0.15,0xf08a24,x,0,-0.5);bx(q,1.3,0.12,0.12,0xf08a24,x+0.5,1.8,-0.5)}bx(q,1.8,0.35,0.6,0x2b4c7e,0,0,0.6);bx(q,0.5,0.3,0.4,0xd9412b,-0.4,0.35,0.6);bx(q,0.5,0.3,0.4,0x2f7fbf,0.2,0.35,0.6);break;
+  }}
+
+function mPlot(g){bx(g,2.4,0.03,2.4,texMat('dirt',2,2),0,0,0,false);const w=mat(0xd7c9a8);for(const x of[-1.2,1.2])for(const z of[-1.2,1.2])bx(g,0.05,0.5,0.05,w,x,0,z);
+  for(const z of[-1.2,1.2])bx(g,2.4,0.04,0.03,w,0,0.42,z,false);for(const x of[-1.2,1.2])bx(g,0.03,0.04,2.4,w,x,0,0.42,false);
+  bx(g,0.05,0.7,0.05,0x5a4a3a,0.8,0,1.3);decal(g,0.7,0.3,signTex('ПОД СТРОЙКУ','#2b2f33','#f2efe6'),0.8,0.62,1.33,0)}
+function modelFor(id,L,g){const st=siteStyle(view);
+  if(L===0)return mPlot(g);
+  if(id==='main')return (S.kind==='rail'?mStation:mAirport)(g,L,st,view==='hq'?1:0.88);
+  if(id==='intl')return mIntl(g,L,st);
+  if(id==='depot')return mDepot(g,L);
+  if(id==='kassa')return mKassa(g,L,st);
+  if(id==='cargo')return mCargo(g,L);
+  if(id==='hotel')return mHotel(g,L,st);
+  if(id==='local')return mLocal(g,L)}
+function mIntl(g,L,st){(S.kind==='rail'?mStation:mAirport)(g,L,st,0.55);const fc=[0xc8102e,0x0b5fa5,0xf2c12e,0x1f7a4c,0xe9ecee];
+  for(let i=0;i<3+L;i++){const x=-1.4+i*0.45;cy(g,0.02,0.02,1.4,STEEL(),x,0,1.1,6);bx(g,0.3,0.18,0.01,fc[i%5],x+0.16,1.2,1.1,false)}}
+function scaffold(g,w,h,d){const pole=STEEL(),plank=mat(0xa9824f);
+  for(const x of[-w/2,w/2])for(const z of[-d/2,d/2])bx(g,0.05,h,0.05,pole,x,0,z,false);
+  for(let y=0.6;y<h;y+=0.6){bx(g,w,0.035,0.035,pole,0,y,d/2,false);bx(g,w,0.035,0.035,pole,0,y,-d/2,false);bx(g,0.035,0.035,d,pole,w/2,y,0,false);bx(g,0.035,0.035,d,pole,-w/2,y,0,false);bx(g,w,0.03,0.24,plank,0,y-0.02,d/2+0.12,false)}
+  const cg=new THREE.Group();cg.position.set(w/2+0.7,0,-d/2-0.5);g.add(cg);const ch=h+2.4,y=mat(0xe0a21b,MTO);
+  bx(cg,0.24,0.2,0.24,0x55585c);bx(cg,0.2,ch,0.2,y);const e=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(0.21,ch,0.21,1,Math.ceil(ch/0.3),1)),new THREE.LineBasicMaterial({color:0x6b4f10}));e.position.y=ch/2;cg.add(e);
+  const jib=new THREE.Group();jib.position.y=ch;cg.add(jib);bx(jib,4.0,0.16,0.16,y,1.3,0,0);bx(jib,0.6,0.32,0.42,0x5a5d61,-0.8,-0.08,0);bx(jib,0.34,0.3,0.34,0x3a3d41,0,-0.32,0);bx(jib,0.015,1.4,0.015,0x222222,2.6,-1.4,0,false);bx(jib,0.2,0.14,0.2,0x3a3d41,2.6,-1.5,0);cranes.push(jib)}
+function bProgress(bd){const st=bd.start!=null?bd.start:bd.end-BTIME[bd.to-1];return Math.max(0,Math.min(1,(S.h-st)/Math.max(0.01,bd.end-st)))}
+function rebuildBuilding(id){if(!S)return;const o=B[id];if(!o)return;
+  cranes=cranes.filter(s=>{let p=s.parent;while(p){if(p===o.grp)return false;p=p.parent}return true});
+  people=people.filter(p=>{if(p.userData.site===id){world.remove(p);return false}return true});
+  while(o.grp.children.length)o.grp.remove(o.grp.children[0]);
+  const b=siteB(view)[id],bd=bOf(view,id),L=bd?bd.to:b.l;
+  const m=new THREE.Group();o.grp.add(m);o.model=m;o.bd=bd||null;o.fresh=bd?b.l===0:false;modelFor(id,L,m);
+  m.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(m),size=new THREE.Vector3();box.getSize(size);
+  if(bd){scaffold(o.grp,Math.max(1.6,size.x+0.3),Math.max(1.2,size.y+0.2),Math.max(1.4,size.z+0.3));
+    for(let i=0;i<2;i++){const p=person(0xe07a10,true);p.position.set(SLOT[id][0]+(i?-1:1)*(size.x/2+0.4),0,SLOT[id][1]+size.z/2+0.4);p.userData={site:id,worker:1,ph:i*2};world.add(p);people.push(p)}}
+  o.grp.updateMatrixWorld(true);o.top=new THREE.Box3().setFromObject(o.grp).max.y;
+  updateTag(id)}
+const SHIRTS=[0x3b5b8a,0xa33a3a,0x2f6b4f,0x8a6d3b,0x5a4a7a,0xd0cbc0,0x2b2f33,0x9a5a2a];
+function person(c,worker){const p=new THREE.Group();const a=add(p,new THREE.CylinderGeometry(0.06,0.07,0.34,8),mat(0x2f3237),0,0.17,0,false);
+  add(p,new THREE.CylinderGeometry(0.1,0.085,0.32,10),mat(c),0,0.5,0,false);add(p,new THREE.SphereGeometry(0.075,12,10),mat(0xd9b08c),0,0.74,0,false);
+  if(worker)add(p,new THREE.SphereGeometry(0.085,12,8,0,Math.PI*2,0,Math.PI/2),mat(0xf2c12e),0,0.78,0,false);return p}
+const NODES=[[0,-2.2],[-5.8,-2.2],[5.8,-2.2],[-5.8,1.6],[5.8,1.6],[0,1.6],[0,4.4],[-4,5.3],[4,5.3],[-2.5,-2.2],[2.5,-2.2],[0,-4.4],[-2.5,1.6],[2.5,1.6],[2,5.3],[-2,5.3]];
+function spawnPeople(){const b=siteB(view),n=Math.min(40,6+2*(b.main.l+b.hotel.l));
+  for(let i=0;i<n;i++){const p=person(SHIRTS[i%SHIRTS.length]);const a=NODES[(i*7)%NODES.length];p.position.set(a[0]+(Math.random()-0.5)*0.6,0,a[1]+(Math.random()-0.5)*0.4);
+    p.userData={to:NODES[Math.floor(Math.random()*NODES.length)],spd:0.45+Math.random()*0.35,ph:Math.random()*6};p.scale.setScalar(0.95+Math.random()*0.15);world.add(p);people.push(p)}}
+
+/* vehicles in company livery, shaped after the real models */
+const TCFG={tem2:{t:'hood',cars:3},er2:{t:'emubox',cars:4},te10:{t:'diesel2',cars:4},chs2:{t:'cabround',cars:5},ep2k:{t:'cabangular',cars:5},
+  lastochka:{t:'desiro',cars:5},sapsan:{t:'hsr',cars:6,nose:1.7},flirt:{t:'flirt',cars:4},talgo:{t:'talgo',cars:8},velaro:{t:'hsr',cars:6,nose:1.5},crh380:{t:'hsr',cars:6,nose:2.2}};
+function railCar(t,x,len,o){const c=new THREE.Group();c.position.x=x;t.add(c);const h=o.h||0.56,w=0.6,y0=o.y0||0.24;
+  bx(c,len,h,w,o.body,0,y0,0);vault(c,len,w/2,o.roof,0,y0+h,0).scale.set(0.38,1,1);
+  if(o.win!==false){bx(c,len*0.84,0.15,w+0.012,GLASS(),0,y0+h*0.58,0,false)}
+  if(o.stripe)bx(c,len,0.06,w+0.016,o.stripe,0,y0+h*0.22,0,false);
+  if(o.doors)for(const dx of[-len*0.3,len*0.3])for(const f of[1,-1])bx(c,0.22,h*0.8,0.012,o.doors,dx,y0+0.04,f*(w/2+0.004),false);
+  for(const bxp of[-len*0.34,len*0.34]){bx(c,0.46,0.12,0.5,0x26292d,bxp,0.1,0,false);for(const dx of[-0.13,0.13])for(const f of[1,-1]){const wh=add(c,new THREE.CylinderGeometry(0.075,0.075,0.04,12),mat(0x3a3d41,MTO),bxp+dx,0.12,f*0.27,false);wh.rotation.x=Math.PI/2}}
+  return c}
+function trainModel(type){const t=new THREE.Group(),cf=TCFG[type]||{t:'emubox',cars:4},c=brandColor();
+  const white=mat(0xe9ecee,{roughness:0.4,metalness:0.25}),roof=mat(0x8b9096,MTO),brand=mat(c,{roughness:0.45,metalness:0.2}),dark=mat(0x1d2126,{roughness:0.2,metalness:0.5}),lamp=mat(0xfff6d0,{emissive:new THREE.Color(0x887744)});
+  let x=0,named=false;const L=2.3,G=0.08;
+  const nameOn=(car,y)=>{if(named)return;named=true;for(const f of[1,-1])decal(car,1.3,0.22,brandTex(c,null),0,y,f*0.31,f>0?0:Math.PI)};
+  const pax=(n,len,o)=>{for(let i=0;i<n;i++){const car=railCar(t,x-len/2,len,Object.assign({body:white,roof,stripe:brand,doors:brand},o||{}));nameOn(car,0.62);x-=len+G}};
+  const front=x0=>x0;
+  switch(cf.t){
+  case 'hood':{const lo=new THREE.Group();lo.position.x=-1.0;t.add(lo);bx(lo,0.6,0.78,0.6,brand,-0.55,0.22,0);bx(lo,0.6,0.2,0.62,GLASS(),-0.55,0.72,0,false);bx(lo,1.35,0.5,0.44,brand,0.42,0.22,0);bx(lo,1.35,0.05,0.46,white,0.42,0.5,0,false);
+    for(const f of[1,-1])bx(lo,1.35,0.02,0.02,STEEL(),0.42,0.8,f*0.26,false);bx(lo,1.9,0.1,0.62,0x26292d,-0.1,0.12,0,false);sp(lo,0.04,lamp,1.1,0.55,0);x=-2.05-G;
+    for(let i=0;i<cf.cars;i++){const car=railCar(t,x-0.95,1.9,{body:mat(0x6b5a4a),roof:mat(0x55585c),win:false,stripe:null});if(i===0)nameOn(car,0.5);x-=1.9+G}break}
+  case 'diesel2':{for(let s=0;s<2;s++){const sec=railCar(t,x-1.1,2.2,{body:brand,roof,win:false,stripe:white,h:0.62});const d=s===0?1:-1;
+      const nose=bx(sec,0.32,0.38,0.6,brand,d*1.2,0.24,0);bx(sec,0.04,0.2,0.5,GLASS(),d*1.12,0.66,0,false);sp(sec,0.04,lamp,d*1.36,0.5,0);
+      for(const f of[1,-1])bx(sec,0.5,0.14,0.012,GLASS(),d*0.75,0.68,f*0.306,false);if(s===0)nameOn(sec,0.55);x-=2.2+G}
+    pax(cf.cars,L);break}
+  case 'cabround':{const lo=railCar(t,x-1.05,2.1,{body:brand,roof,win:false,stripe:white,h:0.64});const n=add(lo,new THREE.CylinderGeometry(0.3,0.3,0.6,20,1,false,0,Math.PI),brand,1.05,0.56,0);n.rotation.x=Math.PI/2;n.rotation.z=-Math.PI/2;n.scale.set(1,1,0.9);
+    bx(lo,0.06,0.2,0.5,GLASS(),1.28,0.62,0,false);sp(lo,0.04,lamp,1.32,0.4,0);nameOn(lo,0.55);x-=2.1+G;pax(cf.cars,L);break}
+  case 'cabangular':{const lo=railCar(t,x-1.1,2.2,{body:brand,roof,win:false,stripe:white,h:0.64});const n=bx(lo,0.34,0.42,0.6,brand,1.2,0.42,0);n.rotation.z=0.5;
+    bx(lo,0.04,0.24,0.54,GLASS(),1.25,0.66,0,false);for(const z of[-0.2,0.2])sp(lo,0.035,lamp,1.34,0.36,z);nameOn(lo,0.55);x-=2.2+G;pax(cf.cars,L);break}
+  case 'emubox':{const hd=railCar(t,x-L/2,L,{body:white,roof,stripe:brand,doors:brand});bx(hd,0.06,0.6,0.62,brand,L/2,0.24,0);
+    for(const z of[-0.14,0.14])bx(hd,0.02,0.18,0.22,GLASS(),L/2+0.035,0.58,z,false);for(const z of[-0.2,0.2])sp(hd,0.04,lamp,L/2+0.04,0.36,z);nameOn(hd,0.62);x-=L+G;pax(cf.cars-1,L);break}
+  case 'desiro':{const hd=railCar(t,x-L/2,L,{body:white,roof,stripe:brand,doors:brand,h:0.6});const n=sp(hd,0.31,white,L/2,0.56,0);n.scale.set(1.5,1,0.98);
+    const v=sp(hd,0.3,dark,L/2+0.1,0.64,0);v.scale.set(1.25,0.45,0.96);const sk=sp(hd,0.31,brand,L/2+0.05,0.36,0);sk.scale.set(1.45,0.35,0.99);
+    for(const z of[-0.17,0.17])sp(hd,0.035,lamp,L/2+0.4,0.42,z);nameOn(hd,0.66);x-=L+G;pax(cf.cars-1,L,{h:0.6});break}
+  case 'hsr':{const nl=cf.nose||1.6;const hd=railCar(t,x-L/2,L,{body:white,roof,stripe:brand,doors:null,h:0.58});
+    const n=sp(hd,0.3,white,L/2,0.52,0);n.scale.set(nl*1.6,0.95,1);const v=sp(hd,0.22,dark,L/2+nl*0.18,0.66,0);v.scale.set(nl*0.9,0.42,0.95);
+    const st=sp(hd,0.3,brand,L/2,0.4,0);st.scale.set(nl*1.55,0.3,1.01);sp(hd,0.03,lamp,L/2+nl*0.42,0.42,0.1);sp(hd,0.03,lamp,L/2+nl*0.42,0.42,-0.1);
+    t.children[t.children.length-1].position.x+=0;nameOn(hd,0.62);x-=L+G;pax(cf.cars-1,L,{doors:null,h:0.58});break}
+  case 'flirt':{const hd=railCar(t,x-L/2,L,{body:white,roof,stripe:brand,doors:brand,h:0.62});const n=bx(hd,0.5,0.62,0.6,white,L/2+0.12,0.24,0);n.rotation.z=-0.32;
+    bx(hd,0.3,0.26,0.58,GLASS(),L/2+0.2,0.58,0,false).rotation.z=-0.55;bx(hd,0.52,0.1,0.61,brand,L/2+0.12,0.28,0,false).rotation.z=-0.32;for(const z of[-0.18,0.18])sp(hd,0.035,lamp,L/2+0.38,0.36,z);nameOn(hd,0.66);x-=L+G;pax(cf.cars-1,L,{h:0.62});break}
+  case 'talgo':{const lo=railCar(t,x-1.0,2.0,{body:brand,roof,win:false,stripe:white,h:0.66});const n=bx(lo,0.4,0.5,0.6,brand,1.08,0.3,0);n.rotation.z=0.45;bx(lo,0.04,0.22,0.54,GLASS(),1.12,0.7,0,false);nameOn(lo,0.6);x-=2.0+G;
+    for(let i=0;i<cf.cars;i++){railCar(t,x-0.65,1.3,{body:white,roof,stripe:brand,doors:null,h:0.46,y0:0.22});x-=1.3+0.05}break}
+  }
+  t.userData.len=-x;return t}
+const PCFG={an2:{L:1.9,R:0.17,span:2.6,sw:0,wing:'bi',eng:'nose',tail:'n'},yak40:{L:2.4,R:0.19,span:2.8,sw:0.06,wing:'low',eng:'tail3',tail:'T'},
+  an24:{L:2.8,R:0.2,span:3.4,sw:0,wing:'high',eng:'prop2',tail:'n'},tu134:{L:3.4,R:0.2,span:3.2,sw:0.5,wing:'low',eng:'tail2',tail:'T',glass:1},
+  tu154:{L:4.0,R:0.24,span:3.8,sw:0.55,wing:'low',eng:'tail3',tail:'T'},ssj:{L:3.2,R:0.22,span:3.1,sw:0.42,wing:'low',eng:'wing2',tail:'n'},
+  ms21:{L:3.8,R:0.26,span:4.1,sw:0.4,wing:'low',eng:'wing2',tail:'n'},il96:{L:5.4,R:0.36,span:5.6,sw:0.5,wing:'low',eng:'wing4',tail:'n',winglet:1},
+  atr72:{L:2.9,R:0.2,span:3.2,sw:0,wing:'high',eng:'prop2',tail:'T'},e190:{L:3.3,R:0.22,span:3.2,sw:0.42,wing:'low',eng:'wing2',tail:'n'},
+  a320:{L:3.8,R:0.26,span:3.9,sw:0.42,wing:'low',eng:'wing2',tail:'n',winglet:1},b737:{L:3.9,R:0.26,span:3.9,sw:0.42,wing:'low',eng:'wing2',tail:'n',winglet:1},
+  a350:{L:6.0,R:0.4,span:6.4,sw:0.5,wing:'low',eng:'wing2b',tail:'n',winglet:1},b777:{L:6.6,R:0.42,span:6.6,sw:0.5,wing:'low',eng:'wing2b',tail:'n'},
+  b747:{L:6.4,R:0.44,span:6.6,sw:0.56,wing:'low',eng:'wing4',tail:'n',hump:1,winglet:1}};
+function planeModel(type){const cf=PCFG[type]||PCFG.a320,p=new THREE.Group(),c=brandColor(),Lf=cf.L,R=cf.R,cyY=R*1.7+R;
+  const white=mat(0xf1f2f3,{roughness:0.32,metalness:0.2}),grey=mat(0xc3c7cc,{roughness:0.38,metalness:0.45}),col=mat(c,{roughness:0.45}),dark=mat(0x1f262e,GLO),blk=mat(0x2a2d31);
+  const body=Lf*0.7;const f=add(p,new THREE.CylinderGeometry(R,R,body,20),white,0,cyY,Lf*0.05);f.rotation.x=Math.PI/2;
+  const nose=sp(p,R,white,0,cyY,Lf*0.05+body/2);nose.scale.set(1,1,1.8);
+  const ck=sp(p,R*0.98,cf.glass?GLASS():dark,0,cyY+R*0.25,Lf*0.05+body/2+R*0.55);ck.scale.set(0.9,0.42,0.9);if(cf.glass){const g2=sp(p,R*0.7,GLASS(),0,cyY-R*0.15,Lf*0.05+body/2+R*1.1);g2.scale.set(0.8,0.6,0.8)}
+  const tl=add(p,new THREE.ConeGeometry(R,Lf*0.28,20),white,0,cyY+R*0.2,Lf*0.05-body/2-Lf*0.14);tl.rotation.x=-Math.PI/2;tl.scale.set(1,0.8,1);
+  if(cf.hump){const h=sp(p,R*0.8,white,0,cyY+R*0.6,Lf*0.05+body*0.28);h.scale.set(0.9,0.75,2.6)}
+  for(const sd of[1,-1]){bx(p,0.01,R*0.32,body*0.92,col,sd*(R+0.003),cyY-R*0.35,Lf*0.05,false);bx(p,0.01,R*0.16,body*0.8,dark,sd*(R+0.004),cyY+R*0.2,Lf*0.05,false);
+    decal(p,Math.min(1.6,body*0.45),R*0.75,brandTex(c,null),sd*(R+0.006),cyY+R*0.62,Lf*0.05+body*0.12,sd>0?Math.PI/2:-Math.PI/2)}
+  const chord=Lf*0.15,wy=cf.wing==='high'?cyY+R*0.85:cyY-R*0.62;
+  const wing=(y,sp_)=>{for(const sd of[1,-1]){const w=bx(p,sp_/2,0.05,chord,grey,sd*sp_/4,y,-Math.sin(cf.sw)*sp_/4);w.rotation.y=sd*cf.sw;
+    if(cf.winglet){const wl=bx(p,0.04,R*0.8,chord*0.45,col,sd*(sp_/2-0.02),y,-Math.sin(cf.sw)*sp_/2-chord*0.1);wl.rotation.z=-sd*0.2}}};
+  if(cf.wing==='bi'){wing(cyY+R*1.15,cf.span);wing(cyY-R*0.75,cf.span*0.85);for(const sd of[1,-1])bx(p,0.03,R*1.9,0.03,blk,sd*cf.span*0.32,cyY-R*0.75,0,false)}else wing(wy,cf.span);
+  const finH=R*3.2,finZ=Lf*0.05-body/2-Lf*0.17;const fin=bx(p,0.05,finH,Lf*0.16,col,0,cyY+R*0.4,finZ);fin.rotation.x=-0.45;
+  const stY=cf.tail==='T'?cyY+R*0.4+finH*0.92:cyY+R*0.2,stZ=cf.tail==='T'?finZ-Lf*0.06:finZ;
+  for(const sd of[1,-1]){const st=bx(p,cf.span*0.17,0.04,Lf*0.08,grey,sd*cf.span*0.085,stY,stZ);st.rotation.y=sd*0.35}
+  const nac=(x,y,z,r,l)=>{const e=add(p,new THREE.CylinderGeometry(r,r*0.85,l,16),grey,x,y,z);e.rotation.x=Math.PI/2;const i=add(p,new THREE.CylinderGeometry(r*0.8,r*0.8,0.01,16),blk,x,y,z+l/2+0.004,false);i.rotation.x=Math.PI/2;return e};
+  const prop=(x,y,z,r)=>{const g=new THREE.Group();g.position.set(x,y,z);p.add(g);bx(g,r*2,0.05,0.02,blk,0,-0.025,0,false);bx(g,0.05,r*2,0.02,blk,0,-r,0,false);props.push(g)};
+  const ey=wy-R*0.45,re=R*0.45,le=Lf*0.12;
+  if(cf.eng==='wing2'||cf.eng==='wing2b'){const r=cf.eng==='wing2b'?R*0.62:re;for(const sd of[1,-1])nac(sd*cf.span*0.18,ey-(r-re),-Math.sin(cf.sw)*cf.span*0.18+chord*0.35,r,le*1.15)}
+  if(cf.eng==='wing4')for(const sd of[1,-1])for(const k of[0.16,0.31])nac(sd*cf.span*k,ey,-Math.sin(cf.sw)*cf.span*k+chord*0.35,re,le);
+  if(cf.eng==='tail2'||cf.eng==='tail3')for(const sd of[1,-1])nac(sd*R*1.45,cyY+R*0.3,Lf*0.05-body/2+le*0.2,R*0.42,le*1.2);
+  if(cf.eng==='tail3'){nac(0,cyY+R*1.05,Lf*0.05-body/2-le*0.2,R*0.4,le*1.1)}
+  if(cf.eng==='prop2')for(const sd of[1,-1]){nac(sd*cf.span*0.2,wy-R*0.1,chord*0.4,R*0.38,le*1.3);prop(sd*cf.span*0.2,wy-R*0.1,chord*0.4+le*0.7,R*1.2)}
+  if(cf.eng==='nose')prop(0,cyY,Lf*0.05+body/2+R*1.6,R*1.6);
+  for(const z of[Lf*0.05+body*0.38,-Lf*0.02])for(const sd of(z<0?[1,-1]:[0])){cy(p,0.025,0.025,R*1.7,blk,sd*R*0.9,0.06,z,6);const wh=add(p,new THREE.CylinderGeometry(0.07,0.07,0.06,12),blk,sd*R*0.9,0.07,z,false);wh.rotation.z=Math.PI/2}
+  p.userData.L=Lf;return p}
+const RWX=-12.6;
+const ease=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2,eOut=t=>1-(1-t)*(1-t),eIn=t=>t*t;
+function planePos(p,i){const spot=-2.4+i*4;
+  if(p<0.16){const q=p/0.16;return[RWX,9*(1-q)*(1-q)+0.0,70-58*q]}
+  if(p<0.26){const q=eOut((p-0.16)/0.1);return[RWX,0,12-18*q]}
+  if(p<0.33){const q=ease((p-0.26)/0.07);return[RWX+(-9.8-RWX)*q,0,-6+(spot+6)*q]}
+  if(p<0.58)return[-9.8,0,spot];
+  if(p<0.65){const q=ease((p-0.58)/0.07);return[-9.8+(RWX+9.8)*q,0,spot+(-16-spot)*q]}
+  if(p<0.76){const q=eIn((p-0.65)/0.11);return[RWX,0,-16+22*q]}
+  const q=(p-0.76)/0.24;return[RWX,q*q*16,6+66*q]}
+function buildVehicles(){for(const o of trains.concat(planes))world.remove(o);trains=[];planes=[];props=[];
+  const rs=S.routes.filter(r=>r.site===view&&!paused(r));
+  const pick=arr=>{const seen=new Set(),a=[],b=[];for(const r of arr){const t=vehOf(r).type;(seen.has(t)?b:a).push(r);seen.add(t)}return a.concat(b)};
+  const rail=pick(rs.filter(r=>VEH[vehOf(r).type].k==='rail')).slice(0,2),air=pick(rs.filter(r=>VEH[vehOf(r).type].k==='air')).slice(0,3);
+  rail.forEach((r,i)=>{const t=trainModel(vehOf(r).type);t.userData.track=i;t.userData.off=i*0.47;t.position.z=i?7.5:6.3;if(i)t.rotation.y=Math.PI;world.add(t);trains.push(t)});
+  air.forEach((r,i)=>{const p=planeModel(vehOf(r).type);p.userData.i=i;p.userData.off=i/Math.max(1,air.length)+0.08;world.add(p);planes.push(p)})}
+const hasRail=s=>S.kind==='rail',hasAir=s=>S.kind==='air';
+function buildWorld(){
+  while(world.children.length)world.remove(world.children[0]);cranes=[];people=[];for(const k in B)delete B[k];
+  const st=siteStyle(view);
+  const gr=new THREE.Mesh(new THREE.PlaneGeometry(140,140),texMat('grass',36,36));gr.rotation.x=-Math.PI/2;gr.position.y=-0.02;gr.receiveShadow=true;world.add(gr);
+  bx(world,15.4,0.06,15.4,texMat('paving',9,9),0,-0.06,0.4,false);
+  for(const [w,d,x,z] of[[1.2,14,0,0.4],[13,1.2,0,-2.2],[13,1.2,0,1.6]])bx(world,w,0.02,d,texMat('asphalt',Math.max(1,w/2),Math.max(1,d/2)),x,0,z,false);
+  if(hasRail(view)){bx(world,90,0.12,3.2,texMat('ballast',30,1),0,-0.04,6.9,false);
+    const sl=new THREE.InstancedMesh(new THREE.BoxGeometry(0.18,0.06,1.0),mat(0x5a4632),330);const m4=new THREE.Matrix4();let n=0;
+    for(const z of[6.3,7.5])for(let x=-45;x<45&&n<330;x+=0.55){m4.makeTranslation(x,0.1,z);sl.setMatrixAt(n++,m4)}sl.count=n;sl.receiveShadow=true;world.add(sl);
+    for(const z of[6.3,7.5])for(const dz of[-0.32,0.32])bx(world,90,0.07,0.06,STEEL(),0,0.12,z+dz,false);
+    bx(world,13,0.32,1.3,texMat('concrete',6,1),0,0,5.15);bx(world,13,0.02,0.1,0xe2c12a,0,0.32,5.75,false);
+    for(let x=-5.5;x<=5.5;x+=2.2){cy(world,0.05,0.05,1.25,STEEL(),x,0.32,4.85,8)}bx(world,12,0.08,1.0,mat(0x6f757b,MTO),0,1.57,5.0);
+    for(let x=-4.4;x<=4.4;x+=2.2){bx(world,0.7,0.04,0.25,0x7a5a3a,x,0.62,4.8);bx(world,0.04,0.25,0.25,STEEL(),x-0.3,0.32,4.8,false);bx(world,0.04,0.25,0.25,STEEL(),x+0.3,0.32,4.8,false)}}
+  if(hasAir(view)){bx(world,3.0,0.03,46,texMat('asphalt',2,30),RWX,-0.01,0,false);
+    for(let z=-20;z<20;z+=2.4)bx(world,0.1,0.01,1.2,0xf2f2f2,RWX,0.03,z,false);
+    for(const z of[-22,22])for(let i=-5;i<=5;i++)bx(world,0.12,0.01,1.0,0xf2f2f2,RWX+i*0.24,0.03,z+(z>0?-1:1),false);
+    for(let z=-22;z<=22;z+=2)for(const x of[RWX-1.55,RWX+1.55])add(world,new THREE.SphereGeometry(0.05,8,6),mat(0xfff3c4,{emissive:new THREE.Color(0x665a20)}),x,0.05,z,false);
+    bx(world,3.8,0.03,9.4,texMat('concrete',2,5),-9.6,0,1.6,false);bx(world,2.8,0.03,1.4,texMat('asphalt',2,1),-11.2,0,-5.5,false);
+    const ws=new THREE.Group();ws.position.set(RWX+2.4,0,10);world.add(ws);cy(ws,0.02,0.02,1.4,STEEL(),0,0,0,6);const sock=add(ws,new THREE.ConeGeometry(0.1,0.5,10,1,true),mat(0xe07a10),0.25,1.35,0);sock.rotation.z=Math.PI/2}
+  let seed=7+Object.keys(CITIES).indexOf(siteCity(view));const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  for(let i=0;i<48;i++){const a=rnd()*Math.PI*2,r=10+rnd()*16,x=Math.cos(a)*r,z=Math.sin(a)*r+0.4;
+    if(Math.abs(z-6.9)<2.6&&hasRail(view))continue;if(hasAir(view)&&x<-7.5&&x>-15)continue;if(Math.abs(x)<8.2&&Math.abs(z-0.4)<8.2)continue;
+    const t=new THREE.Group();t.position.set(x,0,z);world.add(t);const s=0.9+rnd()*0.7;t.scale.setScalar(s);
+    if(st.tree==='palm')palm(t,0,0,1.5);
+    else if(st.tree==='round'){cy(t,0.07,0.1,0.8,0x5a4330,0,0,0,6);const c=0x3f6a2e+((rnd()*20)|0)*0x000100;sp(t,0.55,c,0,1.15,0);sp(t,0.4,0x4c7a36,0.25,1.4,0.1)}
+    else{cy(t,0.07,0.1,0.5,0x5a4330,0,0,0,6);cn(t,0.62,1.1,0x2e5130,0,0.4,0,9);cn(t,0.48,0.9,0x35603a,0,1.0,0,9);cn(t,0.32,0.7,0x3d6b42,0,1.55,0,9)}}
+  for(const x of[-7.2,7.2])for(let z=-6;z<=6;z+=4){cy(world,0.04,0.05,1.6,0x3a3d41,x,0,z,8);bx(world,0.3,0.06,0.12,0x3a3d41,x,1.6,z,false)}
+  for(const id of siteIds(view)){const g=new THREE.Group();g.position.set(SLOT[id][0],0,SLOT[id][1]);g.userData.bid=id;world.add(g);B[id]={grp:g,top:1};rebuildBuilding(id)}
+  spawnPeople();buildVehicles()}
+function animateBase(now,dt){const t=now/1000,dts=Math.min(0.1,dt/1000);
+  for(const j of cranes)j.rotation.y=Math.sin(t*0.35+j.id)*1.2;
+  for(const id in B){const o=B[id];if(o.bd&&o.model){const p=bProgress(o.bd);o.model.scale.y=o.fresh?0.08+0.92*p:0.7+0.3*p}}
+  for(const p of people){const u=p.userData;if(u.worker){p.rotation.y=Math.sin(t*0.8+u.ph)*1.5;p.position.y=Math.abs(Math.sin(t*4+u.ph))*0.03;continue}
+    const dx=u.to[0]-p.position.x,dz=u.to[1]-p.position.z,dd=Math.hypot(dx,dz);
+    if(dd<0.15){u.to=NODES[Math.floor(Math.random()*NODES.length)];u.wait=Math.random()<0.3?1+Math.random()*3:0;continue}
+    if(u.wait>0){u.wait-=dts;continue}
+    const sp=u.spd*dts;p.position.x+=dx/dd*sp;p.position.z+=dz/dd*sp;p.rotation.y=Math.atan2(dx,dz);p.position.y=Math.abs(Math.sin(t*9+u.ph))*0.025}
+  for(const tr of trains){const T=28,cyc=Math.floor((t/T)+tr.userData.off),ph0=((t/T)+tr.userData.off)%1;if(ph0>0.22&&ph0<0.3&&tr.userData.snd!==cyc){tr.userData.snd=cyc;sfx('horn',0.5);sfx('rumble',0.8)}if(ph0>0.56&&ph0<0.6&&tr.userData.dep!==cyc){tr.userData.dep=cyc;sfx('rumble',0.6)}
+    const ph=ph0,dir=tr.userData.track?-1:1,L=tr.userData.len;let x;
+    if(ph<0.3)x=-48+52*eOut(ph/0.3);else if(ph<0.56)x=4;else if(ph<0.86)x=4+52*eIn((ph-0.56)/0.3);else x=999;
+    tr.visible=x<900;tr.position.x=dir*(x)+(dir<0?0:0);if(dir<0)tr.position.x=-x}
+  for(const pl of planes){const T=44,ph=((t/T)+pl.userData.off)%1,cyc=Math.floor((t/T)+pl.userData.off);if(ph>0.66&&ph<0.7&&pl.userData.snd!==cyc){pl.userData.snd=cyc;sfx('jet',0.8)}if(ph>0.12&&ph<0.15&&pl.userData.lnd!==cyc){pl.userData.lnd=cyc;sfx('jet',0.45)}if(ph>0.97){pl.visible=false;continue}pl.visible=true;
+    const a=planePos(ph,pl.userData.i),b=planePos(Math.min(0.999,ph+0.004),pl.userData.i);pl.position.set(a[0],a[1],a[2]);
+    const dx=b[0]-a[0],dz=b[2]-a[2],dy=b[1]-a[1];if(Math.hypot(dx,dz)>1e-4)pl.rotation.y=Math.atan2(dx,dz);pl.rotation.x=-Math.atan2(dy,Math.hypot(dx,dz)||1)*0.8}
+  for(const pr of props)pr.rotation.z=t*30}
+
+/* base camera + input */
+const cam={r:23,th:0.55,ph:0.95};
+function placeCam(){cam.r=Math.min(40,Math.max(8,cam.r));cam.ph=Math.min(1.32,Math.max(0.42,cam.ph));const s=Math.sin(cam.ph);
+  camera.position.set(-1+cam.r*s*Math.sin(cam.th),cam.r*Math.cos(cam.ph),1.2+cam.r*s*Math.cos(cam.th));camera.lookAt(-1,0.5,1.0)}
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();if(gameMap)gameMap.fit()}
+addEventListener('resize',resize);
+function touchControls(elm,o){const P=new Map();let d=null,multi=false,pinch=0;
+  const pdist=()=>{const a=[...P.values()];return a.length<2?0:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+  elm.addEventListener('pointerdown',e=>{try{elm.setPointerCapture(e.pointerId)}catch(_){}P.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(P.size===1){d={x:e.clientX,y:e.clientY,m:0,target:e.target,t:performance.now()};multi=false}else{multi=true;pinch=pdist()}});
+  elm.addEventListener('pointermove',e=>{const p=P.get(e.pointerId);if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+    if(P.size===1&&d&&!multi){d.m+=Math.abs(dx)+Math.abs(dy);if(d.m>10)o.drag(dx,dy)}
+    else if(P.size===2){const q=pdist();if(pinch>0&&q>0)o.zoom(pinch/q);pinch=q}});
+  const up=e=>{const was=P.size;P.delete(e.pointerId);
+    if(was===1&&d&&!multi&&d.m<=10&&performance.now()-d.t<600){const x=e.clientX,y=e.clientY,tg=d.target;e.preventDefault();setTimeout(()=>o.tap(x,y,tg),30)}
+    if(P.size===0){d=null;multi=false}pinch=pdist()};
+  elm.addEventListener('pointerup',up);elm.addEventListener('pointercancel',e=>{P.delete(e.pointerId);d=null});
+  elm.addEventListener('wheel',e=>{e.preventDefault();o.zoom(1+e.deltaY*0.0015)},{passive:false})}
+const ray=new THREE.Raycaster(),v2=new THREE.Vector2();
+touchControls(canvas,{
+  drag(dx,dy){cam.th-=dx*0.008;cam.ph-=dy*0.006;placeCam()},
+  zoom(f){cam.r*=f;placeCam()},
+  tap(x,y){if(sheetFn)return;const r=canvas.getBoundingClientRect();v2.set((x-r.left)/r.width*2-1,-(y-r.top)/r.height*2+1);ray.setFromCamera(v2,camera);
+    const hit=ray.intersectObjects(Object.values(B).map(o=>o.grp),true)[0];if(!hit)return;let o=hit.object;while(o&&!o.userData.bid)o=o.parent;if(o)openBuilding(o.userData.bid)}});
+
+/* tags over buildings */
+const TAG={};const tagsEl=$('#tags');
+function makeTags(){tagsEl.innerHTML='';for(const k in TAG)delete TAG[k];for(const id of siteIds(view)){const t=document.createElement('div');t.className='tag';
+  t.innerHTML='<div class="bubw"></div><div class="nm"><span class="n"></span><span class="lv"></span></div>';
+  t.addEventListener('click',e=>{if(sheetFn)return;if(e.target.closest('.bub:not(.timer)')){collect(view,id);return}openBuilding(id)});
+  tagsEl.appendChild(t);TAG[id]={el:t,bub:t.querySelector('.bubw'),key:''}}}
+function updateTag(id){const t=TAG[id];if(!t||!S)return;const L=siteB(view)[id].l;t.el.querySelector('.n').textContent=bname(id);
+  const lv=t.el.querySelector('.lv');lv.textContent=L?L:'+';lv.classList.toggle('zero',!L)}
+const pv=new THREE.Vector3();
+function placeTags(){const w=innerWidth,h=innerHeight,b=siteB(view);
+  for(const id of siteIds(view)){const t=TAG[id],o=B[id];if(!t||!o)continue;pv.set(SLOT[id][0],o.top+0.35,SLOT[id][1]).project(camera);
+    if(pv.z>1){t.el.style.display='none';continue}t.el.style.display='';t.el.classList.toggle('compact',cam.r>17&&selBld!==id);
+    t.el.style.transform=`translate(${(pv.x*0.5+0.5)*w}px,${(-pv.y*0.5+0.5)*h}px) translate(-50%,-100%)`;
+    let html='',key='';const bd=bOf(view,id);
+    if(bd){const s=rdur(bd.end-S.h),pc=Math.round(bProgress(bd)*100);key='t'+s+pc;html=`<div class="bub timer">${s}<i class="pbar"><b style="width:${pc}%"></b></i></div>`}
+    else if(id==='kassa'||id==='cargo'){const x=b[id];if(x.l>0&&x.st>=1){const cap=id==='kassa'?KCAP[x.l-1]:CCAP[x.l];const full=x.st>=cap-0.5;const v=fm(x.st);key='c'+v+full;
+      html=`<button class="bub${full?' full':''}" type="button"><span class="coin">₽</span>${v}</button>`}}
+    if(t.key!==key){t.key=key;t.bub.innerHTML=html}}}
+function setView(s){if(s!=='hq'&&!S.hubs[s])s='hq';view=s;makeTags();buildWorld();renderSites()}
+function renderSites(){const el=$('#sites');if(!S||tab!=='hub'||!Object.keys(S.hubs).length){el.hidden=true;return}el.hidden=false;
+  el.innerHTML=sites().map(s=>`<button type="button" class="${s===view?'on':''}" data-s="${s}">${esc(siteName(s))}</button>`).join('')}
+$('#sites').addEventListener('click',e=>{const b=e.target.closest('[data-s]');if(b&&b.dataset.s!==view){closeSheet();setView(b.dataset.s)}});
+
+/* ================= MAP ================= */
+function smoothPath(pts){let d='';const n=pts.length;
+  for(let i=0;i<n;i++){const p0=pts[(i-1+n)%n],p1=pts[i],p2=pts[(i+1)%n],p3=pts[(i+2)%n];
+    if(i===0)d+=`M${p1[0]} ${p1[1]}`;
+    d+=`C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)} ${(p1[1]+(p2[1]-p0[1])/6).toFixed(1)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)} ${(p2[1]-(p3[1]-p1[1])/6).toFixed(1)} ${p2[0]} ${p2[1]}`}
+  return d+'Z'}
+const LAND=[[115,160],[170,95],[205,40],[260,35],[300,72],[360,68],[420,100],[500,80],[600,60],[700,40],[820,55],[930,90],[1000,150],[1008,260],[995,360],[988,432],[942,448],[905,398],[860,388],[780,348],[700,338],[600,322],[530,352],[440,382],[388,428],[350,500],[292,532],[236,528],[206,474],[200,424],[160,398],[110,330],[95,250]];
+const CRIMEA=[[50,470],[88,434],[138,428],[172,446],[164,492],[140,520],[94,516],[54,500]];
+const KGD=[[22,236],[70,230],[74,266],[28,270]];
+const BASE_SVG=`<path d="${smoothPath(LAND)}" fill="var(--land)" stroke="var(--shore)" stroke-width="3" vector-effect="non-scaling-stroke"/>
+<path d="${smoothPath(CRIMEA)}" fill="var(--land)" stroke="var(--shore)" stroke-width="3" vector-effect="non-scaling-stroke"/>
+<path d="${smoothPath(KGD)}" fill="var(--land)" stroke="var(--shore)" stroke-width="3" vector-effect="non-scaling-stroke"/>
+<g fill="none" stroke="var(--river)" stroke-width="2.5" stroke-linecap="round" vector-effect="non-scaling-stroke">
+<path d="M262 240C300 250 330 262 368 272S410 300 400 340S360 390 345 420S368 455 380 440" vector-effect="non-scaling-stroke"/>
+<path d="M735 330C730 280 720 220 700 160S690 90 680 60" vector-effect="non-scaling-stroke"/>
+<path d="M850 360C845 300 830 240 820 170S815 90 800 55" vector-effect="non-scaling-stroke"/>
+<path d="M290 360C280 380 262 392 250 398" vector-effect="non-scaling-stroke"/></g>
+<ellipse cx="905" cy="352" rx="26" ry="7" transform="rotate(-38 905 352)" fill="var(--sea)" stroke="var(--river)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+<g fill="#d6c294" opacity=".8">${[160,190,220,250,280,310].map(y=>`<path d="M${520+(y%60)/6} ${y}l12 -18l12 18z"/>`).join('')}</g>
+<text class="sea-lbl" x="150" y="548">Чёрное море</text><text class="sea-lbl" x="330" y="26">Баренцево море</text><text class="sea-lbl" x="700" y="24">Карское море</text><text class="sea-lbl" x="900" y="500">Японское море</text>`;
+
+function MapView(svg,opt){
+  const W=opt.W||1020,H=opt.H||560,P=opt.pos||(id=>CITIES[id]),vb={x:0,y:0,w:W,h:H};
+  svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+  svg.innerHTML=`<rect x="-4000" y="-4000" width="10000" height="10000" fill="var(--sea)"/>${opt.base||BASE_SVG}<g class="rt"></g><g class="vh"></g><g class="ct"></g>`;
+  const gR=svg.querySelector('.rt'),gV=svg.querySelector('.vh'),gC=svg.querySelector('.ct');
+  const api={gR,gV,gC,vb,P};
+  function rect(){return svg.getBoundingClientRect()}
+  api.upp=()=>{const r=rect();return r.width?vb.w/r.width:1};
+  function apply(){const r=rect();const asp=r.width?r.height/r.width:H/W;
+    vb.w=Math.min(W*1.3,Math.max(140,vb.w));vb.h=vb.w*asp;
+    const mx=Math.max(0,(vb.w-W)/2),my=Math.max(0,(vb.h-H)/2);
+    vb.x=Math.min(W-vb.w+120+mx,Math.max(-120-mx,vb.x));vb.y=Math.min(H-vb.h+100+my,Math.max(-100-my,vb.y));
+    svg.setAttribute('viewBox',`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`);api.rescale()}
+  api.rescale=()=>{const u=api.upp();const gs=[...gC.querySelectorAll('[data-city]')];gs.forEach(g=>{const c=P(g.dataset.city);g.setAttribute('transform',`translate(${c.x} ${c.y}) scale(${u.toFixed(3)})`)});
+    const zoomed=u<0.75,pr=g=>{const k=g.classList;return k.contains('hubm')||k.contains('hubh')?0:k.contains('sel')?1:k.contains('route')?2:k.contains('reach')||k.contains('startc')?3:4};
+    const boxes=gs.map(g=>{const c=P(g.dataset.city);return{x0:c.x-6*u,x1:c.x+6*u,y0:c.y-6*u,y1:c.y+6*u}});
+    gs.slice().sort((a,b)=>pr(a)-pr(b)).forEach(g=>{const t=g.querySelector('text');if(!t)return;const vis=zoomed||g.classList.contains('show');if(!vis){t.classList.remove('hid');return}
+      const c=P(g.dataset.city),w=(CITIES[g.dataset.city].n.length*7.6+4)*u,left=g.classList.contains('left');const b={x0:left?c.x-9*u-w:c.x+8*u,x1:left?c.x-8*u:c.x+9*u+w,y0:c.y-8*u,y1:c.y+8*u};
+      const hit=boxes.some(o=>o.x0<b.x1&&o.x1>b.x0&&o.y0<b.y1&&o.y1>b.y0&&!(Math.abs((o.x0+o.x1)/2-c.x)<0.01&&Math.abs((o.y0+o.y1)/2-c.y)<0.01));
+      t.classList.toggle('hid',hit&&pr(g)>0);if(!hit||pr(g)===0)boxes.push(b)});
+    gV.querySelectorAll('[data-v]').forEach(c=>c.setAttribute('r',(5*u).toFixed(2)));gC.classList.toggle('zoomed',u<0.75)};
+  api.focus=(id,w)=>{const r=rect();const asp=r.width?r.height/r.width:H/W;vb.w=w;vb.h=w*asp;const c=P(id);vb.x=c.x-vb.w/2;vb.y=c.y-vb.h/2;apply()};
+  api.fit=()=>{const cx=vb.x+vb.w/2,cy=vb.y+vb.h/2;const r=rect();const asp=r.width?r.height/r.width:H/W;vb.h=vb.w*asp;vb.x=cx-vb.w/2;vb.y=cy-vb.h/2;apply()};
+  api.cities=(cls)=>{gC.innerHTML=Object.keys(CITIES).map(id=>{const c=cls(id);if(c===null)return'';
+      return `<g data-city="${id}" class="${c}"><circle r="16" fill="transparent"/>${c.includes('hubm')?'<circle r="11" fill="none" stroke="var(--red)" stroke-width="3"/>':c.includes('hubh')?'<circle r="10" fill="none" stroke="var(--blue)" stroke-width="3"/>':''}<circle class="dot" r="${c.includes('hubm')||c.includes('hubh')?7:5}"/><text x="${c.includes('left')?-9:9}" y="4" font-size="12.5" ${c.includes('left')?'text-anchor="end"':''}>${esc(CITIES[id].n)}</text></g>`}).join('');api.rescale()};
+  touchControls(svg,{
+    drag(dx,dy){const u=api.upp();vb.x-=dx*u;vb.y-=dy*u;apply()},
+    zoom(f){const cx=vb.x+vb.w/2,cy=vb.y+vb.h/2;vb.w*=f;const r=rect();vb.h=vb.w*(r.width?r.height/r.width:H/W);vb.x=cx-vb.w/2;vb.y=cy-vb.h/2;apply()},
+    tap(x,y,target){const g=target&&target.closest&&target.closest('[data-city]');if(g)opt.onCity(g.dataset.city)}});
+  setTimeout(apply,0);api.apply=apply;return api}
+/* world map: equirectangular, 4 px per degree */
+const WW=1440,WH=560,wpos=c=>({x:(c.lon+180)*4,y:(82-c.lat)*4});
+const CONT=[
+ [[-168,66],[-140,70],[-110,72],[-80,72],[-62,60],[-55,50],[-66,44],[-75,35],[-81,25],[-97,26],[-97,18],[-87,15],[-79,8],[-83,9],[-92,15],[-105,20],[-112,30],[-118,34],[-124,40],[-124,48],[-133,56],[-150,60],[-165,60]],
+ [[-55,82],[-30,83],[-20,72],[-42,60],[-52,65],[-60,76]],
+ [[-79,8],[-60,10],[-50,0],[-35,-6],[-40,-22],[-48,-28],[-58,-38],[-65,-42],[-68,-52],[-74,-50],[-72,-35],[-71,-18],[-81,-5],[-78,2]],
+ [[-9,43],[-2,47],[-4,48.5],[2,51],[5,53],[8,57],[12,56],[18,60],[22,65],[15,69],[28,71],[40,68],[60,70],[80,73],[100,77],[120,73],[140,72],[160,70],[180,68],[180,65],[170,60],[162,58],[156,51],[142,53],[140,45],[130,42],[127,38],[126,35],[121,31],[122,25],[110,20],[106,10],[104,1],[100,7],[98,16],[92,22],[80,15],[77,8],[72,20],[66,25],[57,25],[56,27],[48,30],[50,26],[56,24],[59,22],[52,12],[43,13],[35,28],[34,31],[36,36],[28,37],[26,40],[23,36],[20,40],[19,42],[13,45],[16,41],[18,40],[12,44],[8,44],[3,43],[0,39],[-6,36],[-9,38]],
+ [[-17,15],[-17,21],[-10,30],[-6,36],[10,37],[11,33],[20,31],[30,31],[33,31],[35,28],[43,12],[51,12],[44,0],[40,-15],[35,-24],[27,-34],[18,-35],[12,-17],[13,-5],[9,4],[-8,5],[-15,11]],
+ [[-6,50],[2,51],[0,54],[-3,58.5],[-6,57],[-5,54]],
+ [[130,31],[136,34],[141,36],[142,41],[145,44],[141,45],[140,40],[135,36],[130,34]],
+ [[114,-22],[122,-18],[131,-12],[137,-12],[142,-11],[146,-19],[153,-26],[150,-37],[141,-38],[131,-31],[115,-34]],
+ [[95,5],[105,-6],[116,-8],[118,1],[109,2],[100,3]],[[44,-25],[50,-15],[48,-13],[43,-22]]];
+const WBASE=CONT.map(p=>`<path d="${smoothPath(p.map(q=>{const w=wpos({lon:q[0],lat:q[1]});return[+w.x.toFixed(1),+w.y.toFixed(1)]}))}" fill="var(--land)" stroke="var(--shore)" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`).join('')+
+  (()=>{const b=wpos({lon:34,lat:43.2}),c=wpos({lon:50.5,lat:41.5});return `<ellipse cx="${b.x}" cy="${b.y}" rx="28" ry="10" fill="var(--sea)"/><ellipse cx="${c.x}" cy="${c.y}" rx="9" ry="22" fill="var(--sea)"/>`})()+
+  `<text class="sea-lbl" x="380" y="300">Атлантический океан</text><text class="sea-lbl" x="1140" y="430">Тихий океан</text><text class="sea-lbl" x="900" y="440">Индийский океан</text>`;
+let gameMap=null,mapDirty=true,mapSel=null,geom={},mapMode='ru';
+const mp=id=>mapMode==='world'?wpos(CITIES[id]):CITIES[id];
+function alongPts(pts,t){let L=0;const seg=[];for(let i=1;i<pts.length;i++){const d=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);seg.push(d);L+=d}
+  let x=t*L;for(let i=1;i<pts.length;i++){if(x<=seg[i-1]||i===pts.length-1){const f=seg[i-1]?Math.min(1,x/seg[i-1]):0;return{x:pts[i-1].x+(pts[i].x-pts[i-1].x)*f,y:pts[i-1].y+(pts[i].y-pts[i-1].y)*f}}x-=seg[i-1]}return pts[0]}
+const LEFT_LBL={sev:1,smf:1,kgd:0,krd:1,vvo:1,khv:1};
+const reachFrom=id=>sites().filter(s=>siteCity(s)!==id&&hav(CITIES[siteCity(s)],CITIES[id])<=siteReach(s));
+function railPts(a,b){const A=mp(a),C=mp(b);if(mapMode==='world')return[A,C];return crosses(a,b)?(CRIMEA_SET[a]?[A,K1,K2,C]:[A,K2,K1,C]):[A,C]}
+function ctrl(a,b){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1;return{x:mx-dy/l*l*0.18,y:my+dx/l*l*0.18-l*0.05}}
+const anyIntl=()=>sites().some(s=>siteB(s).intl.l>0);
+const isBase=id=>id===hubStation()||id===S.city||!!S.hubs[id];
+const onMap=id=>{const c=CITIES[id];if(mapMode==='ru')return !c.w;return c.w||isBase(id)||S.routes.some(r=>r.to===id)||['msk','spb','nsk','vvo','ekb'].includes(id)};
+const shownRoute=r=>mapMode==='ru'?!CITIES[r.to].w:!!CITIES[r.to].w;
+function renderMap(){if(!gameMap||!S)return;mapDirty=false;const hq=hubStation();
+  const routed=new Set(S.routes.map(r=>r.to));
+  gameMap.cities(id=>{if(!onMap(id))return null;const city=CITIES[id];let c=[];if(id===hq||id===S.city)c.push('hubm','show');
+    else if(S.hubs[id])c.push('hubh','show');
+    else{const ok=reachFrom(id).length&&!(city.w&&(!anyIntl()||(S.kind==='rail'&&!city.rail)));c.push(ok?'reach show':(city.w?'dim show':'dim'));if(routed.has(id))c.push('route','show')}
+    if(id===mapSel)c.push('sel','show');if(mapMode==='ru'&&LEFT_LBL[id])c.push('left');return c.join(' ')});
+  let rh='';
+  if(mapMode==='ru'&&S.city==='yalta')rh+=`<line x1="${CITIES.yalta.x}" y1="${CITIES.yalta.y}" x2="${CITIES.smf.x}" y2="${CITIES.smf.y}" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/>`;
+  let vh='';geom={};
+  for(const r of S.routes){if(!shownRoute(r))continue;const from=siteCity(r.site),h=mp(from),c=mp(r.to),k=VEH[vehOf(r).type].k;
+    if(k==='rail'){const pts=railPts(from,r.to);geom[r.id]=pts;const P=pts.map(q=>q.x+','+q.y).join(' ');
+      rh+=`<polyline points="${P}" fill="none" stroke="#5b4636" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/><polyline points="${P}" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>`}
+    else{const q=ctrl(h,c);rh+=`<path d="M${h.x} ${h.y}Q${q.x} ${q.y} ${c.x} ${c.y}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-dasharray="7 5" vector-effect="non-scaling-stroke"/>`}
+    vh+=`<circle data-v="${r.id}" r="5" fill="${brandColor()}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>`}
+  gameMap.gR.innerHTML=rh;gameMap.gV.innerHTML=vh;gameMap.rescale()}
+function animateMap(){if(!gameMap||!S)return;
+  for(const r of S.routes){const el=gameMap.gV.querySelector(`[data-v="${r.id}"]`);if(!el)continue;const v=vehOf(r),e=routeEst(r),h=mp(siteCity(r.site));
+    let t=Math.min(1,r.t/e.time);if(r.dir)t=1-t;const c=mp(r.to);let x,y;
+    if(VEH[v.type].k==='rail'){const q=alongPts(geom[r.id]||[h,c],t);x=q.x;y=q.y}else{const q=ctrl(h,c);x=(1-t)*(1-t)*h.x+2*(1-t)*t*q.x+t*t*c.x;y=(1-t)*(1-t)*h.y+2*(1-t)*t*q.y+t*t*c.y}
+    el.setAttribute('cx',x.toFixed(1));el.setAttribute('cy',y.toFixed(1))}}
+function makeGameMap(){const old=$('#map'),n=old.cloneNode(false);old.replaceWith(n);
+  const o={onCity(id){if(sheetFn)return;mapSel=id;mapDirty=true;openSheet(()=>citySheet(id))}};
+  if(mapMode==='world')Object.assign(o,{W:WW,H:WH,base:WBASE,pos:id=>wpos(CITIES[id])});
+  gameMap=MapView(n,o);mapDirty=true;
+  setTimeout(()=>{gameMap.focus(mapMode==='world'?S.city:hubStation(),mapMode==='world'?760:(S.routes.length?700:440))},0)}
+function renderMapSeg(){const el=$('#mapSeg');if(!S||tab!=='map'){el.hidden=true;return}el.hidden=false;
+  el.innerHTML=`<button type="button" class="${mapMode==='ru'?'on':''}" data-m="ru">Россия</button><button type="button" class="${mapMode==='world'?'on':''}" data-m="world">Мир</button>`}
+$('#mapSeg').addEventListener('click',e=>{const b=e.target.closest('[data-m]');if(!b||b.dataset.m===mapMode)return;closeSheet();mapMode=b.dataset.m;makeGameMap();renderMapSeg()});
+
+/* ================= SHEETS ================= */
+let sheetFn=null,selCls='eco',selFrom='hq',sheetAt=0,sheetStatic=false;
+function openSheet(fn,stat){sheetFn=fn;sheetStatic=!!stat;sheetAt=performance.now();$('#sheet').hidden=false;$('#backdrop').hidden=false;renderSheet();$('#sheet').scrollTop=0}
+function closeSheet(){sheetFn=null;selBld=null;$('#sheet').hidden=true;$('#backdrop').hidden=true;if(mapSel){mapSel=null;mapDirty=true}}
+function renderSheet(){if(!sheetFn)return;const s=$('#sheet'),st=s.scrollTop;$('#sheetBody').innerHTML=sheetFn();s.scrollTop=st}
+function refreshSheet(){if(sheetFn&&!sheetStatic)renderSheet()}
+const tooSoon=()=>performance.now()-sheetAt<450;
+$('#sx').addEventListener('click',closeSheet);$('#backdrop').addEventListener('click',()=>{if(!tooSoon())closeSheet()});
+
+function effText(s,id,L){
+  switch(id){
+    case 'main':return s==='hq'?'Дальность '+fm(reachOf(L))+' км, техника '+TIER_AT[L-1]+'-го поколения':'Дальность '+fm(HREACH[L-1])+' км, техника до '+Math.min(TIER_AT[L-1],TIER_AT[S.b.main.l-1])+'-го поколения';
+    case 'depot':return (L+1)+' мест для техники';
+    case 'kassa':return 'Вместимость '+fm(KCAP[L-1])+' ₽';
+    case 'cargo':return fm(L*45*cargoMul())+' ₽ в час за каждый самолёт этой базы, втрое больше за поезд, склад '+fm(CCAP[L]);
+    case 'hotel':return '+'+(0.6*L*hotelMul(s)).toFixed(1).replace('.',',')+' ₽ с пассажира, спрос +'+(L*5)+'%';
+    case 'local':{let e=localDef(s).eff;if(e==='transfer'&&s!=='hq')e='ticket';
+      if(e==='transfer')return L===1?'Штраф −20% снят':'Штраф снят, выручка +'+(5*(L-1))+'%';
+      return {ticket:'Выручка +'+(10*L)+'%',cargo:'Грузы +'+(15*L)+'%',hotel:'Гостиница и кафе +'+(8*L)+'%',demand:'Спрос +'+(10*L)+'%',fuel:'Топливо −'+(7*L)+'%'}[e]}
+    case 'intl':return 'Международные рейсы из этой базы, выручка за рубежом +'+(30+10*(L-1))+'%';}}
+function bdesc(s,id){return {main:s==='hq'?'Главное здание штаба. Открывает дальность, новую технику, хабы и уровни остальных зданий.':'Главное здание хаба. Задаёт дальность маршрутов из этого города. Не выше уровня главного здания штаба.',
+  depot:'Здесь стоит техника. Каждый уровень даёт ещё одно место, места всех баз суммируются.',
+  kassa:'Сюда поступает выручка с рейсов этой базы. Собирайте её, пока касса не переполнилась: лишнее сгорает. Улучшение увеличивает вместимость.',
+  cargo:'Возит грузы вместе с рейсами этой базы. Поезд даёт втрое больше грузов, чем самолёт.',
+  hotel:'Доход с каждого пассажира этой базы и больше спрос на её рейсы.',
+  local:localDef(s).d+'. Здание есть только в этом городе.',
+  intl:s==='hq'?'Выход в мир: открывает международные рейсы из штаба и зарубежную технику. Строится с 6 уровня главного здания.':'Открывает международные рейсы из этого хаба. Не выше уровня терминала штаба.'}[id]}
+let selBld=null;
+function openBuilding(id){selBld=id;openSheet(()=>bSheet(id))}
+function bSheet(id){const s=view,b=siteB(s)[id],L=b.l;
+  let h=`<div class="sh-h"><h2>${esc(bname(id))}</h2><span class="pill${L?'':' grey'}">${L?'Уровень '+L:'Не построено'}</span></div><p class="sub">${esc(siteName(s))}${s==='hq'?' · '+esc(CITIES[S.city].n):''}. ${esc(bdesc(s,id))}</p>`;
+  const rows=[];if(L)rows.push(['Сейчас',effText(s,id,L)]);
+  if(id==='main'){rows.push(['Маршрутов отсюда',S.routes.filter(r=>r.site===s).length]);if(s==='hq')rows.push(['Хабов',Object.keys(S.hubs).length+' из '+Math.max(0,S.b.main.l-2)])}
+  if(id==='kassa')rows.push(['В кассе',fm(b.st)+' из '+fm(KCAP[L-1])]);
+  if(id==='cargo'&&L)rows.push(['На складе',fm(b.st)+' из '+fm(CCAP[L])]);
+  if(rows.length)h+='<div class="rows">'+rows.map(r=>`<div class="row"><span>${r[0]}</span><b>${esc(r[1])}</b></div>`).join('')+'</div>';
+  if((id==='kassa'||id==='cargo')&&L)h+=`<button class="btn gold w" data-a="collect" data-v="${id}" ${b.st<1?'disabled':''}>Собрать ${fm(b.st)} ₽</button>`;
+  if(id==='depot')h+=depotHTML();
+  h+='<div class="sec">'+(L?'Улучшение':'Постройка')+'</div>';
+  if(bOf(s,id))h+=`<div class="note">Идёт стройка до уровня ${bOf(s,id).to}. Осталось ${rdur(bOf(s,id).end-S.h)}.</div>`+(S.test?`<button class="btn ghost w" data-a="finish" data-s="${s}" data-v="${id}">Закончить сейчас (тест)</button>`:'');
+  else if(L>=maxL(s,id))h+='<div class="note">Максимальный уровень.</div>';
+  else{const to=L+1,c=bcost(s,id,to),why=upgradeBlock(s,id);
+    h+=`<div class="rows"><div class="row"><span>Уровень ${to}</span><b>${esc(effText(s,id,to))}</b></div><div class="row"><span>Стоимость</span><b>${fm(c)} ₽</b></div><div class="row"><span>Время</span><b>${rdur(BTIME[to-1])}</b></div></div>`;
+    if(why)h+=`<div class="note warn">${esc(why)}</div>`;
+    else h+=`<button class="btn w" data-a="up" data-v="${id}" ${S.money<c?'disabled':''}>${S.money<c?'Не хватает '+fm(c-S.money)+' ₽':(L?'Улучшить за ':'Построить за ')+fm(c)+' ₽'}</button>`}
+  return h}
+function vline(type){const v=VEH[type];return v.seats+' мест · '+v.v+' км/ч · '+(v.max>50000?'любая дальность':'до '+fm(v.max)+' км')}
+function depotHTML(){let h=`<div class="sec">Техника всех баз · ${S.veh.length} из ${slots()} мест</div><div class="opts">`;
+  for(const v of S.veh){const r=v.route&&S.routes.find(x=>x.id===v.route);
+    h+=`<div class="opt"><div class="t"><b>${esc(VEH[v.type].n)}${v.used?' · б/у':''}</b><small>${r?'В рейсе: '+esc(CITIES[siteCity(r.site)].n)+' — '+esc(CITIES[r.to].n):'Свободна. Запустите её на карте'} · ${vline(v.type)}</small></div>${r?'':`<button class="btn ghost sm" data-a="sell" data-v="${v.id}">Продать</button>`}</div>`}
+  const full=S.veh.length>=slots(),k=S.kind,ta=tierAvail(k);
+  const row=(t,v,used)=>{const lock=v.tier>ta,fl=v.foreign&&S.b.intl.l<1,price=used?usedPrice(t):v.price;
+    return `<div class="opt${lock||fl?' locked':''}"><div class="t"><b>${esc(v.n)}${used?' · б/у':''}</b><small>${vline(t)}${used?' · топливо +30%, скорость −5%':''}${lock?' · нужно '+v.tier+'-е поколение':fl?' · нужен международный терминал в штабе':''}</small></div>${lock||fl?'':`<button class="btn gold sm" data-a="buy" data-v="${used?'u:':''}${t}" ${S.money<price||full?'disabled':''}>${fm(price)} ₽</button>`}</div>`};
+  h+='</div><div class="sec">Новая техника</div><div class="opts">';
+  for(const [t,v] of Object.entries(VEH)){if(v.k!==k||v.tier>ta+1)continue;h+=row(t,v,false)}
+  h+='</div><div class="sec">Вторичный рынок</div><p class="sub">Подержанная техника дешевле почти вдвое, но тратит больше топлива и чуть медленнее.</p><div class="opts">';
+  for(const [t,v] of Object.entries(VEH)){if(v.k!==k||v.tier>ta||(v.foreign&&S.b.intl.l<1))continue;h+=row(t,v,true)}
+  return h+'</div>'}
+function clsSeg(cur,act,rid){return '<div class="seg">'+Object.entries(CLS).map(([k,c])=>`<button class="${k===cur?'on':''}" data-a="${act}" data-v="${k}" ${rid?`data-r="${rid}"`:''}>${c.n}</button>`).join('')+'</div>'}
+function money(n){return `<span class="${n>=0?'pos':'ng'}">${n>=0?'+':'−'}${fm(Math.abs(n))} ₽</span>`}
+function routeCard(r){const v=vehOf(r),e=routeEst(r),pz=paused(r);
+  return `<div class="opt" style="flex-direction:column;align-items:stretch"><div class="t"><b>${esc(CITIES[siteCity(r.site)].n)} — ${esc(CITIES[r.to].n)}</b><small>${esc(VEH[v.type].n)} · ${e.pax} из ${VEH[v.type].seats} мест · рейс ${ghr(e.time)} ч · за рейс ${money(e.net)} · в час ${money(e.perH)}</small>
+    <div class="bar2"><i style="width:${Math.round(Math.min(1,r.t/e.time)*100)}%"></i></div></div>${clsSeg(r.cls,'rcls',r.id)}<button class="btn red sm" data-a="close" data-v="${r.id}">Закрыть маршрут</button></div>`}
+function citySheet(id){const c=CITIES[id],isHQ=id===hubStation()||id===S.city,isHub=!!S.hubs[id];
+  let h=`<div class="sh-h"><h2>${esc(c.n)}</h2>${isHQ?'<span class="pill">Штаб</span>':isHub?'<span class="pill">Хаб</span>':c.w?'<span class="pill grey">За рубежом</span>':''}</div>`;
+  if(isHQ){const n=S.routes.filter(r=>r.site==='hq').length;
+    return h+(S.city==='yalta'?`<p class="sub">Штаб стоит в Ялте, а ${S.kind==='rail'?'вокзал':'аэропорт'} работает в Симферополе. Маршруты штаба начинаются оттуда.</p>`:`<p class="sub">Здесь ваш штаб. Чтобы запустить рейс, коснитесь другого города.</p>`)+
+      `<div class="rows"><div class="row"><span>Маршрутов из штаба</span><b>${n}</b></div><div class="row"><span>Дальность</span><b>${fm(siteReach('hq'))} км</b></div></div><button class="btn w" data-a="site" data-v="hq">Открыть штаб</button>`}
+  if(isHub)h+=`<div class="rows"><div class="row"><span>Маршрутов из хаба</span><b>${S.routes.filter(r=>r.site===id).length}</b></div><div class="row"><span>Дальность хаба</span><b>${fm(siteReach(id))} км</b></div></div><button class="btn ghost w" data-a="site" data-v="${id}">Открыть хаб</button>`;
+  const inbound=S.routes.filter(r=>r.to===id);
+  if(inbound.length)h+='<div class="sec">Рейсы сюда</div><div class="opts">'+inbound.map(routeCard).join('')+'</div>';
+  if(isHub)return h+`<p class="sub">Чтобы запустить рейс из этого хаба, коснитесь на карте города назначения.</p>`;
+  if(c.w&&S.kind==='rail'&&!c.rail)return h+`<div class="note warn"><b>Сюда не доехать поездом.</b> Между Россией и этим городом нет сухопутного пути. Сюда летают только самолёты.</div>`;
+  if(c.w&&!anyIntl())return h+`<div class="note warn"><b>Нужен выход в мир.</b> Постройте международный терминал в штабе: он открывается на ${esc(bname('main').toLowerCase())}е 6 уровня.</div>`;
+  const from=reachFrom(id).filter(s=>!c.w||siteB(s).intl.l>0);
+  if(!from.length){const pool=c.w?sites().filter(s=>siteB(s).intl.l>0):sites();let best=null;for(const s of pool){const d=hav(CITIES[siteCity(s)],c);if(!best||d-siteReach(s)<best.gap)best={s,d,gap:d-siteReach(s)}}
+    h+=`<div class="note warn"><b>Слишком далеко.</b> Ближайшая ${c.w?'база с международным терминалом':'база'} — ${esc(siteName(best.s))}: до неё ${fm(best.d)} км, а её дальность ${fm(siteReach(best.s))} км. Улучшите главное здание или откройте хаб ближе.</div>`;
+    return h+(c.w?'':hubSection(id))}
+  if(!from.includes(selFrom))selFrom=from.includes('hq')?'hq':from[0];
+  h+=`<div class="sec">Новый маршрут</div>`;
+  if(from.length>1)h+='<div class="seg">'+from.map(s=>`<button class="${s===selFrom?'on':''}" data-a="sfrom" data-v="${s}">Из: ${esc(s==='hq'?'штаба':CITIES[s].n)}</button>`).join('')+'</div>';
+  h+=`<p class="sub">Откуда: ${esc(siteName(selFrom))} (${esc(CITIES[siteCity(selFrom)].n)}). ${S.kind==='rail'?'По железной дороге':'По воздуху'} ≈ ${fm(dist(siteCity(selFrom),id,S.kind))} км.${c.w?' Международный рейс: билеты дороже.':''}</p>`;
+  if(S.routes.some(r=>r.site===selFrom&&r.to===id))return h+`<div class="note">Из этой базы сюда уже идёт ваш рейс.</div>`+(c.w?'':hubSection(id));
+  h+=`${clsSeg(selCls,'scls')}<div class="opts">`;
+  let any=false;const reasons=[];
+  for(const v of S.veh){if(v.route)continue;const why=canServe(v.type,selFrom,id);if(why){reasons.push(VEH[v.type].n+' (ваша): '+why);continue}
+    const e=est(v.type,selFrom,id,selCls,v.used);any=true;
+    h+=`<div class="opt"><div class="t"><b>${esc(VEH[v.type].n)}${v.used?' · б/у':''}</b><small>Ваша · ${e.pax} из ${VEH[v.type].seats} мест · рейс ${ghr(e.time)} ч · в час ${money(e.perH)}</small></div><button class="btn sm" data-a="go" data-v="v:${v.id}" data-c="${id}">Запустить</button></div>`}
+  const full=S.veh.length>=slots();
+  for(const [t,v] of Object.entries(VEH)){if(v.k!==S.kind)continue;const why=canServe(t,selFrom,id);if(why){if(v.tier<=tierAvail(v.k,selFrom)&&!(v.foreign&&S.b.intl.l<1))reasons.push(v.n+': '+why);continue}
+    const e=est(t,selFrom,id,selCls);any=true;
+    h+=`<div class="opt"><div class="t"><b>${esc(v.n)}</b><small>Купить за ${fm(v.price)} ₽ · ${e.pax} из ${v.seats} мест · рейс ${ghr(e.time)} ч · в час ${money(e.perH)}</small></div><button class="btn gold sm" data-a="go" data-v="t:${t}" data-c="${id}" ${full||S.money<v.price?'disabled':''}>${full?'Нет мест':'Купить'}</button></div>`}
+  h+='</div>';
+  if(!any)h+=`<div class="note warn"><b>Подходящей техники пока нет.</b><br>${reasons.slice(0,3).map(esc).join('<br>')}</div>`;
+  else if(full)h+=`<div class="note">Все места для техники заняты. Улучшите ${S.kind==='rail'?'депо':'ангар'} в штабе или хабе.</div>`;
+  h+=`<p class="sub">Подержанную технику дешевле можно купить на вторичном рынке в ${S.kind==='rail'?'депо':'ангаре'}.</p>`;
+  return h+(c.w?'':hubSection(id))}
+function hubSection(id){if(S.hubs[id]||id===S.city||id===hubStation())return '';const why=hubBlock(id),c=HUB_COST(Object.keys(S.hubs).length);
+  let h=`<div class="sec">Хаб в этом городе</div><p class="sub">Хаб — ещё одна база: свой ${esc(bname('main').toLowerCase())}, касса, ${esc(bname('depot').toLowerCase())} и гостиница. Из хаба можно запускать маршруты дальше.</p>`;
+  if(why)return h+`<div class="note warn">${esc(why)}</div>`;
+  return h+`<button class="btn gold w" data-a="hub" data-v="${id}" ${S.money<c?'disabled':''}>${S.money<c?'Не хватает '+fm(c-S.money)+' ₽ (хаб стоит '+fm(c)+' ₽)':'Открыть хаб за '+fm(c)+' ₽'}</button>`}
+function routesSheet(){if(!S.routes.length)return `<div class="sh-h"><h2>Маршруты</h2></div><p class="sub">Пока нет ни одного рейса. Откройте карту и коснитесь города с жёлтой точкой.</p><button class="btn w" data-a="tab" data-v="map">Открыть карту</button>`;
+  const list=S.routes.map(r=>({r,v:vehOf(r),e:routeEst(r)})).sort((a,b)=>b.e.perH-a.e.perH);
+  const tot=list.reduce((s,o)=>s+(paused(o.r)?0:o.e.perH),0)+cargoRate();
+  let h=`<div class="sh-h"><h2>Маршруты</h2><span class="pill">${list.length}</span></div><div class="rows"><div class="row"><span>Доход в игровой час</span><b>${money(tot)}</b></div><div class="row"><span>Рейсов выполнено</span><b>${fm(S.legs)}</b></div></div><div class="opts">`;
+  for(const o of list)h+=`<button class="opt" style="text-align:left" data-a="city" data-v="${o.r.to}"><div class="t"><b>${esc(CITIES[siteCity(o.r.site)].n)} — ${esc(CITIES[o.r.to].n)}</b><small>${esc(VEH[o.v.type].n)} · ${CLS[o.r.cls].n} · загрузка ${Math.round(o.e.load*100)}% · в час ${money(o.e.perH)}</small><div class="bar2"><i style="width:${Math.round(Math.min(1,o.r.t/o.e.time)*100)}%"></i></div></div></button>`;
+  return h+'</div>'}
+function buildersSheet(){const n=S.builders,cost=BUILDER_COST[n];
+  let h=`<div class="sh-h"><h2>Строители</h2><span class="pill">${freeBuilders()} из ${n} свободны</span></div><p class="sub">Каждый строитель ведёт одну стройку в штабе или любом хабе.</p><div class="opts">`;
+  for(const b of S.builds)h+=`<button class="opt" style="text-align:left" data-a="bld" data-v="${b.id}" data-s="${b.site}"><div class="t"><b>${esc(siteName(b.site))}: ${esc(bname(b.id,b.site))} → уровень ${b.to}</b><small>Осталось ${rdur(b.end-S.h)}</small></div>${S.test?`<span class="btn ghost sm" data-a="finish" data-s="${b.site}" data-v="${b.id}">Закончить</span>`:''}</button>`;
+  for(let i=0;i<freeBuilders();i++)h+=`<div class="opt"><div class="t"><b>Свободен</b><small>Коснитесь здания в штабе или хабе, чтобы начать улучшение</small></div></div>`;
+  h+='</div>';
+  if(n>=BUILDER_COST.length)h+='<div class="note">У вас максимум строителей: '+n+'.</div>';
+  else h+=`<div class="sec">Нанять ещё одного</div><div class="rows"><div class="row"><span>Строитель №${n+1}</span><b>${fm(cost)} ₽</b></div></div><button class="btn gold w" data-a="hire" ${S.money<cost?'disabled':''}>${S.money<cost?'Не хватает '+fm(cost-S.money)+' ₽':'Нанять за '+fm(cost)+' ₽'}</button>`;
+  return h}
+function hire(){const c=BUILDER_COST[S.builders];if(c==null)return;if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}S.money-=c;S.builders++;toast('Нанят строитель №'+S.builders);sfx('coin');hud();refreshSheet();save()}
+function valSheet(){const p=valuation(),next=GOALS.find(g=>g>p.total)||GOALS.at(-1),pct=Math.max(0,Math.min(100,(Math.log10(Math.max(p.total,1e4))-4)/10*100));
+  return `<div class="sh-h"><h2>Оценка компании</h2><span class="pill">${fm(p.total)} ₽</span></div><p class="sub">Цель игры: компания стоимостью 100 трлн ₽. Следующий рубеж: ${fm(next)} ₽.</p>
+  <div class="goalbar"><i style="width:${pct.toFixed(1)}%"></i></div>
+  <div class="rows"><div class="row"><span>Деньги, кассы и склад</span><b>${fm(p.cash)} ₽</b></div><div class="row"><span>Здания штаба и хабов</span><b>${fm(p.bld)} ₽</b></div><div class="row"><span>Техника</span><b>${fm(p.veh)} ₽</b></div><div class="row"><span>Доходные маршруты</span><b>${fm(p.rt)} ₽</b></div></div>
+  <p class="sub">Здания и хабы считаются по 70% вложений, техника по 60% цены, маршрут стоит его доход за 5 игровых дней.</p>`}
+function menuSheet(){return `<div class="sh-h"><h2>Магистраль</h2><span class="pill">${esc(CITIES[S.city].n)}</span></div>
+  <div class="rows"><div class="row"><span>Транспорт</span><b>${S.kind==='rail'?'Железная дорога':'Авиация'}</b></div><div class="row"><span>Время</span><b>${S.mode==='fast'?'Быстрое':'Реальное'}</b></div><div class="row"><span>Сложность</span><b class="stars">${stars(diffOf(S.city,S.kind,S.mode))}</b></div></div>
+  <div class="rows"><div class="row"><span>Компания</span><b>${esc(brandName())}</b></div></div><button class="btn ghost w" data-a="brand">Название и цвет компании</button>
+  <div class="seg"><button class="${AU.pref.music?'on':''}" data-a="mus">Музыка: ${AU.pref.music?'вкл':'выкл'}</button><button class="${AU.pref.sfx?'on':''}" data-a="snd">Звуки: ${AU.pref.sfx?'вкл':'выкл'}</button></div>
+  <button class="btn ghost w" data-a="test">Режим теста: ${S.test?'включён':'выключен'}</button>
+  <div class="sec">Как играть</div>
+  <div class="note">1. На карте коснитесь города с жёлтой точкой и запустите рейс.<br>2. Выручка копится в кассе базы. Собирайте её касанием по монете.<br>3. Улучшайте здания штаба: главное здание открывает дальность, технику и хабы.<br>4. Хаб открывается в городе, куда уже идёт ваш рейс.<br>5. С 6 уровня главного здания стройте международный терминал и выходите в мир: карта «Мир» на вкладке «Карта».<br>6. Цель: оценка компании 100 трлн ₽.</div>
+  <button class="btn ghost w" data-a="switch">Сменить игру</button>
+  <button class="btn red w" data-a="reset">${resetArm&&Date.now()-resetArm<3000?'Точно начать заново? Нажмите ещё раз':'Новая игра'}</button>`}
+let resetArm=0;const brandDraft={color:COLORS[0]};
+function updPrev(){const p=$('#brandPrev');if(!p)return;const n=($('#brandIn').value||'').trim()||'AlimTransport';p.querySelector('span').textContent=n;p.querySelector('span').style.color=brandDraft.color;p.querySelector('i').style.background=brandDraft.color}
+function brandSheet(){brandDraft.color=brandColor();return `<div class="sh-h"><h2>Ваша компания</h2></div><p class="sub">Название и фирменный цвет появятся на поездах, самолётах и вокзалах.</p>
+  <input class="inp" id="brandIn" maxlength="24" value="${esc(brandName())}" placeholder="AlimTransport" autocomplete="off">
+  <div class="sw">${COLORS.map(c=>`<button type="button" class="${c===brandDraft.color?'on':''}" data-a="ccol" data-v="${c}" style="background:${c}" aria-label="Цвет"></button>`).join('')}</div>
+  <div class="prev" id="brandPrev"><div class="bodyc"><span style="color:${brandDraft.color}">${esc(brandName())}</span><i style="background:${brandDraft.color}"></i></div></div>
+  <button class="btn w" data-a="csave">Сохранить</button>`}
+$('#sheetBody').addEventListener('input',e=>{if(e.target.id==='brandIn')updPrev()});
+$('#sheetBody').addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t||t.disabled)return;if(tooSoon()){e.preventDefault();return}const a=t.dataset.a,v=t.dataset.v;if(!['up','collect','hire','go','hub'].includes(a))sfx('tap');
+  switch(a){
+    case 'up':doUpgrade(view,v);break;
+    case 'hire':hire();break;
+    case 'finish':{e.stopPropagation();const bd=bOf(t.dataset.s,v);if(bd){bd.end=S.h;bd.start=Math.min(bd.start??S.h,S.h)}break}
+    case 'test':S.test=!S.test;refreshSheet();save();break;
+    case 'mus':setAudio('music',!AU.pref.music);refreshSheet();break;
+    case 'snd':setAudio('sfx',!AU.pref.sfx);refreshSheet();break;
+    case 'switch':save();closeSheet();setup.kind=S.kind;S=null;showStart();break;
+    case 'brand':openSheet(brandSheet,true);break;
+    case 'ccol':document.querySelectorAll('#sheetBody [data-a=ccol]').forEach(b=>b.classList.toggle('on',b===t));brandDraft.color=v;updPrev();break;
+    case 'csave':{const n=($('#brandIn').value||'').trim()||'AlimTransport';S.company={name:n,color:brandDraft.color};save();closeSheet();makeTags();buildWorld();toast('Компания '+n+' готова');break}
+    case 'bld':closeSheet();if(tab!=='hub')setTab('hub');if(t.dataset.s!==view)setView(t.dataset.s);openBuilding(v);break;
+    case 'collect':collect(view,v);break;
+    case 'buy':if(buy(v)){toast(VEH[v.replace('u:','')].n+(v.startsWith('u:')?' (б/у)':'')+' куплен');refreshSheet()}break;
+    case 'sell':sell(+v);break;
+    case 'go':launch(selFrom,t.dataset.c,v,selCls);break;
+    case 'scls':selCls=v;refreshSheet();break;
+    case 'sfrom':selFrom=v;refreshSheet();break;
+    case 'rcls':setCls(+t.dataset.r,v);break;
+    case 'close':closeRoute(+v);break;
+    case 'hub':openHub(v);break;
+    case 'site':closeSheet();setTab('hub');setView(v);break;
+    case 'city':mapSel=v;openSheet(()=>citySheet(v));break;
+    case 'tab':closeSheet();setTab(v);break;
+    case 'reset':if(resetArm&&Date.now()-resetArm<3000){resetArm=0;closeSheet();try{localStorage.removeItem(keyFor(S.kind))}catch(_){}setup.kind=S.kind;S=null;showStart()}else{resetArm=Date.now();refreshSheet()}break;
+  }});
+
+/* ================= HUD & TABS ================= */
+function hud(){if(!S)return;$('#vMoney').textContent=fm(S.money);$('#cMoney').classList.toggle('neg',S.money<0);const V=valuation().total;$('#vVal').textContent=fm(V);checkGoal(V);
+  const day=Math.floor(S.h/24)+1,hr=Math.floor(S.h%24);$('#vTime').textContent='День '+day+' · '+String(hr).padStart(2,'0')+':00';
+  const fb=freeBuilders();$('#vBuild').textContent=S.builders>1?'Строители '+fb+'/'+S.builders:(S.builds.length?bname(S.builds[0].id,S.builds[0].site)+' · '+rdur(S.builds[0].end-S.h):'Свободен');$('#hm').classList.toggle('on',fb<=0)}
+$('#cVal').addEventListener('click',()=>openSheet(valSheet));
+$('#winOk').addEventListener('click',()=>{$('#win').hidden=true});
+$('#cBuild').addEventListener('click',()=>openSheet(buildersSheet));
+$('#bMenu').addEventListener('click',()=>openSheet(menuSheet));
+let tab='hub';
+function setTab(t){if(t==='routes'){openSheet(routesSheet);return}
+  tab=t;document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  canvas.hidden=t!=='hub';tagsEl.hidden=t!=='hub';$('#map').toggleAttribute('hidden',t!=='map');renderSites();renderMapSeg();
+  if(t==='map'){if(!gameMap)makeGameMap();else gameMap.fit();mapDirty=true}
+  if(t==='hub')resize()}
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{sfx('tap');closeSheet();setTab(b.dataset.tab)}));
+
+/* ================= START SCREEN ================= */
+const setup={city:'krd',kind:'rail',mode:'fast',name:'',color:'#c8102e'};
+let startMap=null;
+function showStart(){['#bar','#nav'].forEach(s=>$(s).hidden=true);canvas.hidden=true;tagsEl.hidden=true;$('#map').setAttribute('hidden','');closeSheet();$('#start').hidden=false;
+  $('#compCols').innerHTML=COLORS.map(c=>`<button type="button" data-col="${c}" style="background:${c}" aria-label="Цвет ${c}"></button>`).join('');
+  $('#cityChips').innerHTML=START_ORDER.map(id=>`<button type="button" data-c="${id}">${CITIES[id].n}</button>`).join('');
+  const sv=k=>{const x=load(k);return x?`<small><b>Есть игра:</b> ${esc((x.company&&x.company.name)||'AlimTransport')}, ${esc(CITIES[x.city].n)}, день ${Math.floor(x.h/24)+1}</small>`:''};
+  $('#kindPick').innerHTML=`<button type="button" data-k="rail"><b>Железная дорога</b><small>Вокзалы, поезда и грузы. Дешёвый старт и стабильный доход. Первая техника: электричка ЭР2.</small>${sv('rail')}</button><button type="button" data-k="air"><b>Авиация</b><small>Аэропорты и самолёты. Дорогой старт, быстрые рейсы, большая прибыль. Первый самолёт: Ан-2. Сложность +1.</small>${sv('air')}</button>`;
+  $('#modePick').innerHTML=`<button type="button" data-m="fast"><b>Быстрое</b><small>Стройка за секунды и минуты. Игра идёт, только пока вы играете.</small></button><button type="button" data-m="real"><b>Реальное</b><small>Как в Clash of Clans: стройка минуты и часы, рейсы зарабатывают без вас. Сложность +1.</small></button>`;
+  if(!startMap)startMap=MapView($('#smap'),{onCity(id){if(START[id]){setup.city=id;drawStart()}}});
+  drawStart();setTimeout(()=>startMap.focus(setup.city,520),30)}
+function drawStart(){const s=START[setup.city];
+  document.querySelectorAll('#compCols button').forEach(b=>b.classList.toggle('on',b.dataset.col===setup.color));
+  document.querySelectorAll('#cityChips button').forEach(b=>b.classList.toggle('on',b.dataset.c===setup.city));
+  document.querySelectorAll('#kindPick button').forEach(b=>b.classList.toggle('on',b.dataset.k===setup.kind));
+  document.querySelectorAll('#modePick button').forEach(b=>b.classList.toggle('on',b.dataset.m===setup.mode));
+  $('#cityCard').innerHTML=`<h4>${esc(CITIES[setup.city].n)}<span class="stars">${stars(s.diff)}</span></h4><p class="k">Стиль</p><p>${esc(s.look)}</p><p class="k">Бонус</p><p>${esc(s.bonus)}</p><p class="k">Минус</p><p>${esc(s.minus)}</p><p class="k">Особое здание</p><p>${esc(s.local.n)}: ${esc(s.local.d.toLowerCase())}</p>`;
+  $('#diffStars').textContent=stars(diffOf(setup.city,setup.kind,setup.mode));
+  const ex=load(setup.kind);$('#contBox').innerHTML=ex?`<div class="go"><div class="d"><span>${esc((ex.company&&ex.company.name)||'AlimTransport')} · ${esc(CITIES[ex.city].n)}</span><span>день ${Math.floor(ex.h/24)+1}</span></div><button class="btn big w" id="contBtn" type="button">Продолжить игру</button><button class="btn ghost w" id="freshBtn" type="button">${freshArm&&Date.now()-freshArm<3000?'Старая игра удалится. Нажмите ещё раз':'Начать заново'}</button></div>`:'';
+  $('#newBox').style.display=ex&&!freshOpen?'none':'flex'
+  startMap.cities(id=>START[id]?('startc'+(id===setup.city?' sel show':'')+(LEFT_LBL[id]?' left':'')):(id==='smf'&&setup.city==='yalta'?'show':null))}
+$('#cityChips').addEventListener('click',e=>{const b=e.target.closest('[data-c]');if(!b)return;setup.city=b.dataset.c;drawStart();startMap.focus(setup.city,520)});
+$('#kindPick').addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(b){setup.kind=b.dataset.k;drawStart()}});
+$('#modePick').addEventListener('click',e=>{const b=e.target.closest('[data-m]');if(b){setup.mode=b.dataset.m;drawStart()}});
+$('#compCols').addEventListener('click',e=>{const b=e.target.closest('[data-col]');if(b){setup.color=b.dataset.col;drawStart()}});
+let freshArm=0,freshOpen=false;
+$('#contBox').addEventListener('click',e=>{if(e.target.id==='contBtn'){const x=load(setup.kind);if(!x)return;S=x;freshOpen=false;if(S.mode==='real'){const gap=Date.now()-(S.last||Date.now());enterGame(false);if(gap>2000)catchUp(gap)}else enterGame(false)}
+  if(e.target.id==='freshBtn'){if(freshArm&&Date.now()-freshArm<3000){freshArm=0;freshOpen=true;try{localStorage.removeItem(keyFor(setup.kind))}catch(_){}drawStart()}else{freshArm=Date.now();drawStart()}}});
+$('#startBtn').addEventListener('click',()=>{setup.name=($('#compName').value||'').trim()||'AlimTransport';newGame(setup.city,setup.kind,setup.mode);save();enterGame(true)});
+
+function enterGame(fresh){$('#start').hidden=true;['#bar','#nav'].forEach(s=>$(s).hidden=false);
+  if(gameMap){gameMap=null;const old=$('#map'),n=old.cloneNode(false);old.replaceWith(n)}mapMode='ru';
+  if(!S.company)S.company={name:'AlimTransport',color:COLORS[0]};const needBrand=!S.branded;S.branded=1;
+  view='hq';makeTags();buildWorld();placeCam();setTab('hub');resize();hud();
+  if(!fresh&&needBrand)openSheet(brandSheet,true);
+  if(fresh)openSheet(()=>`<div class="sh-h"><h2>Ваш штаб: ${esc(CITIES[S.city].n)}</h2></div><p class="sub">У вас есть ${esc(VEH[S.veh[0].type].n)} и ${fm(S.money)} ₽ на старт.${S.city==='yalta'?' Штаб в Ялте, а рейсы уходят из Симферополя.':''}</p><div class="note">Откройте карту, коснитесь соседнего города с жёлтой точкой и запустите первый рейс. Выручка придёт в кассу.</div><button class="btn w" data-a="tab" data-v="map">Открыть карту</button>`)}
+
+/* ================= LOOP ================= */
+let lastT=performance.now(),saveAcc=0,uiAcc=0;
+const totalKassa=()=>sites().reduce((a,s)=>a+siteB(s).kassa.st,0);
+function catchUp(ms){const before=totalKassa();simChunked(Math.min(ms,12*3600e3)/msPerH());const gain=totalKassa()-before;if(gain>=1)toast('Пока вас не было, в кассы пришло '+fm(gain)+' ₽')}
+function loop(now){let dt=now-lastT;lastT=now;
+  if(S&&$('#start').hidden){
+    if(dt>2000){if(S.mode==='real')catchUp(dt);dt=0}
+    sim(dt/msPerH());
+    saveAcc+=dt;if(saveAcc>4000){saveAcc=0;save()}
+    uiAcc+=dt;if(uiAcc>500){uiAcc=0;hud();if(sheetFn&&!sheetStatic&&!$('#sheet').matches(':active')&&!tooSoon())renderSheet()}
+    if(tab==='hub'){animateBase(now,dt);renderer.render(scene,camera);placeTags()}
+    else if(tab==='map'){if(mapDirty)renderMap();animateMap()}
+  }
+  requestAnimationFrame(loop)}
+document.addEventListener('visibilitychange',()=>{if(!S)return;if(document.hidden)save();else if(S.mode==='real'){const gap=Date.now()-S.last;if(gap>2000){catchUp(gap);S.last=Date.now()}lastT=performance.now()}else lastT=performance.now()});
+addEventListener('pagehide',save);
+
+window.__back=()=>{if(sheetFn){closeSheet();return true}if(!$('#start').hidden)return false;if(tab!=='hub'){setTab('hub');return true}return false};
+/* ================= BOOT ================= */
+let lastKind=null;try{lastKind=localStorage.getItem('magistral-last')}catch(_){}
+const saved=lastKind&&load(lastKind);
+if(saved){S=saved;if(S.mode==='real'){const gap=Date.now()-(S.last||Date.now());enterGame(false);if(gap>2000)catchUp(gap)}else enterGame(false)}
+else showStart();
+resize();requestAnimationFrame(loop);
+})();
+</script>
+
+</body></html>
