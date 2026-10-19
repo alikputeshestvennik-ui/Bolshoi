@@ -1,0 +1,156 @@
+package ru.alim.agent
+
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+enum class Scr { Home, Task, History, Rules, Settings }
+
+fun neededPerms(): Array<String> {
+    val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
+        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS)
+    if (Build.VERSION.SDK_INT >= 33) { l += Manifest.permission.READ_MEDIA_IMAGES; l += Manifest.permission.POST_NOTIFICATIONS }
+    else l += Manifest.permission.READ_EXTERNAL_STORAGE
+    return l.toTypedArray()
+}
+
+@Composable
+fun App(voice: Voice) {
+    var scr by remember { mutableStateOf(Scr.Home) }
+    val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    LaunchedEffect(Unit) {
+        if (!Prefs.askedPerms) { Prefs.askedPerms = true; perms.launch(neededPerms()) }
+    }
+    val phase = Agent.phase
+    LaunchedEffect(phase) {
+        if (phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM) scr = Scr.Task
+    }
+    BackHandler(enabled = scr != Scr.Home) {
+        if (scr == Scr.Task) Agent.close()
+        scr = Scr.Home
+    }
+    MaterialTheme(colorScheme = darkColorScheme(primary = Teal, onPrimary = Bg, background = Bg, surface = Card, onSurface = Ink)) {
+        Box(Modifier.fillMaxSize().background(Bg)) {
+            val go: (Scr) -> Unit = { scr = it }
+            val home: () -> Unit = { if (scr == Scr.Task) Agent.close(); scr = Scr.Home }
+            when (scr) {
+                Scr.Home -> HomeScreen(voice, go)
+                Scr.Task -> TaskScreen(home)
+                Scr.History -> HistoryScreen(home)
+                Scr.Rules -> RulesScreen(home)
+                Scr.Settings -> SettingsScreen(home) { perms.launch(neededPerms()) }
+            }
+        }
+    }
+}
+
+// ——— общие детали, как в макетах ———
+
+fun body(size: Int, weight: FontWeight = FontWeight.Normal, color: Color = Ink) =
+    TextStyle(fontFamily = Fonts.body, fontSize = size.sp, fontWeight = weight, color = color)
+
+@Composable
+fun Label(text: String, color: Color = Muted, modifier: Modifier = Modifier) =
+    Text(text.uppercase(), modifier, style = body(13, FontWeight.Bold, color).copy(letterSpacing = 1.sp))
+
+@Composable
+fun Screen(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            IconTile(Icons.AutoMirrored.Filled.ArrowBack, "Назад", back)
+            Text(title, style = TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+        }
+        content()
+    }
+}
+
+@Composable
+fun IconTile(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 44.dp) {
+    Box(Modifier.size(size).clip(RoundedCornerShape(14.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(14.dp))
+        .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, label, tint = Muted, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+fun CardBox(modifier: Modifier = Modifier, border: Color? = null, bg: Color = Card, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(modifier.fillMaxWidth().clip(shape).background(bg)
+        .let { if (border != null) it.border(BorderStroke(1.dp, border), shape) else it }
+        .padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
+}
+
+@Composable
+fun BigButton(text: String, onClick: () -> Unit, bg: Color = Teal, fg: Color = Bg, border: Color? = null, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(16.dp)
+    Box(modifier.fillMaxWidth().height(52.dp).clip(shape).background(bg)
+        .let { if (border != null) it.border(1.dp, border, shape) else it }
+        .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(text, style = body(16, FontWeight.Bold, fg))
+    }
+}
+
+@Composable
+fun Toggle(checked: Boolean, onChange: (Boolean) -> Unit) =
+    Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = Teal, checkedThumbColor = Bg,
+        uncheckedTrackColor = Line, uncheckedThumbColor = Muted, uncheckedBorderColor = Line))
+
+@Composable
+fun Chip(text: String, onClick: () -> Unit) {
+    Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(18.dp))
+        .clickable(onClick = onClick).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+        Text(text, style = body(13, FontWeight.Medium, Color(0xFFC7CDD4)))
+    }
+}
+
+@Composable
+fun Dot(color: Color) = Box(Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(color))
+
+@Composable
+fun Gap(h: Int) = Spacer(Modifier.height(h.dp))
+
+@Composable
+fun HGap(w: Int) = Spacer(Modifier.width(w.dp))

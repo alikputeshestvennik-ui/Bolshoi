@@ -1,0 +1,96 @@
+package ru.alim.agent
+
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+/** Запросы к gptunnel (формат OpenAI) — как в Маршруте: ключ из секрета GPTUNNEL_KEY, оплата с личного счёта. */
+object Llm {
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).callTimeout(120, TimeUnit.SECONDS).build()
+    private val JSON = "application/json; charset=utf-8".toMediaType()
+    private const val BASE = "https://gptunnel.ru/v1"
+
+    /** Как gptunnel принимает ключ: «Authorization: ключ» или «Bearer ключ» — запоминаем сработавший. */
+    @Volatile private var bearer = false
+
+    val key: String get() = BuildConfig.GPTUNNEL_KEY.trim()
+
+    class Reply(val text: String, val inTok: Int, val outTok: Int, private val apiCost: Double) {
+        /** Цена в рублях: из ответа gptunnel, если он её прислал, иначе по ценам из настроек. */
+        fun cost(model: String): Double = if (apiCost > 0) apiCost else Prefs.price(model, inTok, outTok)
+    }
+
+    private fun post(url: String, body: JSONObject, br: Boolean): Pair<Int, String> =
+        http.newCall(Request.Builder().url(url)
+            .header("Authorization", if (br) "Bearer $key" else key)
+            .post(body.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
+
+    private fun get(url: String, br: Boolean): Pair<Int, String> =
+        http.newCall(Request.Builder().url(url)
+            .header("Authorization", if (br) "Bearer $key" else key).get().build()).execute().use { it.code to (it.body?.string() ?: "") }
+
+    /** Один ход модели. Ответ просим JSON-объектом; модель не умеет response_format — повтор без него. */
+    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply {
+        if (key.isBlank()) error("В сборке нет ключа GPTUNNEL_KEY — проверь секрет на GitHub и пересобери")
+        fun body(js: Boolean) = JSONObject().put("model", model).put("temperature", 0.2).put("max_tokens", maxTokens)
+            .put("useWalletBalance", true).put("messages", messages)
+            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
+        var b = body(json)
+        var r = post("$BASE/chat/completions", b, bearer)
+        if (r.first == 401 || r.first == 403) {
+            val r2 = post("$BASE/chat/completions", b, !bearer)
+            if (r2.first in 200..299) bearer = !bearer
+            r = r2
+        }
+        if (r.first == 400 && json) { b = body(false); r = post("$BASE/chat/completions", b, bearer) }
+        if (r.first !in 200..299) error("модель «$model» ответила ${r.first}: ${r.second.take(200)}")
+        val j = JSONObject(r.second)
+        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val u = j.optJSONObject("usage") ?: JSONObject()
+        val apiCost = u.optDouble("total_cost", 0.0).let { if (it.isNaN()) 0.0 else it }
+        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), apiCost)
+    }
+
+    /** Баланс личного счёта gptunnel в рублях (GET /v1/balance?useWalletBalance=true). */
+    fun balance(): Double {
+        if (key.isBlank()) error("нет ключа")
+        val url = "$BASE/balance?useWalletBalance=true"
+        var r = get(url, bearer)
+        if (r.first == 401 || r.first == 403) {
+            val r2 = get(url, !bearer)
+            if (r2.first in 200..299) bearer = !bearer
+            r = r2
+        }
+        if (r.first !in 200..299) error("баланс: ${r.first} ${r.second.take(120)}")
+        return findNumber(r.second) ?: error("не понял ответ: ${r.second.take(120)}")
+    }
+
+    /** Ответ бывает {"balance": 512.3} или вложенным — ищем первое число в знакомых полях. */
+    private fun findNumber(txt: String): Double? {
+        txt.trim().toDoubleOrNull()?.let { return it }
+        val j = runCatching { JSONObject(txt) }.getOrNull() ?: return null
+        return scan(j)
+    }
+
+    private fun scan(j: JSONObject): Double? {
+        for (k in listOf("balance", "amount", "sum", "value", "total")) {
+            if (j.has(k)) {
+                val v = j.opt(k)
+                if (v is Number) return v.toDouble()
+                if (v is String) v.replace(',', '.').toDoubleOrNull()?.let { return it }
+                if (v is JSONObject) scan(v)?.let { return it }
+            }
+        }
+        val it = j.keys()
+        while (it.hasNext()) {
+            val v = j.opt(it.next())
+            if (v is JSONObject) scan(v)?.let { n -> return n }
+        }
+        return null
+    }
+}

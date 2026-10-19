@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Стопка из трёх светящихся слоёв, как в приложении -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#E612506A" android:strokeColor="#664FD9C4" android:strokeWidth="1"
+        android:pathData="M30,66 a24,10 0 1,0 48,0 a24,10 0 1,0 -48,0 z" />
+    <path android:fillColor="#D91B7F86" android:strokeColor="#808FF1E0" android:strokeWidth="1"
+        android:pathData="M30,56 a24,10 0 1,0 48,0 a24,10 0 1,0 -48,0 z" />
+    <path android:fillColor="#CC3DD9C1" android:strokeColor="#AADFFFF9" android:strokeWidth="1"
+        android:pathData="M30,46 a24,10 0 1,0 48,0 a24,10 0 1,0 -48,0 z" />
+    <path android:fillColor="#B3DFFFF9" android:strokeColor="#FFFFFFFF" android:strokeWidth="1"
+        android:pathData="M30,36 a24,10 0 1,0 48,0 a24,10 0 1,0 -48,0 z" />
+</vector>

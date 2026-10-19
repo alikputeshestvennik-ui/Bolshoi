@@ -1,0 +1,83 @@
+name: Build Agent APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'agent_android/**'
+      - '.github/workflows/AGENT_APK.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Fonts (Manrope, Unbounded)
+        shell: bash
+        run: |
+          # Шрифты из макетов (OFL, с кириллицей). Не скачались — приложение возьмёт системный.
+          mkdir -p agent_android/app/src/main/assets/fonts
+          curl -fsSL --retry 3 -o agent_android/app/src/main/assets/fonts/manrope.ttf \
+            "https://github.com/google/fonts/raw/main/ofl/manrope/Manrope%5Bwght%5D.ttf" || rm -f agent_android/app/src/main/assets/fonts/manrope.ttf
+          curl -fsSL --retry 3 -o agent_android/app/src/main/assets/fonts/unbounded.ttf \
+            "https://github.com/google/fonts/raw/main/ofl/unbounded/Unbounded%5Bwght%5D.ttf" || rm -f agent_android/app/src/main/assets/fonts/unbounded.ttf
+          ls -la agent_android/app/src/main/assets/fonts || true
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-provider: basic
+
+      - name: Prepare release keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_B64"
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/agent-release.keystore"
+          test -s "$RUNNER_TEMP/agent-release.keystore"
+
+      - name: Build signed release APK
+        working-directory: agent_android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/agent-release.keystore
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GPTUNNEL_KEY: ${{ secrets.GPTUNNEL_KEY }}
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace assembleRelease 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Show compile errors
+        if: failure()
+        shell: bash
+        run: |
+          # Ошибки Kotlin — в аннотации, чтобы их было видно без скачивания логов
+          msg=$(grep -E "^e: |error:|What went wrong|Could not|> " "$RUNNER_TEMP/build.log" | head -40 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Build errors::${msg}"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-release-apk
+          path: agent_android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
