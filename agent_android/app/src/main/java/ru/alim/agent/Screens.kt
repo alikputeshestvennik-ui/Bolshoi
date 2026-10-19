@@ -124,7 +124,6 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             LayerStack(Idle, if (voice.listening) 1600 else 4000, 140.dp, voice.level,
                 Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
-            Scanner(Idle.accent, if (voice.listening) 900 else 2200, Modifier.width(230.dp).height(12.dp))
             Text(
                 when {
                     voice.listening -> voice.partial.ifBlank { "Слушаю…" }
@@ -156,7 +155,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
         if (typing) {
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Что сделать?", style = body(15, color = Muted)) },
+                OutlinedTextField(input, { input = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Что сделать?", style = body(15, color = Muted)) },
                     textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { send() }),
                     colors = fieldColors())
@@ -237,7 +236,6 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                 Text("«${Agent.task}»", style = body(18, FontWeight.SemiBold), maxLines = 3)
             }
         }
-        Scanner(pal.accent, if (running) 1000 else 2400, Modifier.fillMaxWidth().height(10.dp))
 
         Label("Шаги")
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -279,7 +277,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Teal))
             hint?.let { Text(it, style = body(13, color = Amber)) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(reply, { reply = it }, Modifier.weight(1f), placeholder = { Text("Ответить агенту…", style = body(15, color = Muted)) },
+                OutlinedTextField(reply, { reply = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Ответить агенту…", style = body(15, color = Muted)) },
                     textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Agent.followUp(reply); reply = "" } }))
