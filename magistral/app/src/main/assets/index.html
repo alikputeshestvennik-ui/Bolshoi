@@ -136,6 +136,8 @@ button:disabled{cursor:default}
 .ct .sel .dot{fill:var(--red)}
 .livs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 4px}.livs button{display:flex;align-items:center;gap:6px;padding:9px 10px;border-radius:12px;border:2px solid transparent;background:var(--card2,#f4ecdc);font:600 13px Rubik,Arial,sans-serif;color:inherit;text-align:left}.livs button.on{border-color:var(--red)}.livs i{width:14px;height:14px;border-radius:4px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2)}
 .ct .evc{fill:#f08a24;stroke:#fff;stroke-width:1.5px}
+.qi{width:12px;height:12px;border-radius:50%;border:3px solid #2a7fd1;box-sizing:border-box;flex:none}#cQ.hot{background:#ffe08a}#cQ.hot .qi{border-color:#d6402b}#vQ:empty{display:none}
+#mg{position:fixed;inset:0;z-index:60;background:#1b2229;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px calc(env(safe-area-inset-bottom,0px) + 12px)}#mg[hidden]{display:none}#mg .mgh{display:flex;align-items:center;gap:10px;color:#fff;font:600 16px Rubik,Arial,sans-serif}#mg .mgh span{margin-left:auto;font-size:14px;opacity:.9}#mgX{width:36px;height:36px;border-radius:50%;border:0;background:#fff3;color:#fff;font-size:22px}#mgHelp{color:#cfd6dc;font:13px Rubik,Arial,sans-serif;margin:6px 0 8px}#mgC{flex:1;width:100%;border-radius:14px;touch-action:none}#mgRes{position:absolute;left:24px;right:24px;top:40%;background:#fff8ea;border-radius:16px;padding:18px;text-align:center;font:15px/1.6 Rubik,Arial,sans-serif}
 .evd{width:10px;height:10px;border-radius:50%;background:#f08a24;flex:none;box-shadow:0 0 0 3px rgba(240,138,36,.25)}
 .ct .startc .dot{fill:var(--gold);stroke:var(--red-d)}
 .sea-lbl{font-family:var(--body);font-style:italic;font-size:14px;fill:#4b98bd;letter-spacing:.08em}
@@ -181,6 +183,7 @@ button:disabled{cursor:default}
   <button class="chip" id="cVal" type="button"><span class="val"></span><span id="vVal">0</span></button>
   <button class="chip" id="cBuild" type="button"><span class="hammer" id="hm"></span><span id="vBuild">Свободен</span></button>
   <div class="sp"></div>
+  <button class="chip" id="cQ" type="button" aria-label="Задания"><span class="qi"></span><span id="vQ"></span></button>
   <button class="chip" id="cEv" type="button" hidden><span class="evd"></span><span id="vEv">0</span></button>
   <button class="chip" id="cTime" type="button"><small id="vTime">1 июн · 08:00</small></button>
   <button class="chip" id="bMenu" type="button" aria-label="Меню">⋯</button>
@@ -197,6 +200,7 @@ button:disabled{cursor:default}
 <div id="backdrop" hidden></div>
 <section class="sheet" id="sheet" hidden><button class="sx" id="sx" type="button" aria-label="Закрыть">×</button><div id="sheetBody"></div></section>
 <div id="toast"></div>
+<div id="mg" hidden><div class="mgh"><b id="mgTitle">Диспетчер</b><span id="mgScore"></span><button type="button" id="mgX" aria-label="Закрыть">×</button></div><p id="mgHelp"></p><canvas id="mgC"></canvas><div id="mgRes" hidden></div></div>
 <div id="win" hidden><div class="card"><h2>100 трлн!</h2><p id="winText">Ваша компания стала транспортной империей.</p><button class="btn w" id="winOk" type="button">Играть дальше</button></div></div>
 
 <section id="start" hidden>
@@ -407,11 +411,13 @@ const VEH={
   b747:{n:'Boeing 747-8',k:'air',tier:4,seats:467,v:910,max:14300,price:1500000,fuel:20,foreign:1}
 };
 const CLS={eco:{n:'Эконом',p:1,d:1,r:1},std:{n:'Стандарт',p:1.5,d:0.7,r:1.3},biz:{n:'Бизнес',p:2.5,d:0.35,r:1.8}};
-const BIDS=['main','kassa','depot','cargo','hotel','local','intl'];
+const BIDS=['main','kassa','depot','cargo','hotel','local','intl','service','school','ads','pvo','logist','power'];
+const NEWB=['service','school','ads','pvo','logist','power'],UNLOCK={service:3,school:2,ads:4,pvo:4,logist:5,power:3};
+function ensureB(b){for(const id of BIDS)if(!b[id])b[id]={l:0};return b}
 const HBIDS=BIDS;
-const BMAX={main:10,depot:10,kassa:10,cargo:10,hotel:10,local:5,intl:5};
-const BBASE={main:20000,depot:6000,kassa:4000,cargo:5000,hotel:8000,local:12000,intl:2000000};
-const HBASE={main:30000,kassa:6000,depot:8000,cargo:6000,hotel:10000,local:15000,intl:2500000};
+const BMAX={main:10,depot:10,kassa:10,cargo:10,hotel:10,local:5,intl:5,service:5,school:5,ads:5,pvo:5,logist:5,power:5};
+const BBASE={main:20000,depot:6000,kassa:4000,cargo:5000,hotel:8000,local:12000,intl:2000000,service:15000,school:10000,ads:30000,pvo:60000,logist:40000,power:25000};
+const HBASE={main:30000,kassa:6000,depot:8000,cargo:6000,hotel:10000,local:15000,intl:2500000,service:18000,school:12000,ads:36000,pvo:70000,logist:48000,power:30000};
 const LOCALS={nn:{n:'Стрелка',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},ekb:{n:'Уральская высотка',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'},sam:{n:'Волжская набережная',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},vlg:{n:'Волжская пристань',d:'+15% к доходу от грузов за уровень',eff:'cargo'},mur:{n:'Ледокольный причал',d:'+15% к доходу от грузов за уровень',eff:'cargo'},arh:{n:'Северная пристань',d:'+15% к доходу от грузов за уровень',eff:'cargo'},prm:{n:'Камский мост',d:'−7% к расходу топлива рейсов из хаба за уровень',eff:'fuel'},ufa:{n:'Башкирский двор',d:'+8% к доходу гостиницы хаба за уровень',eff:'hotel'},tmn:{n:'Нефтяная биржа',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'},oms:{n:'Иртышская набережная',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},krs:{n:'Мост через Енисей',d:'−7% к расходу топлива рейсов из хаба за уровень',eff:'fuel'},irk:{n:'Байкальская пристань',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},khv:{n:'Амурский утёс',d:'+10% к спросу на рейсы из хаба за уровень',eff:'demand'},kgd:{n:'Янтарная гавань',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'},mrv:{n:'Курортная галерея',d:'+8% к доходу гостиницы хаба за уровень',eff:'hotel'},smf:{n:'Крымский вокзал',d:'+10% к выручке рейсов из хаба за уровень',eff:'ticket'}};
 const LD={ticket:'+10% к выручке рейсов из хаба за уровень',demand:'+10% к спросу на рейсы из хаба за уровень',cargo:'+15% к доходу от грузов за уровень',fuel:'−7% к расходу топлива рейсов из хаба за уровень',hotel:'+8% к доходу гостиницы хаба за уровень'};
 Object.entries({vrn:{n:'Адмиралтейская верфь',eff:'demand'},tula:{n:'Пряничная лавка',eff:'hotel'},kaluga:{n:'Музей космонавтики',eff:'demand'},smol:{n:'Крепостная стена',eff:'ticket'},bryansk:{n:'Брянский лес',eff:'cargo'},kursk:{n:'Магнитная аномалия',eff:'cargo'},belg:{n:'Белгородская черта',eff:'ticket'},orel:{n:'Тургеневская усадьба',eff:'hotel'},rzn:{n:'Рязанский кремль',eff:'demand'},vlad:{n:'Золотые ворота',eff:'ticket'},yar:{n:'Волжская стрелка',eff:'demand'},tver:{n:'Путевой дворец',eff:'ticket'},vnovg:{n:'Новгородский детинец',eff:'demand'},pskov:{n:'Псковский кром',eff:'demand'},vologda:{n:'Кружевной двор',eff:'hotel'},cheb:{n:'Чувашская вышивка',eff:'hotel'},kir:{n:'Дымковская игрушка',eff:'hotel'},izh:{n:'Оружейный завод',eff:'cargo'},pnz:{n:'Тарханы',eff:'hotel'},sar:{n:'Саратовский мост',eff:'fuel'},ulsk:{n:'Венец',eff:'ticket'},orb:{n:'Пуховый рынок',eff:'cargo'},chel:{n:'Тракторный завод',eff:'cargo'},astr:{n:'Икорный рынок',eff:'cargo'},mhk:{n:'Каспийский порт',eff:'cargo'},grz:{n:'Сердце Чечни',eff:'demand'},anapa:{n:'Детские пляжи',eff:'hotel'},gelen:{n:'Сафари-парк',eff:'hotel'},stav:{n:'Ставропольская крепость',eff:'demand'},skt:{n:'Коми-лес',eff:'cargo'},tomsk:{n:'Деревянное зодчество',eff:'ticket'},kem:{n:'Угольный терминал',eff:'cargo'},brn:{n:'Алтайские ворота',eff:'demand'},uud:{n:'Дацан',eff:'demand'},chita:{n:'Забайкальский узел',eff:'fuel'},blag:{n:'Амурская набережная',eff:'demand'},surg:{n:'Нефтяная вышка',eff:'ticket'},nkz:{n:'Металлургический комбинат',eff:'cargo'},sal:{n:'Полярный круг',eff:'ticket'},nor:{n:'Никелевый комбинат',eff:'cargo'},yak:{n:'Алмазная биржа',eff:'ticket'},mag:{n:'Колымский порт',eff:'cargo'},petr:{n:'Вулканы Камчатки',eff:'hotel'},yuzh:{n:'Сахалинский шельф',eff:'fuel'}}).forEach(([k,v])=>{v.d=LD[v.eff];LOCALS[k]=v});
@@ -425,7 +431,7 @@ const HREACH=[700,1000,1400,1900,2600,3500,4600,6000,8000,10000];
 const TIER_AT=[1,1,2,2,3,3,4,4,4,4];
 const KCAP=[8000,25000,70000,2e5,5e5,1.3e6,3.5e6,9e6,2.5e7,7e7];
 const CCAP=[0,5000,15000,40000,1e5,2.5e5,6.5e5,1.7e6,4.5e6,1.2e7,3e7];
-const SLOT={main:[0,-0.6],kassa:[4.7,-3.7],hotel:[-4.7,-3.7],depot:[-4.6,2.8],cargo:[4.6,2.8],local:[0,-5.4],intl:[0,3.7]};
+const SLOT={main:[0,-0.6],kassa:[4.7,-3.7],hotel:[-4.7,-3.7],depot:[-4.6,2.8],cargo:[4.6,2.8],local:[0,-5.4],intl:[0,3.7],service:[-5.6,-0.4],school:[5.6,-0.4],ads:[-3.3,-6.5],logist:[3.3,-6.5],pvo:[6.6,-6.5],power:[-6.6,-6.5]};
 const keyFor=k=>'magistral-'+k;
 const BUILDER_COST=[0,50000,250000,1200000,6000000];
 const HUB_COST=(n,id)=>Math.round(150000*Math.pow(2.5,n)*(id&&CITIES[id].w?2:1)/1000)*1000;
@@ -498,14 +504,15 @@ function newGame(city,kind,mode){
   const dm={1:1.2,2:1,3:0.85}[START[city].diff];
   S={v:1,city,kind,mode,money:Math.round((kind==='rail'?15000:20000)*dm),h:8,last:Date.now(),
     b:{main:{l:1},kassa:{l:1,st:0},depot:{l:1},cargo:{l:0,st:0},hotel:{l:0},local:{l:0},intl:{l:0}},
-    hubs:{},hubSpent:0,test:true,company:{name:setup.name||'AlimTransport',color:setup.color||COLORS[0]},builds:[],builders:1,veh:[{id:1,type:kind==='rail'?'er2':'an2',route:null}],routes:[],nid:2,legs:0,ev:{list:[],next:20,seq:1},vsm:{}};
+    hubs:{},hubSpent:0,test:true,company:{name:setup.name||'AlimTransport',color:setup.color||COLORS[0]},builds:[],builders:1,veh:[{id:1,type:kind==='rail'?'er2':'an2',route:null}],routes:[],nid:2,legs:0,ev:{list:[],next:20,seq:1},vsm:{},crew:{n:3,xp:0},ads:[],lg:{offers:[],next:30},stats:{pax:0},q:null,ach:{}};ensureB(S.b);
 }
 function save(){if(!S)return;S.last=Date.now();try{localStorage.setItem(keyFor(S.kind),JSON.stringify(S));localStorage.setItem('magistral-last',S.kind)}catch(e){}}
 function load(kind){try{const s=JSON.parse(localStorage.getItem(keyFor(kind)));if(s&&s.v===1&&START[s.city]&&s.b){
   if(!s.builds)s.builds=s.build?[s.build]:[];delete s.build;s.builders=s.builders||1;
   s.builds.forEach(b=>{if(!b.site)b.site='hq'});s.routes.forEach(r=>{if(!r.site)r.site='hq'});
   s.hubs=s.hubs||{};for(const k in s.hubs){const b=s.hubs[k].b;b.local=b.local||{l:0};b.intl=b.intl||{l:0};delete b.second;b.cargo=b.cargo||{l:0,st:0}}
-  if(s.test==null)s.test=true;s.hubSpent=s.hubSpent||0;return s}}catch(e){}return null}
+  if(s.test==null)s.test=true;s.hubSpent=s.hubSpent||0;ensureB(s.b);for(const k in s.hubs)ensureB(s.hubs[k].b);
+  if(!s.crew)s.crew={n:s.routes.length+3,xp:0};if(!s.ads)s.ads=[];if(!s.lg)s.lg={offers:[],next:s.h+6};if(!s.stats)s.stats={pax:0};if(!s.ach)s.ach={};return s}}catch(e){}return null}
 
 /* sites: 'hq' is the Штаб, any city id is a хаб */
 const SC=()=>START[S.city];
@@ -538,11 +545,16 @@ const lmodel=c=>LMODEL[c]||(LOCALS[c]&&LOCALS[c].m)||(START[c]||c==='smf'?c:{tic
 function lbs(eff,s){const d=localDef(s);let e=d.eff;if(e==='transfer'&&s!=='hq')e='ticket';return e===eff?siteB(s).local.l:0}
 function bname(id,s){if(id==='main')return S.kind==='rail'?'Вокзал':'Аэропорт';if(id==='depot')return S.kind==='rail'?'Депо':'Ангар';
   if(id==='intl')return 'Международный терминал';if(id==='local')return localDef(s||view).n;
-  return {kassa:'Касса',cargo:'Грузовой терминал',hotel:'Гостиница и кафе'}[id]}
+  if(id==='power')return S.kind==='rail'?'Тяговая подстанция':'Солнечная электростанция';
+  return {kassa:'Касса',cargo:'Грузовой терминал',hotel:'Гостиница и кафе',service:'Сервисный центр',school:'Учебный центр',ads:'Рекламное агентство',pvo:'Защита от дронов',logist:'Логистический центр'}[id]}
 function ticketMul(s){let m=(1+0.1*lbs('ticket','hq'))*(s!=='hq'?1+0.1*lbs('ticket',s):1);if(s==='hq'&&S.city==='yalta')m*=S.b.local.l===0?0.8:1+0.05*(S.b.local.l-1);return m}
 function demandMul(s){return (s==='hq'?SC().demand:1)*(1+0.1*lbs('demand',s))*(1+0.05*siteB(s).hotel.l)}
 const cargoMul=()=>(SC().cargo||1)*(1+0.15*sites().reduce((a,s)=>a+lbs('cargo',s),0));
-const fuelMul=s=>(SC().fuel||1)*(1-0.07*lbs('fuel','hq'))*(s&&s!=='hq'?1-0.07*lbs('fuel',s):1);
+const fuelMul=s=>(SC().fuel||1)*(1-0.07*lbs('fuel','hq'))*(s&&s!=='hq'?1-0.07*lbs('fuel',s):1)*(1-0.04*S.b.power.l)*(s&&s!=='hq'?1-0.04*siteB(s).power.l:1);
+const maxL_=id=>Math.max(...sites().map(x=>siteB(x)[id].l));
+const svcL=()=>maxL_('service'),maxMod=()=>{const l=svcL();return l>=5?3:l>=3?2:l>=1?1:0};
+const crewBonus=()=>S.crew?Math.min(0.1,S.crew.xp/1000):0;
+const adsMul=to=>{let m=1;if(S.ads)for(const a of S.ads)if(a.city===to&&a.end>S.h)m=Math.max(m,a.mul);return m};
 const hotelMul=s=>1+0.08*lbs('hotel',s||'hq');
 const reachOf=l=>REACH[l-1]+(SC().reach||0);
 const siteReach=s=>s==='hq'?reachOf(S.b.main.l):HREACH[siteB(s).main.l-1];
@@ -567,22 +579,24 @@ function canServe(type,s,to){const v=VEH[type],c=CITIES[to],from=siteCity(s);
   return ''}
 const MAXTRIPS=4;const tripsOn=(s,to)=>S.routes.filter(r=>r.site===s&&r.to===to).length;
 function rawDem(type,s,to,cls){const v=VEH[type],from=siteCity(s),d=dist(from,to,v.k),c=CLS[cls];const fa=s==='hq'?Math.max(1,CITIES[S.city].a):Math.max(0.6,CITIES[from].a);
-  let dem=90*Math.sqrt(fa*CITIES[to].a)*demandMul(s)*0.9*c.d*(S.ev?seasonMul(to):1);if(v.k==='rail'&&d>2500)dem*=2500/d;if(v.k==='air'&&d<400)dem*=0.5;return dem}
-function est(type,s,to,cls,used,share){const v=VEH[type],from=siteCity(s),d=dist(from,to,v.k),c=CLS[cls];
+  let dem=90*Math.sqrt(fa*CITIES[to].a)*demandMul(s)*0.9*c.d*(S.ev?seasonMul(to):1)*adsMul(to);if(v.k==='rail'&&d>2500)dem*=2500/d;if(v.k==='air'&&d<400)dem*=0.5;return dem}
+function est(type,s,to,cls,used,share,mod,sch){mod=mod||0;const v=VEH[type],from=siteCity(s),d=dist(from,to,v.k),c=CLS[cls];
   const fa=s==='hq'?Math.max(1,CITIES[S.city].a):Math.max(0.6,CITIES[from].a);
-  let dem=90*Math.sqrt(fa*CITIES[to].a)*demandMul(s)*0.9*c.d*(S.ev?seasonMul(to):1);
+  let dem=90*Math.sqrt(fa*CITIES[to].a)*demandMul(s)*0.9*c.d*(S.ev?seasonMul(to):1)*adsMul(to);
   if(v.k==='rail'&&d>2500)dem*=2500/d;
   if(v.k==='air'&&d<400)dem*=0.5;
-  const pax=Math.max(1,Math.min(v.seats,Math.round(dem*(share||1))));
+  dem*=SCH[sch||'any'].d;const seats=Math.round(v.seats*(1+0.08*mod)),pax=Math.max(1,Math.min(seats,Math.round(dem*(share||1))));
   const intl=isIntl(from,to)?1.3*(1+0.1*Math.max(0,siteB(s).intl.l-1)):1;
-  const rev=pax*d*(v.k==='rail'?RAIL_RATE:AIR_RATE)*c.p*ticketMul(s)*intl;
+  const rev=pax*d*(v.k==='rail'?RAIL_RATE:AIR_RATE)*c.p*ticketMul(s)*intl*(1+crewBonus());
   const hotel=siteB(s).hotel.l*pax*0.6*hotelMul(s);
-  const cost=d*v.fuel*fuelMul(s)*(used?1.3:1);
-  const time=d/(v.v*(used?0.95:1)*(v.k==='rail'?(SC().railSpeed||1):1))+(v.k==='rail'?0.5:1);
+  const cost=d*v.fuel*fuelMul(s)*(used?1.3:1)*SCH[sch||'any'].c;
+  const time=d/(v.v*(1+0.05*mod)*(used?0.95:1)*(v.k==='rail'?(SC().railSpeed||1):1))+(v.k==='rail'?0.5:1);
   const net=rev+hotel-cost;
-  return {d,pax,load:pax/v.seats,rev,hotel,cost,net,time,perH:net/time}}
+  return {d,pax,seats,load:pax/seats,rev,hotel,cost,net,time,perH:net/time}}
 const pairSeats=(s,to)=>S.routes.reduce((a,r)=>a+(r.site===s&&r.to===to?VEH[vehOf(r).type].seats:0),0);
-const routeEst=r=>{const v=vehOf(r),sh=VEH[v.type].seats/Math.max(1,pairSeats(r.site,r.to));return est(v.type,r.site,r.to,r.cls,v.used,sh)};
+const routeEst=r=>{const v=vehOf(r),sh=VEH[v.type].seats/Math.max(1,pairSeats(r.site,r.to));return est(v.type,r.site,r.to,r.cls,v.used,sh,v.mod,r.sch)};
+const SCH={any:{n:'Круглосуточно',d:1,c:1},peak:{n:'Часы пик',d:1.4,c:1},night:{n:'Ночные',d:0.9,c:0.65}};
+const schOk=(k,h)=>k==='peak'?((h>=6&&h<10)||(h>=17&&h<21)):k==='night'?(h>=22||h<6):true;
 const usedPrice=t=>Math.round(VEH[t].price*0.55/100)*100;
 function bcost(s,id,L){const base=(s==='hq'?BBASE:HBASE)[id]*Math.pow(2.6,L-(STARTS_AT_ONE[id]?2:1));return Math.round(base*(s==='hq'?SC().cost:1)/100)*100}
 const maxL=(s,id)=>BMAX[id];
@@ -601,14 +615,14 @@ function checkGoal(V){if(S.goal==null){S.goal=GOALS.filter(g=>V>=g).length;retur
     else{toast('Компания стоит '+fm(GOALS[S.goal-1])+' ₽! Следующая цель: '+fm(GOALS[S.goal])+' ₽');sfx('goal')}}}
 
 /* ================= SIMULATION ================= */
-function sim(dh){
+let achN=0;function sim(dh){
   S.h+=dh;
   for(const bd of S.builds.filter(b=>S.h>=b.end)){S.builds.splice(S.builds.indexOf(bd),1);if(bd.site!=='hq'&&!S.hubs[bd.site])continue;
     siteB(bd.site)[bd.id].l=bd.to;if(bd.site===view){rebuildBuilding(bd.id);if(bd.id==='intl'){rebuildBuilding(bd.id)}else if(bd.id==='main'||bd.id==='hotel'){people.forEach(p=>{if(!p.userData.worker)world.remove(p)});people=people.filter(p=>p.userData.worker);spawnPeople()}}mapDirty=true;
     toast(siteName(bd.site)+': '+bname(bd.id,bd.site)+', уровень '+bd.to+' готов');sfx('done');refreshSheet()}
-  evInit();rollEvents();vsmTick();const na=activeEv().length+offers().length;if(na!==S.ev.na){S.ev.na=na;mapDirty=true;refreshEvChip()}
-  for(const r of S.routes){const rs=routeState(r);if(rs.pause)continue;const e=routeEst(r);r.t+=dh*rs.slow;
-    while(r.t>=e.time){r.t-=e.time;r.dir^=1;S.legs++;maybeBreak(r);legDone(r);
+  evInit();rollEvents();vsmTick();bldTick();qEnsure();if(++achN%20===0)achTick();const na=activeEv().length+offers().length;if(na!==S.ev.na){S.ev.na=na;mapDirty=true;refreshEvChip()}
+  const hr=S.h%24;for(const r of S.routes){const rs=routeState(r);if(rs.pause)continue;if(r.sch&&r.sch!=='any'&&r.t<=0&&!schOk(r.sch,hr))continue;const e=routeEst(r);r.t+=dh*rs.slow;
+    while(r.t>=e.time){r.t-=e.time;if(r.sch&&r.sch!=='any')r.t=0;r.dir^=1;S.legs++;qAdd('legs',1);qAdd('pax',e.pax);S.stats.pax+=e.pax;maybeBreak(r);legDone(r);if(S.crew)S.crew.xp=Math.min(100,S.crew.xp+0.03);lgLeg(r);
       if(e.net>=0){const k=siteB(r.site).kassa;k.st=Math.min(KCAP[k.l-1],k.st+e.net)}else S.money+=e.net}}
   for(const s of sites()){const c=siteB(s).cargo;if(c.l>0)c.st=Math.min(CCAP[c.l],c.st+cargoRate(s)*dh)}
 }
@@ -621,13 +635,14 @@ function upgradeBlock(s,id){const b=siteB(s),to=b[id].l+1;
   if(freeBuilders()<=0)return 'Все строители заняты. Нанять ещё можно, коснувшись кнопки строителей вверху';
   if(id==='intl'&&s==='hq'&&S.b.main.l<5+to)return 'Нужен '+bname('main')+' штаба '+(5+to)+' уровня';
   if(id==='intl'&&s!=='hq'&&!S.b.intl.l)return 'Сначала постройте международный терминал в штабе';
+  if(UNLOCK[id]&&b[id].l===0&&S.b.main.l<UNLOCK[id])return 'Откроется с '+bname('main').toLowerCase().replace('вокзал','вокзалом').replace('аэропорт','аэропортом')+' штаба '+UNLOCK[id]+' уровня';
   if(id!=='main'&&to>b.main.l)return 'Сначала '+bname('main')+(s==='hq'?'':' хаба')+' до уровня '+to;
   if(s!=='hq'&&id!=='local'&&to>S.b[id].l)return S.b[id].l?'Сначала '+bname(id,'hq')+' штаба до уровня '+to:'Сначала постройте '+bname(id,'hq').toLowerCase()+' в штабе';
   return ''}
 function doUpgrade(s,id){const why=upgradeBlock(s,id);if(why){toast(why);return}
   const to=siteB(s)[id].l+1,c=bcost(s,id,to);if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}
-  S.money-=c;S.builds.push({site:s,id,to,start:S.h,end:S.h+BTIME[to-1]});if(s===view)rebuildBuilding(id);save();refreshSheet();hud();toast('Стройка началась');sfx('build')}
-function collect(s,id){const b=siteB(s)[id];if(b.st<1)return;const v=Math.floor(b.st);S.money+=v;b.st-=v;toast('+'+fm(v)+' ₽');sfx('coin');hud();refreshSheet();save()}
+  S.money-=c;S.builds.push({site:s,id,to,start:S.h,end:S.h+BTIME[to-1]});qAdd('build',1);if(s===view)rebuildBuilding(id);save();refreshSheet();hud();toast('Стройка началась');sfx('build')}
+function collect(s,id){const b=siteB(s)[id];if(b.st<1)return;const v=Math.floor(b.st);S.money+=v;b.st-=v;qAdd('collect',v);toast('+'+fm(v)+' ₽');sfx('coin');hud();refreshSheet();save()}
 function buy(type){let used=false;if(type.startsWith('u:')){used=true;type=type.slice(2)}const v=VEH[type],price=used?usedPrice(type):v.price;if(S.veh.length>=slots()){toast('Нет мест для техники. Улучшите '+(S.kind==='rail'?'депо':'ангар')+' в штабе или хабе');return null}
   if(S.money<price){toast('Не хватает '+fm(price-S.money)+' ₽');return null}
   S.money-=price;const o={id:S.nid++,type,route:null};if(used)o.used=1;S.veh.push(o);hud();save();return o}
@@ -635,10 +650,11 @@ function sell(vid){const i=S.veh.findIndex(v=>v.id===vid);if(i<0||S.veh[i].route
 function launch(s,to,choice,cls){let v;const type=choice.startsWith('v:')?(S.veh.find(x=>x.id===+choice.slice(2))||{}).type:choice.slice(2);
   if(!type)return;const why=canServe(type,s,to);if(why){toast(why);return}
   if(tripsOn(s,to)>=MAXTRIPS){toast('Максимум '+MAXTRIPS+' рейса на одно направление');return}
+  if(S.crew&&S.routes.length>=S.crew.n){toast('Нет свободных экипажей. Обучите новых в учебном центре');return}
   if(choice.startsWith('v:'))v=S.veh.find(x=>x.id===+choice.slice(2));else{v=buy(type);if(!v)return}
   if(!v||v.route)return;
   const r={id:S.nid++,site:s,to,vid:v.id,cls,t:0,dir:0};v.route=r.id;S.routes.push(r);mapDirty=true;if(s===view)buildVehicles();
-  toast('Рейс '+CITIES[siteCity(s)].n+' — '+CITIES[to].n+' запущен');sfx(S.kind==='rail'?'horn':'jet');hud();refreshSheet();save()}
+  qAdd('launch',1);toast('Рейс '+CITIES[siteCity(s)].n+' — '+CITIES[to].n+' запущен');sfx(S.kind==='rail'?'horn':'jet');hud();refreshSheet();save()}
 function closeRoute(rid){const i=S.routes.findIndex(r=>r.id===rid);if(i<0)return;const r=S.routes[i];const v=vehOf(r);if(v)v.route=null;S.routes.splice(i,1);mapDirty=true;if(r.site===view)buildVehicles();toast('Маршрут закрыт, техника вернулась');refreshSheet();save()}
 function setCls(rid,cls){const r=S.routes.find(x=>x.id===rid);if(r){r.cls=cls;refreshSheet();save()}}
 function hubBlock(id){if(S.hubs[id])return 'Здесь уже ваш хаб';if(id===S.city||id===hubStation())return 'Здесь ваш штаб';
@@ -650,9 +666,112 @@ function hubBlock(id){if(S.hubs[id])return 'Здесь уже ваш хаб';if(
   return ''}
 function openHub(id){const why=hubBlock(id);if(why){toast(why);return}const c=HUB_COST(Object.keys(S.hubs).length,id);
   if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}
-  S.money-=c;S.hubSpent+=c;S.hubs[id]={b:{main:{l:1},kassa:{l:1,st:0},depot:{l:1},cargo:{l:0,st:0},hotel:{l:0},local:{l:0},intl:{l:CITIES[id].w?1:0}}};mapDirty=true;
+  S.money-=c;S.hubSpent+=c;S.hubs[id]={b:{main:{l:1},kassa:{l:1,st:0},depot:{l:1},cargo:{l:0,st:0},hotel:{l:0},local:{l:0},intl:{l:CITIES[id].w?1:0}}};ensureB(S.hubs[id].b);mapDirty=true;
   toast('Открыт хаб '+CITIES[id].n);sfx('done');hud();refreshSheet();renderSites();save()}
 
+
+/* ===== new buildings: service, school, ads, logistics ===== */
+function doTO(v,auto){if(v.rep>S.h){if(!auto)toast('Уже в ремонте');return}const c=Math.round(VEH[v.type].price*0.03/100)*100;if(S.money<c){if(!auto)toast('Не хватает '+fm(c-S.money)+' ₽');return}
+  S.money-=c;v.wear=0;v.rep=S.h+toTime(svcL());qAdd('to',1);if(!auto){toast('ТО: '+VEH[v.type].n+', готово через '+rdur(v.rep-S.h));sfx('build');refreshSheet();hud();save()}}
+const modCost=v=>Math.round(VEH[v.type].price*0.25*((v.mod||0)+1)/100)*100;
+function doMod(v){if((v.mod||0)>=maxMod()){toast('Нужен сервисный центр выше уровнем');return}const c=modCost(v);if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}
+  S.money-=c;v.mod=(v.mod||0)+1;v.rep=Math.max(v.rep||0,S.h)+toTime(svcL())*2;toast(VEH[v.type].n+': модернизация '+['','I','II','III'][v.mod]+' ступени');sfx('done');refreshSheet();hud();save()}
+function trainCrew(){const L=maxL_('school');if(!L){toast('Сначала постройте учебный центр');return}if(S.crew.train){toast('Курс уже идёт');return}
+  const n=1+L,c=crewCost()*n;if(S.money<c){toast('Не хватает '+fm(c-S.money)+' ₽');return}S.money-=c;S.crew.train={n,end:S.h+trainTime(L),start:S.h};toast('Курс начался: '+plur(n,'экипаж','экипажа','экипажей'));sfx('build');refreshSheet();hud();save()}
+const crewCost=()=>Math.round(1500*Math.pow(1.12,Math.max(0,(S.crew?S.crew.n:3)-3))/100)*100;
+const adCost=c=>Math.round(3000*Math.max(0.3,CITIES[c].a)*Math.pow(1.9,maxL_('ads'))/100)*100;
+function startAd(c){const L=maxL_('ads');S.ads=S.ads.filter(a=>a.end>S.h);if(S.ads.length>=L){toast('Все '+L+' кампании заняты');return}if(S.ads.some(a=>a.city===c)){toast('Кампания уже идёт');return}
+  const k=adCost(c);if(S.money<k){toast('Не хватает '+fm(k-S.money)+' ₽');return}S.money-=k;qAdd('ad',1);S.ads.push({city:c,end:S.h+36+12*L,mul:1.2+0.06*L,start:S.h});toast('Кампания «'+CITIES[c].n+' ждёт!» запущена');sfx('coin');refreshSheet();hud();save()}
+const tonPer=r=>{const l=siteB(r.site).logist.l;return (VEH[vehOf(r).type].k==='rail'?40:12)*(l?1+0.25*l:0.5)};
+function lgGen(){const L=maxL_('logist');if(!L||!S.lg)return;if(S.h<S.lg.next)return;S.lg.next=S.h+24;S.lg.offers=S.lg.offers.filter(o=>o.acc&&!o.done&&o.end>S.h);
+  const dests=[...new Set(S.routes.map(r=>r.to))];if(!dests.length)return;const k=1+L-S.lg.offers.length;
+  for(let i=0;i<k;i++){const c=dests[Math.floor(Math.random()*dests.length)],rs=S.routes.filter(r=>r.to===c);const tpl=rs.reduce((a,r)=>a+tonPer(r),0)/rs.length,net=Math.max(3000,rs.reduce((a,r)=>a+routeEst(r).net,0)/rs.length);
+    const legs=4+Math.floor(Math.random()*8),need=Math.round(tpl*legs/10)*10,hrs=Math.round(Math.max(24,rs[0]?routeEst(rs[0]).time*2*legs/rs.length*1.4:48));
+    S.lg.offers.push({id:S.nid++,city:c,need,got:0,hrs,reward:Math.round(net*legs*1.7/1000)*1000,acc:false,exp:S.h+24})}}
+function lgLeg(r){if(!S.lg||r.dir!==1)return;for(const o of S.lg.offers)if(o.acc&&!o.done&&o.city===r.to&&o.end>S.h){o.got+=tonPer(r);if(o.got>=o.need){o.done=true;S.money+=o.reward;toast('Контракт выполнен: '+fm(o.need)+' т в '+CITIES[o.city].n+'. +'+fm(o.reward)+' ₽');sfx('goal')}}}
+function bldTick(){if(S.crew&&S.crew.train&&S.h>=S.crew.train.end){S.crew.n+=S.crew.train.n;toast('Выпуск: +'+plur(S.crew.train.n,'экипаж','экипажа','экипажей'));sfx('done');S.crew.train=null;refreshSheet()}
+  lgGen();if(S.lg)for(const o of S.lg.offers)if(o.acc&&!o.done&&!o.failed&&o.end<=S.h){o.failed=true;toast('Контракт в '+CITIES[o.city].n+' сорван: не успели');}
+  if(S.ads)S.ads=S.ads.filter(a=>a.end>S.h-1)}
+const wbar=w=>`<div class="bar2"><i style="width:${Math.round(w)}%;background:${w>70?'var(--red)':w>40?'var(--gold)':'var(--green)'}"></i></div>`;
+const XSHEET={
+  service(s,L){let h=`<div class="sec">Техника · износ и модернизация</div>`;if(L>=3)h+=`<button class="btn ghost w" data-a="autoto">Авто-ТО при износе 70%: ${S.autoTO?'включено':'выключено'}</button>`;
+    h+='<div class="opts">';for(const v of S.veh){const w=v.wear||0,rep=v.rep>S.h,m=v.mod||0;
+      h+=`<div class="opt" style="flex-direction:column;align-items:stretch"><div class="t"><b>${esc(VEH[v.type].n)}${m?' · мод. '+['','I','II','III'][m]:''}</b><small>Износ ${Math.round(w)}%${rep?' · на обслуживании ещё '+rdur(v.rep-S.h):''}</small>${wbar(w)}</div>
+      <div class="seg"><button data-a="to" data-v="${v.id}" ${rep||w<3?'disabled':''}>ТО · ${fm(Math.round(VEH[v.type].price*0.03/100)*100)} ₽</button><button data-a="mod" data-v="${v.id}" ${m>=maxMod()||rep?'disabled':''}>${m>=3?'Макс. модернизация':'Модернизация · '+fm(modCost(v))+' ₽'}</button></div></div>`}
+    return h+'</div><p class="sub">Модернизация: +5% к скорости и +8% мест за ступень. Во время ТО техника стоит.</p>'},
+  school(s,L){const c=S.crew,busy=S.routes.length;let h=`<div class="rows"><div class="row"><span>Экипажей</span><b>${c.n} (в рейсах ${busy})</b></div><div class="row"><span>Опыт</span><b>${Math.round(c.xp)}% · выручка +${(crewBonus()*100).toFixed(1).replace('.',',')}%</b></div></div>`;
+    if(c.train)h+=`<div class="note">Идёт курс: ${plur(c.train.n,'экипаж','экипажа','экипажей')}. Выпуск через ${rdur(c.train.end-S.h)}.</div>${wbar((S.h-c.train.start)/(c.train.end-c.train.start)*100)}`+(S.test?`<button class="btn ghost w" data-a="trfin">Закончить сейчас (тест)</button>`:'');
+    else{const n=1+maxL_('school'),k=crewCost()*n;h+=`<button class="btn gold w" data-a="train" ${S.money<k?'disabled':''}>Обучить ${plur(n,'экипаж','экипажа','экипажей')} за ${fm(k)} ₽</button>`}return h},
+  ads(s,L){S.ads=S.ads.filter(a=>a.end>S.h);let h=`<div class="sec">Кампании · ${S.ads.length} из ${maxL_('ads')}</div>`;
+    if(S.ads.length)h+='<div class="opts">'+S.ads.map(a=>`<div class="opt"><div class="t"><b>«${esc(CITIES[a.city].n)} ждёт!»</b><small>Спрос ×${a.mul.toFixed(2).replace('.',',')} · ещё ${rdur(a.end-S.h)}</small></div></div>`).join('')+'</div>';
+    const ds=[...new Set(S.routes.map(r=>r.to))].filter(c=>!S.ads.some(a=>a.city===c)).sort((a,b)=>CITIES[b].a-CITIES[a].a).slice(0,10);
+    if(!ds.length)return h+'<p class="sub">Запустите рейсы, чтобы рекламировать направления.</p>';
+    return h+'<div class="sec">Новая кампания</div><div class="opts">'+ds.map(c=>`<div class="opt"><div class="t"><b>${esc(CITIES[c].n)}</b><small>${S.routes.filter(r=>r.to===c).length} рейс. · ${rdur(36+12*maxL_('ads'))}</small></div><button class="btn gold sm" data-a="ad" data-v="${c}" ${S.money<adCost(c)||S.ads.length>=maxL_('ads')?'disabled':''}>${fm(adCost(c))} ₽</button></div>`).join('')+'</div>'},
+  logist(s,L){lgGen();const os=S.lg.offers.filter(o=>!o.failed&&!(o.done&&o.end<S.h-24));let h='<div class="sec">Контракты</div>';if(!os.length)return h+'<p class="sub">Новые контракты появятся в течение суток. Нужны рейсы в города назначения.</p>';
+    return h+'<div class="opts">'+os.map(o=>`<div class="opt" style="flex-direction:column;align-items:stretch"><div class="t"><b>${fm(o.need)} т в ${esc(CITIES[o.city].n)}</b><small>Награда ${money(o.reward)} · ${o.done?'выполнен':o.acc?'осталось '+rdur(o.end-S.h)+' · доставлено '+fm(o.got)+' т':'срок '+rdur(o.hrs)+' после принятия'}</small>${o.acc?wbar(Math.min(100,o.got/o.need*100)):''}</div>${!o.acc&&o.exp>S.h?`<button class="btn sm" data-a="lgacc" data-v="${o.id}">Принять</button>`:''}</div>`).join('')+'</div><p class="sub">Груз везут все ваши рейсы в этот город. С логистическим центром на базе рейс везёт больше.</p>'}};
+
+/* ===== daily quests & achievements ===== */
+const QT={legs:['Выполнить рейсов: {n}',[10,25,60]],pax:['Перевезти пассажиров: {n}',[1500,6000,20000]],collect:['Собрать из касс: {n} ₽',null],build:['Улучшить или построить здания: {n}',[1,2,3]],launch:['Запустить новые рейсы: {n}',[1,2,3]],mg:['Сыграть в «Диспетчера»: {n}',[1,2,2]],ad:['Запустить рекламную кампанию',[1,1,1]],to:['Провести ТО технике: {n}',[1,2,3]]};
+const plur=(n,a,b,c)=>{const m=n%10,h=n%100;return n+' '+(m===1&&h!==11?a:m>=2&&m<=4&&(h<12||h>14)?b:c)};
+function qReward(){return Math.max(5000,Math.round(valuation().total*0.004/1000)*1000)}
+function qEnsure(){const day=Math.floor(S.h/24);if(S.q&&S.q.day===day)return;const tier=Math.min(2,Math.floor(S.b.main.l/4)),keys=Object.keys(QT).filter(k=>(k!=='ad'||maxL_('ads')>0)&&(k!=='to'||svcL()>0));
+  const pick=[];while(pick.length<3&&keys.length){const k=keys.splice(Math.floor(Math.random()*keys.length),1)[0];pick.push(k)}const R=qReward();
+  S.q={day,list:pick.map(k=>({t:k,need:k==='collect'?Math.max(10000,Math.round(R*3/1000)*1000):QT[k][1][tier],got:0,reward:R,claimed:false}))};refreshQChip()}
+function qAdd(t,n){if(!S.q)return;let ch=false;for(const q of S.q.list)if(q.t===t&&q.got<q.need){q.got=Math.min(q.need,q.got+n);ch=true;if(q.got>=q.need){toast('Задание выполнено: '+qText(q)+'. Заберите награду');sfx('done')}}if(ch)refreshQChip()}
+const qText=q=>QT[q.t][0].replace('{n}',fm(q.need));
+const ACH=[['r1','Первый рейс','Запустить первый рейс',()=>S.routes.length>=1,2e4],['r10','Сеть','10 рейсов одновременно',()=>S.routes.length>=10,2e5],['r30','Империя маршрутов','30 рейсов одновременно',()=>S.routes.length>=30,3e6],
+  ['h1','Первый хаб','Открыть хаб',()=>Object.keys(S.hubs).length>=1,1e5],['hw','За границей','Открыть хаб за рубежом',()=>Object.keys(S.hubs).some(k=>CITIES[k].w),5e6],['h5','Пять хабов','Открыть 5 хабов',()=>Object.keys(S.hubs).length>=5,2e7],
+  ['p100k','Сто тысяч','Перевезти 100 000 пассажиров',()=>S.stats.pax>=1e5,5e5],['p1m','Миллион','Перевезти 1 000 000 пассажиров',()=>S.stats.pax>=1e6,5e6],['p10m','Десять миллионов','Перевезти 10 000 000 пассажиров',()=>S.stats.pax>=1e7,5e7],
+  ['m10','Главный '+'по вокзалам','Главное здание штаба 10 уровня',()=>S.b.main.l>=10,1e8],['nb6','Полный комплект','Построить все 6 новых зданий в штабе',()=>NEWB.every(k=>S.b[k].l>0),2e7],
+  ['intl','Выход в мир','Построить международный терминал',()=>S.b.intl.l>0,1e6],['vsm','Белый кречет','Построить первую ВСМ',()=>VSM.some(l=>vsmDone(l.id)),5e8],['v1b','Миллиардер','Компания стоит 1 млрд ₽',()=>valuation().total>=1e9,5e7],
+  ['crew20','Своя школа','Иметь 20 экипажей',()=>S.crew&&S.crew.n>=20,5e6],['mod3','Тюнинг','Модернизация III ступени',()=>S.veh.some(v=>(v.mod||0)>=3),1e7]];
+function achTick(){for(const [id,n,,f,rw] of ACH)if(!S.ach[id]&&f()){S.ach[id]=1;S.money+=rw;toast('Достижение «'+n+'»! +'+fm(rw)+' ₽');sfx('goal')}}
+function refreshQChip(){const el=$('#cQ');if(!el||!S||!S.q)return;const n=S.q.list.filter(q=>q.got>=q.need&&!q.claimed).length;$('#vQ').textContent=n?n:'';el.classList.toggle('hot',n>0)}
+function questsSheet(){qEnsure();let h=`<div class="sh-h"><h2>Задания</h2></div><p class="sub">Новые задания каждый игровой день. Ещё ${rdur(24-S.h%24)}.</p><div class="opts">`;
+  for(const [i,q] of S.q.list.entries())h+=`<div class="opt" style="flex-direction:column;align-items:stretch"><div class="t"><b>${esc(qText(q))}</b><small>${fm(q.got)} из ${fm(q.need)} · награда ${money(q.reward)}</small><div class="bar2"><i style="width:${Math.round(q.got/q.need*100)}%"></i></div></div>${q.got>=q.need&&!q.claimed?`<button class="btn gold sm" data-a="qclaim" data-v="${i}">Забрать</button>`:q.claimed?'<small>Получено</small>':''}</div>`;
+  h+=`</div><button class="btn w" data-a="mg">Мини-игра «Диспетчер»</button><div class="sec">Достижения · ${Object.keys(S.ach).length} из ${ACH.length}</div><div class="opts">`;
+  for(const [id,n,d,,rw] of ACH)h+=`<div class="opt${S.ach[id]?'':' locked'}"><div class="t"><b>${S.ach[id]?'✓ ':''}${esc(n)}</b><small>${esc(d)} · ${fm(rw)} ₽</small></div></div>`;
+  return h+'</div>'}
+/* ===== mini-game «Диспетчер» ===== */
+const MG={on:false};
+function mgReward(){return Math.max(3000,Math.round(valuation().total*0.0005/100)*100)}
+function mgOpen(){if(S.mgNext&&Date.now()<S.mgNext){toast('Диспетчер отдыхает: следующая смена через '+Math.ceil((S.mgNext-Date.now())/60000)+' мин');return}
+  closeSheet();const el=$('#mg');el.hidden=false;MG.on=true;MG.score=0;MG.t0=performance.now();MG.kind=S.kind;MG.trains=[];MG.planes=[];MG.sw=[0,0];MG.spawn=0;MG.done=false;MG.ok=0;MG.bad=0;MG.n=0;MG.cur=null;MG.wind=0;MG.input=0;
+  $('#mgTitle').textContent=S.kind==='rail'?'Диспетчер: стрелки':'Диспетчер: посадка в непогоду';$('#mgHelp').textContent=S.kind==='rail'?'Касайтесь стрелок, чтобы поезд пришёл на платформу своего цвета.':'Держите левую или правую половину экрана, чтобы удержать самолёт над полосой при боковом ветре.';
+  mgSize();requestAnimationFrame(mgLoop)}
+function mgSize(){const c=$('#mgC'),r=c.getBoundingClientRect(),d=Math.min(2,devicePixelRatio||1);c.width=r.width*d;c.height=r.height*d;MG.W=r.width;MG.H=r.height;MG.d=d}
+function mgClose(){MG.on=false;$('#mg').hidden=true}
+function mgFinish(){MG.done=true;const rw=MG.score*mgReward();S.money+=rw;S.mgNext=Date.now()+4*60000;qAdd('mg',1);save();hud();
+  $('#mgRes').innerHTML=`<b>Смена окончена</b><br>Очков: ${MG.score} · награда ${fm(rw)} ₽<br><button class="btn w" id="mgOk" type="button">Готово</button>`;$('#mgRes').hidden=false;sfx(MG.score>0?'goal':'error')}
+function mgPaths(){const W=MG.W,H=MG.H,yM=H*0.42,y1=H*0.2,yB=H*0.62,y2=H*0.48,y3=H*0.8,A={x:W*0.28,y:yM},B={x:W*0.55,y:yB};
+  return{A,B,P0:[{x:-30,y:yM},A],AU:[A,{x:W*0.4,y:y1},{x:W+40,y:y1}],AD:[A,{x:W*0.4,y:yB},B],BU:[B,{x:W*0.67,y:y2},{x:W+40,y:y2}],BD:[B,{x:W*0.67,y:y3},{x:W+40,y:y3}],ends:[y1,y2,y3]}}
+const MGC=['#d6402b','#2a7fd1','#e2a21b'];
+function polyAt(P,d){for(let i=1;i<P.length;i++){const L=Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);if(d<=L){const f=d/L;return{x:P[i-1].x+(P[i].x-P[i-1].x)*f,y:P[i-1].y+(P[i].y-P[i-1].y)*f,a:Math.atan2(P[i].y-P[i-1].y,P[i].x-P[i-1].x)}}d-=L}return null}
+function mgLoop(now){if(!MG.on)return;const c=$('#mgC'),g=c.getContext('2d'),W=MG.W,H=MG.H,el=(now-MG.t0)/1000,dt=Math.min(0.05,(now-(MG.last||now))/1000);MG.last=now;
+  g.setTransform(MG.d,0,0,MG.d,0,0);g.fillStyle=MG.kind==='rail'?'#9ab873':'#5d6e7a';g.fillRect(0,0,W,H);
+  if(MG.kind==='rail'){const p=mgPaths(),line=P=>{g.beginPath();g.moveTo(P[0].x,P[0].y);for(const q of P)g.lineTo(q.x,q.y);g.stroke()};
+    g.strokeStyle='#6b5a45';g.lineWidth=14;[p.P0,p.AU,p.AD,p.BU,p.BD].forEach(line);g.strokeStyle='#c9ced3';g.lineWidth=3;g.setLineDash([]);[p.P0,p.AU,p.AD,p.BU,p.BD].forEach(line);
+    p.ends.forEach((y,i)=>{g.fillStyle=MGC[i];g.fillRect(W*0.8,y-22,W*0.2,10);g.fillRect(W*0.8,y+12,W*0.2,10)});
+    [[p.A,MG.sw[0]],[p.B,MG.sw[1]]].forEach(([q,st])=>{g.fillStyle='rgba(255,255,255,.92)';g.beginPath();g.arc(q.x,q.y,26,0,7);g.fill();g.strokeStyle='#2b2f33';g.lineWidth=5;g.beginPath();g.moveTo(q.x-12,q.y);g.lineTo(q.x+10,q.y+(st?12:-12));g.stroke()});
+    if(!MG.done){MG.spawn-=dt;if(MG.spawn<=0&&el<45){MG.trains.push({d:0,seg:'P0',c:Math.floor(Math.random()*3),v:70+Math.min(90,el*2.2)});MG.spawn=Math.max(1.3,3.2-el*0.05)}
+      for(const t of MG.trains){t.d+=t.v*dt;const P=p[t.seg];let q=polyAt(P,t.d);if(!q){const over=t.d-P.reduce((a,b,i)=>i?a+Math.hypot(b.x-P[i-1].x,b.y-P[i-1].y):0,0);
+          if(t.seg==='P0'){t.seg=MG.sw[0]?'AD':'AU';t.d=over}else if(t.seg==='AD'){t.seg=MG.sw[1]?'BD':'BU';t.d=over}else{const k=t.seg==='AU'?0:t.seg==='BU'?1:2;t.gone=true;if(k===t.c){MG.score++;sfx('coin')}else{MG.score=Math.max(0,MG.score-1);sfx('error')}}q=polyAt(p[t.seg],t.d)}
+        if(q&&!t.gone){g.save();g.translate(q.x,q.y);g.rotate(q.a);g.fillStyle=MGC[t.c];g.fillRect(-34,-9,44,18);g.fillStyle='#ffffff';g.fillRect(4,-7,6,14);g.restore()}}
+      MG.trains=MG.trains.filter(t=>!t.gone);if(el>=45&&!MG.trains.length)mgFinish()}}
+  else{const rw=W*0.16,cx=W/2,ry=H*0.86;g.fillStyle='#3a3d41';g.fillRect(cx-rw/2,ry-6,rw,H-ry+6);g.fillStyle='#ffffff';for(let y=ry;y<H;y+=24)g.fillRect(cx-2,y,4,12);
+    for(let i=0;i<40;i++){g.fillStyle='rgba(255,255,255,0.15)';g.fillRect((i*97+el*260*(1+i%3))%W,(i*53+el*120)%H,26,2)}
+    if(!MG.done){if(!MG.cur){if(MG.n>=6){mgFinish()}else{MG.n++;MG.cur={x:W*(0.2+Math.random()*0.6),y:-20,vx:0}}}
+      if(MG.cur){const p=MG.cur;MG.wind+=(Math.random()-0.5)*dt*240;MG.wind*=0.985;MG.wind=Math.max(-160,Math.min(160,MG.wind));p.vx+=(MG.wind*0.9+MG.input*340)*dt;p.vx*=0.94;p.x+=p.vx*dt;p.y+=H*0.11*dt;
+        if(p.y>=ry){const off=Math.abs(p.x-cx);if(off<rw/2){const pts=off<rw/6?2:1;MG.score+=pts;sfx('coin')}else sfx('error');MG.cur=null}
+        else{g.save();g.translate(p.x,p.y);g.fillStyle='#f4f5f6';g.fillRect(-4,-22,8,44);g.fillRect(-26,0,52,8);g.fillRect(-10,-21,20,5);g.fillStyle='#1f262e';g.fillRect(-3,14,6,5);g.restore()}}
+      g.fillStyle='#ffffff';g.font='600 14px Rubik,Arial';g.fillText('Ветер '+(MG.wind>0?'→':'←')+' '+Math.round(Math.abs(MG.wind)/10)+' м/с',12,H-14)}}
+  $('#mgScore').textContent='Очки: '+MG.score+(MG.kind==='rail'?' · '+Math.max(0,Math.ceil(45-el))+' с':' · самолёт '+Math.min(6,MG.n)+' из 6');
+  requestAnimationFrame(mgLoop)}
+(()=>{const c=$('#mgC');c.addEventListener('pointerdown',e=>{if(!MG.on||MG.done)return;const r=c.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+    if(MG.kind==='rail'){const p=mgPaths();if(Math.hypot(x-p.A.x,y-p.A.y)<60){MG.sw[0]^=1;sfx('tap')}else if(Math.hypot(x-p.B.x,y-p.B.y)<60){MG.sw[1]^=1;sfx('tap')}}
+    else MG.input=x<r.width/2?-1:1});
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>c.addEventListener(ev,()=>{MG.input=0}));
+  $('#mgX').addEventListener('click',mgClose);$('#mgRes').addEventListener('click',e=>{if(e.target.id==='mgOk'){$('#mgRes').hidden=true;mgClose()}})})();
 /* ================= DURATIONS ================= */
 function rdur(gh){const s=Math.max(0,Math.ceil(gh*msPerH()/1000));
   if(s<60)return s+' с';const m=Math.floor(s/60);
@@ -692,9 +811,10 @@ function addEv(e){e.id=S.ev.seq++;S.ev.list.push(e);mapDirty=true;refreshEvChip(
 function rollEvents(){evInit();if(S.h<S.ev.next)return;S.ev.next=S.h+8+Math.random()*10;if(!S.routes.length)return;
   S.ev.list=S.ev.list.filter(e=>e.end>S.h-2&&!(e.type==='gov'&&e.done));
   const m=monthIdx(),win=m===11||m<=2,r=Math.random();
-  if(r<0.22){const id=pickWeighted(DRONE,relevant);if(!id||Math.random()>DRONE[id]*1.3)return;const dur=3+Math.random()*5;
+  if(r<0.22){const id=pickWeighted(DRONE,relevant);if(!id||Math.random()>DRONE[id]*1.3)return;const pb=sites().find(x=>siteCity(x)===id||(x==='hq'&&id===S.city)),pv=pb?siteB(pb).pvo.l:0;
+    if(pv&&Math.random()<0.15*pv){toast('Налёт на '+CITIES[id].n+' отражён: защита от дронов сработала');return}const dur=(3+Math.random()*5)*(1-0.1*pv);
     const e=addEv({type:'drones',city:id,start:S.h,end:S.h+dur});let dmg='';
-    if(Math.random()<0.35){const base=sites().find(s=>siteCity(s)===id||(s==='hq'&&id===S.city));
+    if(Math.random()<0.35*(1-0.15*pv)){const base=sites().find(s=>siteCity(s)===id||(s==='hq'&&id===S.city));
       if(base){const k=siteB(base).kassa,lost=Math.floor(k.st*0.3);k.st-=lost;if(lost>0)dmg=' Повреждена касса базы: потеряно '+fm(lost)+' ₽.'}
       else{const rr=S.routes.filter(x=>x.to===id);if(rr.length){const v=vehOf(rr[Math.floor(Math.random()*rr.length)]);breakVeh(v,true);dmg=' Повреждена техника: '+VEH[v.type].n+'.'}}}
     e.msg=(S.kind==='air'?'Аэропорт закрыт':'Движение остановлено')+' на '+Math.round(dur)+' ч.'+dmg;toast(EVN.drones+': '+CITIES[id].n+'. '+e.msg);sfx('error');return}
@@ -711,13 +831,15 @@ function routeState(r){const v=vehOf(r);if(v.rep&&v.rep>S.h)return{pause:true,sl
   for(const c of[r.to,siteCity(r.site)]){const e=cityEv(c);if(!e)continue;
     if(e.type==='drones')return{pause:true,slow:0,why:EVN.drones+' в городе '+CITIES[c].n};
     if(e.type==='fog')return{pause:true,slow:0,why:'Туман в городе '+CITIES[c].n};
+    if(e.type==='storm'&&S.kind!=='air')return{pause:false,slow:1-0.4*(1-(S.crew?S.crew.xp:0)/200),why:'Шторм: поезд идёт медленнее'};
     if(e.type==='storm')return S.kind==='air'?{pause:true,slow:0,why:'Шторм в городе '+CITIES[c].n}:{pause:false,slow:0.6,why:'Шторм: поезд идёт медленнее'};
     if(e.type==='blizzard')return{pause:false,slow:0.5,why:'Метель: рейс идёт вдвое дольше'}}
   return{pause:false,slow:1,why:''}}
 function breakVeh(v,silent){const site=S.routes.find(r=>r.id===v.route);const dl=site?siteB(site.site).depot.l:1;
   v.rep=S.h+Math.max(3,20-dl*1.6);const cost=Math.round(VEH[v.type].price*0.04/100)*100;S.money-=cost;
   if(!silent){toast('Поломка: '+VEH[v.type].n+'. Ремонт '+rdur(v.rep-S.h)+', '+fm(cost)+' ₽');sfx('error')}}
-function maybeBreak(r){const v=vehOf(r),t=VEH[v.type];let p=0.005+(v.used?0.025:0)+(t.tier===1?0.008:0);
+function maybeBreak(r){const v=vehOf(r),t=VEH[v.type];v.wear=Math.min(100,(v.wear||0)+(v.used?1.6:1)*0.8);let p=(0.005+(v.used?0.025:0)+(t.tier===1?0.008:0))*(0.4+v.wear/45);
+  if(S.autoTO&&svcL()>=3&&v.wear>=70&&!(v.rep>S.h)){doTO(v,true);return}
   p*=1-0.05*Math.min(10,siteB(r.site).depot.l);if(Math.random()<p)breakVeh(v)}
 function legDone(r){const g=S.ev&&S.ev.list.find(e=>e.type==='gov'&&e.acc&&!e.done&&e.end>S.h&&e.city===r.to&&r.dir===1);
   if(g){g.done=true;S.money+=g.reward;toast('Госзаказ выполнен: +'+fm(g.reward)+' ₽');sfx('goal');refreshEvChip()}}
@@ -821,11 +943,11 @@ const brandName=()=>(S&&S.company&&S.company.name)||'AlimTransport';
 const BT={};function brandTex(fg,bg){const key=brandName()+fg+bg;if(BT[key])return BT[key];
   return BT[key]=canvasTex(512,96,(g,w,h)=>{if(bg){g.fillStyle=bg;g.fillRect(0,0,w,h)}g.fillStyle=fg;let fs=60;g.font=`800 ${fs}px Rubik, Arial, sans-serif`;
     while(g.measureText(brandName()).width>w-24&&fs>20){fs-=4;g.font=`800 ${fs}px Rubik, Arial, sans-serif`}g.textBaseline='middle';g.textAlign='center';g.fillText(brandName(),w/2,h/2+2)})}
-function decal(g,w,h,tex,x,y,z,ry){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshStandardMaterial({map:tex,transparent:true,roughness:0.5}));m.position.set(x,y,z);m.rotation.y=ry||0;g.add(m);return m}
+function decal(g,w,h,tex,x,y,z,ry){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshStandardMaterial({map:tex,transparent:true,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-4,roughness:0.5}));m.position.set(x,y,z);m.rotation.y=ry||0;g.add(m);return m}
 function signTex(text,fg,bg){const k='s'+text+fg+bg;if(BT[k])return BT[k];return BT[k]=canvasTex(256,64,(g,w,h)=>{g.fillStyle=bg;g.fillRect(0,0,w,h);g.fillStyle=fg;g.font='700 34px Rubik, Arial, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,w/2,h/2+2)})}
 
 const world=new THREE.Group();scene.add(world);
-const B={};let cranes=[],people=[],trains=[],planes=[],props=[],shadowDirty=true;
+const B={};let cranes=[],people=[],trains=[],planes=[],props=[],spins=[],shadowDirty=true;
 function winGrid(g,w,y0,rows,rowH,cols,z,ww,wh){for(let r=0;r<rows;r++)for(let i=0;i<cols;i++){const x=-w/2+w*(i+0.5)/cols;bx(g,ww,wh,0.04,GLASS(),x,y0+r*rowH,z,false)}}
 function towerTop(g,st,y,L,k,x,z){
   if(st.shape==='spire'){const c=cn(g,0.6*k,(1.1+0.1*L)*k,st.roof,x,y,z,4);c.rotation.y=Math.PI/4;add(g,new THREE.OctahedronGeometry(0.15*k),mat(0xb3121b,{emissive:new THREE.Color(0x5a0000),roughness:0.4}),x,y+(1.22+0.1*L)*k,z)}
@@ -875,7 +997,7 @@ function mHotel(g,L,st){const f=Math.min(1+L,9),fh=0.4;bx(g,2.0,0.5,1.5,GLASS(),
   for(const z of[0.71,-0.71])winGrid(g,1.7,0.62,f,fh,4,z,0.26,0.24);
   for(const x of[1.01,-1.01])for(let r=0;r<f;r++){const m=bx(g,0.04,0.24,0.3,GLASS(),x,0.62+r*fh,0,false)}
   bx(g,2.1,0.12,1.5,0x5f6265,0,0.5+fh*f,0);decal(g,1.4,0.26,signTex('ОТЕЛЬ','#ffffff','#2b2f33'),0,0.5+fh*f+0.26,0.76,0);bx(g,1.5,0.32,0.04,0x2b2f33,0,0.5+fh*f+0.1,0.74,false);
-  for(let i=0;i<4;i++){const a=bx(g,0.5,0.04,0.7,i%2?0xf2f0ea:0xa8322a,-0.75+i*0.5,0.5,1.05,false);a.rotation.x=-0.22}
+  for(let i=0;i<4;i++){const a=bx(g,0.49,0.04,0.7,i%2?0xf2f0ea:0xa8322a,-0.75+i*0.5,0.56,1.12,false);a.rotation.x=-0.22}
   for(const x of[-0.6,0.2,0.9]){cy(g,0.16,0.16,0.03,0xf2f0ea,x,0.32,1.6,14);cy(g,0.02,0.02,0.32,STEEL(),x,0,1.6,6)}}
 function palm(g,x,z,h){cy(g,0.06,0.09,h,0x7a5a3a,x,0,z,6);for(let i=0;i<6;i++){const a=i/6*Math.PI*2,l=bx(g,0.8,0.03,0.2,0x4f7f3a,x+0.32*Math.cos(a),h-0.1,z+0.32*Math.sin(a));l.rotation.y=-a;l.rotation.z=-0.38}}
 function mLocal(g,L){const st=siteStyle(view),q=new THREE.Group();q.scale.setScalar(0.8+0.1*L);g.add(q);const W=WATER();const c=siteCity(view)==='smf'&&view==='hq'?S.city:(view==='hq'?S.city:view);
@@ -942,7 +1064,38 @@ function modelFor(id,L,g){const st=siteStyle(view);
   if(id==='kassa')return mKassa(g,L,st);
   if(id==='cargo')return mCargo(g,L);
   if(id==='hotel')return mHotel(g,L,st);
-  if(id==='local')return mLocal(g,L)}
+  if(id==='local')return mLocal(g,L);
+  if(XMOD[id])return XMOD[id](g,L,st)}
+const XMOD={
+  service(g,L,st){const k=0.9+0.04*L;bx(g,2.4*k,0.05,1.9*k,texMat('concrete',2,2));bx(g,2.2*k,1.0+0.06*L,1.6*k,0xd6d3cb,0,0.05,-0.1);gable(g,2.2*k,1.6*k,0.35,0x5d6f7d,0,1.05+0.06*L,-0.1);
+    bx(g,1.2*k,0.85,0.03,0x3c4248,-0.3,0.05,0.71*k);for(let y=0.15;y<0.85;y+=0.14)bx(g,1.2*k,0.015,0.035,0x6a7178,-0.3,0.05+y,0.715*k,false);
+    decal(g,1.6*k,0.26,signTex('СЕРВИС',S.kind==='rail'?'#ffffff':'#ffffff',brandColor()),0,0.9+0.06*L,0.72*k,0);
+    for(let i=0;i<Math.min(L,4);i++){cy(g,0.08,0.08,0.4,0xc8102e,0.75*k,0.05,0.45-i*0.3,10);}bx(g,0.35,0.5,0.25,0x2f6b4f,-1.0*k,0.05,0.75*k);
+    if(S.kind==='rail'){for(const z of[0.25,-0.25]){const w=add(g,pg('wset',()=>new THREE.CylinderGeometry(0.16,0.16,0.04,14)),mat(0x3a3d41,MTO),0.75*k,0.2,0.85+z*0.2,false);w.rotation.x=Math.PI/2}cy(g,0.03,0.03,0.6,STEEL(),0.75*k,0.2,0.85,6).rotation.x=Math.PI/2}
+    else{const e=add(g,new THREE.CylinderGeometry(0.22,0.18,0.6,14),mat(0xc3c7cc,MTO),0.8*k,0.3,0.85,false);e.rotation.x=Math.PI/2;bx(g,0.5,0.1,0.4,0xe0a21b,0.8*k,0.05,0.85,false)}},
+  school(g,L,st){const f=1+Math.min(L,4),k=0.95;bx(g,2.2,0.08,1.4,texMat('paving',1,1));bx(g,1.9,0.42*f,1.0,st.wall,0,0.08,-0.1);winGrid(g,1.6,0.25,f,0.42,5,0.41,0.2,0.24);
+    bx(g,2.0,0.08,1.1,0x6b6e72,0,0.08+0.42*f,-0.1);decal(g,1.5,0.24,signTex('УЧЕБНЫЙ ЦЕНТР','#ffffff','#2b4c7e'),0,0.16+0.42*f,0.42,0);
+    cy(g,0.02,0.02,1.6,STEEL(),0.95,0.08,0.55,6);bx(g,0.4,0.25,0.01,brandColor(),1.15,1.38,0.55,false);
+    if(L>=2){const sm=new THREE.Group();sm.position.set(-0.8,0,0.55);g.add(sm);bx(sm,0.45,0.35,0.4,0xeeeeea,0,0.35,0);for(const x of[-0.15,0.15])for(const z of[-0.12,0.12])cy(sm,0.025,0.025,0.35,STEEL(),x,0,z,6)}},
+  ads(g,L){const h=1.2+0.25*L;cy(g,0.08,0.1,h,0x55585c,0,0,0,8);const b=new THREE.Group();b.position.set(0,h,0);g.add(b);bx(b,2.4,1.0,0.1,0x2b2f33,0,0,0);
+    decal(b,2.3,0.9,adTex(),0,0.5,0.06,0);bx(b,2.4,0.04,0.3,0x55585c,0,-0.02,0.12,false);for(const x of[-0.9,0,0.9])bx(b,0.04,0.12,0.04,0xfff2c0,x,1.0,0.15,false);
+    bx(g,1.1,0.6,0.8,0xe8e4da,0.9,0,-0.7);bx(g,1.15,0.06,0.85,0x6b6e72,0.9,0.6,-0.7)},
+  pvo(g,L){const cm=mat(0x5a6b48,{roughness:0.9});bx(g,2.2,0.05,2.0,texMat('concrete',2,2));for(const x of[-1.05,1.05])bx(g,0.03,0.5,2.0,0x8a8f94,x,0.05,0,false);
+    bx(g,0.9,0.5,0.9,cm,-0.45,0.05,0.3);const r=new THREE.Group();r.position.set(-0.45,0.55,0.3);r.userData.dyn=true;g.add(r);cy(r,0.05,0.05,0.5,STEEL(),0,0,0,8);
+    const d=bx(r,0.9,0.5,0.06,0xdfe3e6,0,0.5,0.05);d.rotation.x=-0.3;spins.push(r);
+    if(L>=2){const l=new THREE.Group();l.position.set(0.5,0.05,-0.4);g.add(l);bx(l,0.9,0.25,0.55,cm,0,0,0);const tb=new THREE.Group();tb.position.y=0.3;tb.rotation.x=-0.5;l.add(tb);
+      for(let i=0;i<Math.min(2+L,6);i++)cy(tb,0.06,0.06,0.8,cm,-0.3+i%3*0.3,0,Math.floor(i/3)*0.15,8).rotation.x=Math.PI/2}
+    if(L>=4)cy(g,0.03,0.03,1.6,STEEL(),0.8,0.05,0.7,6)},
+  logist(g,L){const w=1.6+0.12*L;bx(g,w+0.4,0.05,2.0,texMat('concrete',2,2));bx(g,w,0.9,1.2,0xc9ccd0,0,0.05,-0.3);vault(g,w,0.6,mat(0x8b9096,MTO),0,0.95,-0.3).scale.set(0.3,1,1);
+    for(let i=0;i<3;i++)bx(g,0.35,0.55,0.03,0x3c4248,-w/2+0.35+i*(w-0.7)/2,0.05,0.31,false);decal(g,1.2,0.2,signTex('ЛОГИСТИКА','#ffffff','#e07a10'),0,0.75,0.32,0);
+    for(let i=0;i<Math.min(L,3);i++){const t=new THREE.Group();t.position.set(-w/2+0.4+i*0.6,0,0.75);g.add(t);bx(t,0.32,0.32,0.55,0xf2f2f2,0,0.08,-0.05);bx(t,0.3,0.22,0.18,brandColor(),0,0.08,0.3);for(const z of[-0.2,0.25])for(const x of[-0.15,0.15]){const wh=add(t,pg('twh',()=>new THREE.CylinderGeometry(0.06,0.06,0.04,10)),mat(0x222222),x,0.06,z,false);wh.rotation.z=Math.PI/2}}
+    for(let i=0;i<4;i++)bx(g,0.25,0.18,0.25,0xa9824f,w/2+0.05,0.05+Math.floor(i/2)*0.18,-0.6+i%2*0.3)},
+  power(g,L){bx(g,2.2,0.05,2.0,texMat('dirt',2,2));for(const x of[-1.1,1.1])for(let z=-1;z<=1;z+=0.5)cy(g,0.015,0.015,0.6,0x8a8f94,x,0.05,z,4);
+    if(S.kind==='rail'){for(let i=0;i<Math.min(1+L,4);i++){const x=-0.75+i*0.5;bx(g,0.35,0.5,0.5,0x6b7a6a,x,0.05,-0.3);for(const dz of[-0.12,0.12])cy(g,0.03,0.04,0.3,0xd8d0b8,x,0.55,-0.3+dz,8)}
+      for(const x of[-0.6,0.6]){cy(g,0.04,0.05,1.5,0x8a8f94,x,0.05,0.5,6);bx(g,1.4,0.04,0.04,0x8a8f94,0,1.45,0.5,false)}bx(g,1.4,0.01,0.01,0x222222,0,1.3,0.45,false)}
+    else{const pm=mat(0x1e3a6e,{roughness:0.25,metalness:0.4});for(let i=0;i<Math.min(2+L,7);i++){const r=Math.floor(i/3),c=i%3;const p=bx(g,0.6,0.03,0.4,pm,-0.65+c*0.65,0.25,-0.6+r*0.55);p.rotation.x=-0.5;cy(g,0.02,0.02,0.25,STEEL(),-0.65+c*0.65,0.05,-0.6+r*0.55,4)}}}};
+let ADT=null;function adTex(){const k=brandName()+brandColor();if(ADT&&ADT.k===k)return ADT.t;const t=canvasTex(512,200,(g,w,h)=>{const gr=g.createLinearGradient(0,0,w,h);gr.addColorStop(0,brandColor());gr.addColorStop(1,'#1b2a3a');g.fillStyle=gr;g.fillRect(0,0,w,h);
+  g.fillStyle='#ffffff';g.font='800 54px Rubik, Arial, sans-serif';g.textAlign='center';g.fillText(brandName(),w/2,88);g.font='600 30px Rubik, Arial, sans-serif';g.fillText(S.kind==='rail'?'Поезда в любой город':'Летайте с нами!',w/2,145)});ADT={k,t};return t}
 function mIntl(g,L,st){(S.kind==='rail'?mStation:mAirport)(g,L,st,0.55);const fc=[0xc8102e,0x0b5fa5,0xf2c12e,0x1f7a4c,0xe9ecee];
   for(let i=0;i<3+L;i++){const x=-1.4+i*0.45;cy(g,0.02,0.02,1.4,STEEL(),x,0,1.1,6);bx(g,0.3,0.18,0.01,fc[i%5],x+0.16,1.2,1.1,false)}}
 function scaffold(g,w,h,d){const pole=STEEL(),plank=mat(0xa9824f);
@@ -953,7 +1106,7 @@ function scaffold(g,w,h,d){const pole=STEEL(),plank=mat(0xa9824f);
   const jib=new THREE.Group();jib.position.y=ch;cg.add(jib);bx(jib,4.0,0.16,0.16,y,1.3,0,0);bx(jib,0.6,0.32,0.42,0x5a5d61,-0.8,-0.08,0);bx(jib,0.34,0.3,0.34,0x3a3d41,0,-0.32,0);bx(jib,0.015,1.4,0.015,0x222222,2.6,-1.4,0,false);bx(jib,0.2,0.14,0.2,0x3a3d41,2.6,-1.5,0);cranes.push(jib)}
 function bProgress(bd){const st=bd.start!=null?bd.start:bd.end-BTIME[bd.to-1];return Math.max(0,Math.min(1,(S.h-st)/Math.max(0.01,bd.end-st)))}
 function rebuildBuilding(id){if(!S)return;const o=B[id];if(!o)return;
-  cranes=cranes.filter(s=>{let p=s.parent;while(p){if(p===o.grp)return false;p=p.parent}return true});
+  cranes=cranes.filter(s=>{let p=s.parent;while(p){if(p===o.grp)return false;p=p.parent}return true});spins=spins.filter(s=>{let p=s.parent;while(p){if(p===o.grp)return false;p=p.parent}return true});
   people=people.filter(p=>{if(p.userData.site===id){world.remove(p);return false}return true});
   while(o.grp.children.length)o.grp.remove(o.grp.children[0]);
   const b=siteB(view)[id],bd=bOf(view,id),L=bd?bd.to:b.l;
@@ -978,13 +1131,43 @@ function person(c,worker,seed){const r=seed==null?Math.random()*1000|0:seed,p=ne
   add(p,pg('head',()=>new THREE.SphereGeometry(0.068,12,10)),skin,0,0.78,0,false);
   if(worker)add(p,pg('helmet',()=>new THREE.SphereGeometry(0.078,12,8,0,Math.PI*2,0,Math.PI/2)),mat(0xf2c12e),0,0.8,0,false);
   else{const h=add(p,pg('hair',()=>new THREE.SphereGeometry(0.072,12,8,0,Math.PI*2,0,Math.PI*0.55)),mat(HAIR[(r>>2)%6]),0,0.785,-0.006,false);h.rotation.x=-0.25}
-  if(!worker&&r%4===0){const bag=add(p,pg('bag',()=>new THREE.BoxGeometry(0.12,0.16,0.07)),mat([0x3a4a8a,0x8a2a2a,0x2a2a2a][r%3]),0.16,0.12,0,false);p.bag=bag}
+  const bc=mat([0x3a4a8a,0x8a2a2a,0x2a2a2a,0x2f6b4f][r%4]);
+  if(!worker&&r%4===0){const bag=add(lim[3],pg('bag',()=>new THREE.BoxGeometry(0.05,0.15,0.14)),bc,0,-0.4,0,false);add(lim[3],pg('bagh',()=>new THREE.BoxGeometry(0.012,0.04,0.05)),mat(0x222222),0,-0.31,0,false);p.bag=bag}
+  if(!worker&&r%4===1){const rc=new THREE.Group();rc.position.set(0.15,0,-0.2);p.add(rc);const cs=add(rc,pg('roll',()=>new THREE.BoxGeometry(0.1,0.24,0.15)),bc,0,0.15,-0.04,false);cs.rotation.x=0.45;
+    for(const z of[-0.04]){add(rc,pg('rwh',()=>new THREE.SphereGeometry(0.02,6,4)),mat(0x222222),0,0.02,z-0.05,false)}const hd=add(rc,pg('rhd',()=>new THREE.CylinderGeometry(0.008,0.008,0.27,5)),mat(0x55585c),0,0.3,0.05,false);hd.rotation.x=0.62;p.roll=rc}
   p.limbs=lim;return p}
-const NODES=[[0,-2.2],[-5.8,-2.2],[5.8,-2.2],[-5.8,1.6],[5.8,1.6],[0,1.6],[0,4.4],[-4,5.3],[4,5.3],[-2.5,-2.2],[2.5,-2.2],[0,-4.4],[-2.5,1.6],[2.5,1.6],[2,5.3],[-2,5.3]];
-function spawnPeople(){const b=siteB(view),n=Math.min(GFX.eco?16:28,6+2*(b.main.l+b.hotel.l));
-  for(let i=0;i<n;i++){const p=person(SHIRTS[i%SHIRTS.length],false,i*37+7);const a=NODES[(i*7)%NODES.length];p.position.set(a[0]+(Math.random()-0.5)*0.6,0,a[1]+(Math.random()-0.5)*0.4);
-    p.userData={to:NODES[Math.floor(Math.random()*NODES.length)],spd:0.45+Math.random()*0.35,ph:Math.random()*6};p.scale.setScalar(0.95+Math.random()*0.15);world.add(p);people.push(p)}}
-
+/* walkable graph: people stay on roads/platforms, enter buildings through doors */
+let G={n:[],e:[],pl:[]};
+function buildGraph(){const n=[],e=[],add_=(x,z,o)=>{n.push(Object.assign({x,z},o||{}));e.push([]);return n.length-1},link=(a,b,inside)=>{e[a].push([b,!!inside]);e[b].push([a,!!inside])};
+  const b=siteB(view),row=(z,xs)=>xs.map(x=>add_(x,z)),chain=a=>{for(let k=1;k<a.length;k++)link(a[k-1],a[k])};
+  const xs=[-5.8,-4.7,-2.5,0,2.5,4.6,5.8],R1=row(-2.2,xs),R2=row(1.6,xs);chain(R1);chain(R2);link(R1[0],R2[0]);link(R1[6],R2[6]);
+  const top=add_(0,-4.4);link(top,R1[3]);
+  const mIn=add_(0,-0.6,{inside:1,dwell:1});link(R1[3],mIn,1);link(mIn,R2[3],1);
+  const door=(x,z,ix,iz,from,ok)=>{if(!ok)return;const d=add_(x,z),inn=add_(ix,iz,{inside:1,dwell:1});link(from,d);link(d,inn,1)};
+  door(-4.7,-2.75,-4.7,-3.7,R1[1],b.hotel.l>0);door(4.7,-3.0,4.7,-3.7,R1[5],true);door(-4.6,1.95,-4.6,2.8,R2[1],b.depot.l>0);door(4.6,1.95,4.6,2.8,R2[5],b.cargo.l>0);
+  const sth=add_(0,4.35);if(b.intl.l>0){const ii=add_(0,3.7,{inside:1});link(R2[3],ii,1);link(ii,sth,1)}else link(R2[3],sth);
+  const pl=[];
+  if(S.kind==='rail'){const p1=[-5.4,-3,-0.5,0,2.5,5,6.2].map(x=>add_(x,4.85,{y:0.32,plat:0}));chain(p1);link(sth,p1[3]);
+    const p2=[-5.4,-3,-0.5,2.5,5,6.2].map(x=>add_(x,7.65,{y:0.32,plat:1}));chain(p2);const cr=add_(6.2,6.3,{y:0.3});link(p1[6],cr);link(cr,p2[5]);pl.push(p1,p2)}
+  else{const ap=[-6.6,-6.6].map((x,k)=>add_(x,k?1.6:-2.2));link(ap[0],R1[0]);link(ap[1],R2[0]);link(ap[0],ap[1])}
+  G={n,e,pl}}
+function nearestNode(x,z,vis){let bi=0,bd=1e9;G.n.forEach((q,k)=>{if(vis&&q.inside)return;const d=(q.x-x)**2+(q.z-z)**2;if(d<bd){bd=d;bi=k}});return bi}
+function gpath(a,b){const prev=new Array(G.n.length).fill(-1),fl=new Array(G.n.length).fill(false),q=[a];prev[a]=a;
+  while(q.length){const c=q.shift();if(c===b)break;for(const [nb,ins] of G.e[c])if(prev[nb]<0){prev[nb]=c;fl[nb]=ins;q.push(nb)}}
+  if(prev[b]<0)return null;const out=[];let c=b;while(c!==a){out.unshift({x:G.n[c].x,z:G.n[c].z,y:G.n[c].y||0,hid:fl[c],node:c});c=prev[c]}return out}
+function pickDest(){const n=G.n;let k;const r=Math.random();
+  if(G.pl.length&&r<0.45){const pp=G.pl[Math.random()<0.5?0:1];k=pp[Math.floor(Math.random()*pp.length)]}
+  else if(r<0.65){const ins=n.map((q,i)=>q.dwell?i:-1).filter(i=>i>=0);k=ins[Math.floor(Math.random()*ins.length)]}
+  else k=Math.floor(Math.random()*n.length);return k}
+function newWalk(p){const u=p.userData,a=u.node!=null?u.node:nearestNode(p.position.x,p.position.z,true);let b=pickDest();if(b===a)b=(a+3)%G.n.length;const path=gpath(a,b);u.path=path||[];u.node=a}
+const floorY=(x,z)=>{if(S.kind!=='rail'||Math.abs(x)>6.6)return 0;if((z>4.5&&z<5.8)||(z>7.0&&z<8.35))return 0.32;if(Math.abs(x-6.2)<0.5&&z>5.8&&z<7)return 0.3;return 0};
+const blobMat=new THREE.MeshBasicMaterial({map:canvasTex(64,64,(g,w,h)=>{const r=g.createRadialGradient(w/2,h/2,2,w/2,h/2,w/2);r.addColorStop(0,'rgba(0,0,0,0.55)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,w,h)}),transparent:true,depthWrite:false});
+function addBlob(o,w,d,y){const m=new THREE.Mesh(pg('blob',()=>new THREE.PlaneGeometry(1,1)),blobMat);m.rotation.x=-Math.PI/2;m.scale.set(w,d,1);m.position.y=y||0.012;m.userData.dyn=true;m.renderOrder=1;o.add(m);return m}
+function spawnPeople(){buildGraph();const b=siteB(view),n=Math.min(GFX.eco?16:28,6+2*(b.main.l+b.hotel.l));
+  for(let i=0;i<n;i++){const p=person(SHIRTS[i%SHIRTS.length],false,i*37+7);const k=Math.floor(Math.random()*G.n.length),q=G.n[k];p.position.set(q.x,q.y||0,q.z);
+    p.userData={node:k,spd:0.45+Math.random()*0.3,ph:Math.random()*6,wait:Math.random()*2};p.scale.setScalar(0.95+Math.random()*0.15);if(!GFX.eco)addBlob(p,0.32,0.32);
+    if(q.inside)p.visible=false;if(G.pl.length&&i%5===4){p.userData.onTrain=i%2;p.visible=false}
+    world.add(p);people.push(p)}}
 /* vehicles in company livery, shaped after the real models */
 const TCFG={tem2:{t:'hood',cars:3},er2:{t:'emubox',cars:4},te10:{t:'diesel2',cars:4},chs2:{t:'cabround',cars:5},ep2k:{t:'cabangular',cars:5},
   lastochka:{t:'desiro',cars:5},sapsan:{t:'hsr',cars:6,nose:1.7},kre:{t:'hsr',cars:7,nose:2.6},flirt:{t:'flirt',cars:4},talgo:{t:'talgo',cars:8},velaro:{t:'hsr',cars:6,nose:1.5},crh380:{t:'hsr',cars:6,nose:2.2}};
@@ -996,6 +1179,7 @@ function railCar(t,x,len,o){const c=new THREE.Group();c.position.x=x;t.add(c);co
     for(const f of[1,-1])bx(c,ww,0.17,0.012,GLASS(),wx,y0+h*0.52,f*(w/2+0.004),false)}}
   if(o.stripe)bx(c,len,0.06,w+0.016,o.stripe,0,y0+h*0.22,0,false);
   if(o.stripe2)bx(c,len,0.03,w+0.02,o.stripe2,0,y0+h*0.13,0,false);
+  if(dg)for(const d of dx)t.userData.doorX.push(x+d);
   for(const d of dx)for(const f of[1,-1]){bx(c,0.24,h*0.8,0.012,0x111316,d,y0+0.03,f*(w/2+0.003),false);
     if(dg)for(const lr of[-1,1]){const leaf=new THREE.Mesh(pg('leaf',()=>new THREE.BoxGeometry(0.112,1,0.014)),(o.doors&&o.doors.isMaterial)?o.doors:mat(o.doors));leaf.scale.y=h*0.76;leaf.position.set(x+d+lr*0.058,y0+0.04+h*0.38,f*(w/2+0.012));dg[f][lr].add(leaf);
       const lw=new THREE.Mesh(pg('leafw',()=>new THREE.BoxGeometry(0.07,0.13,0.016)),GLASS());lw.position.set(x+d+lr*0.058,y0+h*0.55,f*(w/2+0.013));dg[f][lr].add(lw)}}
@@ -1008,7 +1192,7 @@ function panto(car,x,y){const d=mat(0x3a3d41,MTO);bx(car,0.34,0.04,0.32,d,x,y,0)
   bx(car,0.05,0.025,0.4,0x6b6e72,x-0.09,y+0.31,0,false)}
 const ELEC={er2:1,chs2:1,ep2k:1,lastochka:1,sapsan:1,kre:1,velaro:1,crh380:1,flirt:1};
 function trainModel(type){const t=new THREE.Group(),cf=TCFG[type]||{t:'emubox',cars:4},LV=liv(),c=hexs(LV.txt);
-  const dg={1:{},'-1':{}};t.userData.dg=dg;t.userData.dgl=[];for(const f of[1,-1])for(const lr of[-1,1]){const g=new THREE.Group();g.userData.dyn=true;t.add(g);dg[f][lr]=g;t.userData.dgl.push([g,lr])}
+  const dg={1:{},'-1':{}};t.userData.dg=dg;t.userData.dgl=[];t.userData.doorX=[];for(const f of[1,-1])for(const lr of[-1,1]){const g=new THREE.Group();g.userData.dyn=true;t.add(g);dg[f][lr]=g;t.userData.dgl.push([g,lr,f])}
   const white=mat(LV.tbody,{roughness:0.4,metalness:0.25}),roof=mat(0x8b9096,MTO),brand=mat(LV.loco,{roughness:0.45,metalness:0.2}),strp=mat(LV.tacc,{roughness:0.45,metalness:0.2}),s2=LV.tacc2?mat(LV.tacc2):null,drs=mat(LV.tdoor,{roughness:0.45,metalness:0.2}),dark=mat(0x1d2126,{roughness:0.2,metalness:0.5}),lamp=mat(0xfff6d0,{emissive:new THREE.Color(0x887744)});
   let x=0,named=false;const L=2.3,G=0.08;
   const nameOn=(car,y)=>{if(named)return;named=true;const G0=GLASS();for(const m of car.children.slice())if(m.material===G0&&Math.abs(m.position.x)<0.75&&m.geometry.parameters&&m.geometry.parameters.height===0.17)car.remove(m);for(const f of[1,-1])decal(car,1.3,0.22,brandTex(c,null),0,y,f*0.31,f>0?0:Math.PI)};
@@ -1101,13 +1285,14 @@ function planeModel(type){const cf=PCFG[type]||PCFG.a320,p=new THREE.Group(),LV=
   if(cf.eng==='prop2')for(const sd of[1,-1]){nac(sd*cf.span*0.2,wy-R*0.1,chord*0.4,R*0.38,le*1.3);prop(sd*cf.span*0.2,wy-R*0.1,chord*0.4+le*0.7,R*1.2)}
   if(cf.eng==='nose')prop(0,cyY,z0+body/2+R*1.6,R*1.6);
   /* landing gear */
-  const gg=new THREE.Group();gg.userData.dyn=true;p.add(gg);p.userData.gear=gg;
-  for(const z of[z0+body*0.38,-Lf*0.02])for(const sd of(z<0?[1,-1]:[0])){cy(gg,0.025,0.025,R*1.7,STEEL(),sd*R*0.9,0.06,z,6);for(const ww of(z<0?[-0.04,0.04]:[0])){const wh=add(gg,pg('pwh',()=>new THREE.CylinderGeometry(0.07,0.07,0.05,12)),blk,sd*R*0.9+ww,0.07,z,false);wh.rotation.z=Math.PI/2}
-    if(z<0)bx(gg,0.012,R*0.9,0.18,white,sd*R*0.9+sd*0.06,0.18,z,false)}
-  mergeStatic(gg);mergeStatic(sg);mergeStatic(p);p.userData.L=Lf;return p}
+  const gg=new THREE.Group();gg.userData.dyn=true;p.add(gg);p.userData.gear=gg;p.userData.legs=[];const topY=cyY-R*0.75;
+  for(const z of[z0+body*0.38,-Lf*0.02])for(const sd of(z<0?[1,-1]:[0])){const lg=new THREE.Group();lg.userData.dyn=true;lg.position.set(sd*R*0.9,topY,z);gg.add(lg);const ln=topY-0.07;
+    cy(lg,0.025,0.025,ln,STEEL(),0,-ln,0,6);for(const ww of(z<0?[-0.04,0.04]:[0])){const wh=add(lg,pg('pwh',()=>new THREE.CylinderGeometry(0.07,0.07,0.05,12)),blk,ww,-ln,0,false);wh.rotation.z=Math.PI/2}
+    if(z<0)bx(lg,0.012,R*0.9,0.18,white,sd*0.06,-ln+0.11,0,false);mergeStatic(lg);p.userData.legs.push({g:lg,ax:sd===0?'x':'z',sd})}
+  mergeStatic(sg);mergeStatic(p);p.userData.L=Lf;return p}
 const RWX=-12.6;
 const ease=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2,eOut=t=>1-(1-t)*(1-t),eIn=t=>t*t;
-function planePos(p,i){const spot=-2.4+i*4;
+function planePos(p,spot){
   if(p<0.16){const q=p/0.16;return[RWX,9*(1-q)*(1-q)+0.0,70-58*q]}
   if(p<0.26){const q=eOut((p-0.16)/0.1);return[RWX,0,12-18*q]}
   if(p<0.33){const q=ease((p-0.26)/0.07);return[RWX+(-9.8-RWX)*q,0,-6+(spot+6)*q]}
@@ -1115,24 +1300,42 @@ function planePos(p,i){const spot=-2.4+i*4;
   if(p<0.65){const q=ease((p-0.58)/0.07);return[-9.8+(RWX+9.8)*q,0,spot+(-16-spot)*q]}
   if(p<0.76){const q=eIn((p-0.65)/0.11);return[RWX,0,-16+22*q]}
   const q=(p-0.76)/0.24;return[RWX,q*q*16,6+66*q]}
-function buildVehicles(){for(const o of trains.concat(planes))world.remove(o);trains=[];planes=[];props=[];
+function buildVehicles(){for(const o of trains.concat(planes)){world.remove(o);if(o.userData.blob)world.remove(o.userData.blob)}trains=[];planes=[];props=[];
   const rs=S.routes.filter(r=>r.site===view&&!paused(r));
   const pick=arr=>{const seen=new Set(),a=[],b=[];for(const r of arr){const t=vehOf(r).type;(seen.has(t)?b:a).push(r);seen.add(t)}return a.concat(b)};
   const rail=pick(rs.filter(r=>VEH[vehOf(r).type].k==='rail')).slice(0,2),air=pick(rs.filter(r=>VEH[vehOf(r).type].k==='air')).slice(0,3);
-  rail.forEach((r,i)=>{const t=trainModel(vehOf(r).type);t.userData.track=i;t.userData.off=i*0.47;t.position.z=i?7.5:6.3;if(i)t.rotation.y=Math.PI;world.add(t);trains.push(t)});
-  air.forEach((r,i)=>{const p=planeModel(vehOf(r).type);p.userData.i=i;p.userData.off=i/Math.max(1,air.length)+0.08;world.add(p);planes.push(p)})}
+  rail.forEach((r,i)=>{const t=trainModel(vehOf(r).type);t.userData.track=i;t.userData.off=i*0.47;t.position.z=i?8.9:6.3;if(i)t.rotation.y=Math.PI;world.add(t);trains.push(t)});
+  let cur=-4.6;const fit=[];for(const r of air){const sp_=(PCFG[vehOf(r).type]||PCFG.a320).span;if(cur+sp_>11.4)continue;fit.push([r,cur+sp_/2]);cur+=sp_+0.5}
+  fit.forEach(([r,spot],i)=>{const p=planeModel(vehOf(r).type);p.userData.i=spot;p.userData.off=i/Math.max(1,fit.length)+0.08;world.add(p);planes.push(p);
+    const bl=new THREE.Mesh(pg('blob',()=>new THREE.PlaneGeometry(1,1)),planeShadowMat().clone());bl.rotation.x=-Math.PI/2;const c=PCFG[vehOf(r).type]||PCFG.a320;bl.scale.set(c.span*1.05,c.L*1.05,1);bl.renderOrder=1;
+    const bg=new THREE.Group();bg.add(bl);world.add(bg);p.userData.blob=bg;p.userData.blobm=bl})
+  rail.forEach(t=>{});for(const o of trains)for(const ch of [o]){ch.traverse(m=>{if(m.isMesh)m.castShadow=false});const L=o.userData.len;const b=addBlob(o,L+0.4,1.05,0.2);b.position.x=-L/2+0.6}
+  for(const o of planes)o.traverse(m=>{if(m.isMesh)m.castShadow=false});
+  for(const p of people){const q=p.userData;if(q.onTrain!=null&&!trains.some(t=>t.userData.track===q.onTrain)){q.onTrain=null;const k=nearestNode(0,4.85,true),n=G.n[k];p.position.set(n.x,n.y||0,n.z);q.node=k;q.path=[];p.visible=true}}}
+let PSM=null;function planeShadowMat(){if(PSM)return PSM;const tx=canvasTex(128,128,(g,w,h)=>{g.filter='blur(3px)';g.fillStyle='rgba(0,0,0,0.6)';
+  g.beginPath();g.ellipse(w/2,h/2,7,56,0,0,7);g.fill();g.beginPath();g.moveTo(4,h*0.52);g.lineTo(w-4,h*0.52);g.lineTo(w/2+10,h*0.42);g.lineTo(w/2-10,h*0.42);g.fill();
+  g.beginPath();g.moveTo(w*0.32,h*0.12);g.lineTo(w*0.68,h*0.12);g.lineTo(w/2+4,h*0.2);g.lineTo(w/2-4,h*0.2);g.fill()});
+  return PSM=new THREE.MeshBasicMaterial({map:tx,transparent:true,depthWrite:false})}
 const hasRail=s=>S.kind==='rail',hasAir=s=>S.kind==='air';
 function buildWorld(){
-  while(world.children.length)world.remove(world.children[0]);cranes=[];people=[];for(const k in B)delete B[k];
+  while(world.children.length)world.remove(world.children[0]);cranes=[];spins=[];people=[];for(const k in B)delete B[k];
   const W0=new THREE.Group();world.add(W0);
   const st=siteStyle(view);
   const gr=new THREE.Mesh(new THREE.PlaneGeometry(140,140),texMat('grass',36,36));gr.rotation.x=-Math.PI/2;gr.position.y=-0.02;gr.receiveShadow=true;W0.add(gr);
   bx(W0,15.4,0.06,15.4,texMat('paving',9,9),0,-0.06,0.4,false);
-  for(const [w,d,x,z] of[[1.2,14,0,0.4],[13,1.2,0,-2.2],[13,1.2,0,1.6]])bx(W0,w,0.02,d,texMat('asphalt',Math.max(1,w/2),Math.max(1,d/2)),x,0,z,false);
-  if(hasRail(view)){bx(W0,90,0.12,3.2,texMat('ballast',30,1),0,-0.04,6.9,false);
+  for(const [w,d,x,z] of[[1.2,hasRail(view)?11:14,0,hasRail(view)?-1.1:0.4],[13,1.2,0,-2.2],[13,1.2,0,1.6]])bx(W0,w,0.02,d,texMat('asphalt',Math.max(1,w/2),Math.max(1,d/2)),x,0,z,false);
+  if(hasRail(view)){bx(W0,90,0.12,4.4,texMat('ballast',30,1),0,-0.04,7.6,false);
     const sl=new THREE.InstancedMesh(new THREE.BoxGeometry(0.18,0.06,1.0),mat(0x5a4632),330);const m4=new THREE.Matrix4();let n=0;
-    for(const z of[6.3,7.5])for(let x=-45;x<45&&n<330;x+=0.55){m4.makeTranslation(x,0.1,z);sl.setMatrixAt(n++,m4)}sl.count=n;sl.receiveShadow=true;W0.add(sl);
-    for(const z of[6.3,7.5])for(const dz of[-0.32,0.32])bx(W0,90,0.07,0.06,STEEL(),0,0.12,z+dz,false);
+    for(const z of[6.3,8.9])for(let x=-45;x<45&&n<330;x+=0.55){m4.makeTranslation(x,0.1,z);sl.setMatrixAt(n++,m4)}sl.count=n;sl.receiveShadow=true;W0.add(sl);
+    for(const z of[6.3,8.9])for(const dz of[-0.32,0.32])bx(W0,90,0.07,0.06,STEEL(),0,0.12,z+dz,false);
+    /* island platform for track 2 + crossing */
+    bx(W0,13,0.32,1.3,texMat('concrete',6,1),0,0,7.65);for(const z of[7.05,8.25])bx(W0,13,0.02,0.08,0xe2c12a,0,0.32,z,false);
+    bx(W0,10,0.07,0.8,mat(0x6f757b,MTO),0,1.52,7.65);for(let x=-4.4;x<=4.4;x+=2.2){cy(W0,0.04,0.04,1.2,STEEL(),x,0.32,7.65,8);bx(W0,0.6,0.04,0.22,0x7a5a3a,x+1.1,0.6,7.65);for(const dx of[-0.25,0.25])bx(W0,0.04,0.25,0.2,STEEL(),x+1.1+dx,0.32,7.65,false)}
+    for(let k=0;k<6;k++)bx(W0,0.9,0.05,0.2,0x6b5a45,6.2,0.26,5.85+k*0.22,false);
+    /* overhead line: masts on the island, cantilevers, contact + messenger wires */
+    const cw=mat(0x3a3a3a,MTO);for(let x=-42;x<=42;x+=7){const onP=Math.abs(x)<6.6;cy(W0,0.05,0.06,2.1,0x8d949b,x,onP?0.32:0,7.65,8);
+      for(const tz of[6.3,8.9]){const a=bx(W0,0.03,0.03,1.35,cw,x,(onP?0.32:0)+1.75,(7.65+tz)/2,false);bx(W0,0.02,0.36,0.02,cw,x,1.24,tz,false)}}
+    for(const tz of[6.3,8.9]){bx(W0,90,0.016,0.016,0x2b2b2b,0,1.235,tz,false);bx(W0,90,0.014,0.014,0x2b2b2b,0,1.6,tz,false);for(let x=-43;x<43;x+=1.75)bx(W0,0.008,0.36,0.008,0x2b2b2b,x,1.24,tz,false)}
     bx(W0,13,0.32,1.3,texMat('concrete',6,1),0,0,5.15);bx(W0,13,0.02,0.1,0xe2c12a,0,0.32,5.75,false);
     for(let x=-5.5;x<=5.5;x+=2.2){cy(W0,0.05,0.05,1.25,STEEL(),x,0.32,4.85,8)}bx(W0,12,0.08,1.0,mat(0x6f757b,MTO),0,1.57,5.0);
     for(let x=-4.4;x<=4.4;x+=2.2){bx(W0,0.7,0.04,0.25,0x7a5a3a,x,0.62,4.8);bx(W0,0.04,0.25,0.25,STEEL(),x-0.3,0.32,4.8,false);bx(W0,0.04,0.25,0.25,STEEL(),x+0.3,0.32,4.8,false)}}
@@ -1140,35 +1343,48 @@ function buildWorld(){
     for(let z=-20;z<20;z+=2.4)bx(W0,0.1,0.01,1.2,0xf2f2f2,RWX,0.03,z,false);
     for(const z of[-22,22])for(let i=-5;i<=5;i++)bx(W0,0.12,0.01,1.0,0xf2f2f2,RWX+i*0.24,0.03,z+(z>0?-1:1),false);
     for(let z=-22;z<=22;z+=2)for(const x of[RWX-1.55,RWX+1.55])add(W0,new THREE.SphereGeometry(0.05,8,6),mat(0xfff3c4,{emissive:new THREE.Color(0x665a20)}),x,0.05,z,false);
-    bx(W0,3.8,0.03,9.4,texMat('concrete',2,5),-9.6,0,1.6,false);bx(W0,2.8,0.03,1.4,texMat('asphalt',2,1),-11.2,0,-5.5,false);
+    bx(W0,4.2,0.03,16.2,texMat('concrete',2,8),-9.6,0,3.3,false);bx(W0,2.8,0.03,1.4,texMat('asphalt',2,1),-11.2,0,-5.5,false);
     const ws=new THREE.Group();ws.position.set(RWX+2.4,0,10);W0.add(ws);cy(ws,0.02,0.02,1.4,STEEL(),0,0,0,6);const sock=add(ws,new THREE.ConeGeometry(0.1,0.5,10,1,true),mat(0xe07a10),0.25,1.35,0);sock.rotation.z=Math.PI/2}
   let seed=7+Object.keys(CITIES).indexOf(siteCity(view));const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
   for(let i=0;i<48;i++){const a=rnd()*Math.PI*2,r=10+rnd()*16,x=Math.cos(a)*r,z=Math.sin(a)*r+0.4;
-    if(Math.abs(z-6.9)<2.6&&hasRail(view))continue;if(hasAir(view)&&x<-7.5&&x>-15)continue;if(Math.abs(x)<8.2&&Math.abs(z-0.4)<8.2)continue;
+    if(z>4.2&&z<11&&hasRail(view))continue;if(hasAir(view)&&x<-7.5&&x>-15)continue;if(Math.abs(x)<8.2&&Math.abs(z-0.4)<8.2)continue;
     const t=new THREE.Group();t.position.set(x,0,z);W0.add(t);const s=0.9+rnd()*0.7;t.scale.setScalar(s);
     if(st.tree==='palm')palm(t,0,0,1.5);
     else if(st.tree==='round'){cy(t,0.07,0.1,0.8,0x5a4330,0,0,0,6);const c=0x3f6a2e+((rnd()*20)|0)*0x000100;sp(t,0.55,c,0,1.15,0);sp(t,0.4,0x4c7a36,0.25,1.4,0.1)}
     else{cy(t,0.07,0.1,0.5,0x5a4330,0,0,0,6);cn(t,0.62,1.1,0x2e5130,0,0.4,0,9);cn(t,0.48,0.9,0x35603a,0,1.0,0,9);cn(t,0.32,0.7,0x3d6b42,0,1.55,0,9)}}
-  for(const x of[-7.2,7.2])for(let z=-6;z<=6;z+=4){cy(W0,0.04,0.05,1.6,0x3a3d41,x,0,z,8);bx(W0,0.3,0.06,0.12,0x3a3d41,x,1.6,z,false)}
+  for(const x of(hasAir(view)?[7.2]:[-7.2,7.2]))for(let z=-6;z<=6;z+=4){cy(W0,0.04,0.05,1.6,0x3a3d41,x,0,z,8);bx(W0,0.3,0.06,0.12,0x3a3d41,x,1.6,z,false)}
   mergeStatic(W0);shadowDirty=true;
   for(const id of siteIds(view)){const g=new THREE.Group();g.position.set(SLOT[id][0],0,SLOT[id][1]);g.userData.bid=id;world.add(g);B[id]={grp:g,top:1};rebuildBuilding(id)}
   spawnPeople();buildVehicles()}
 function animateBase(now,dt){const t=now/1000,dts=Math.min(0.1,dt/1000);
-  for(const j of cranes)j.rotation.y=Math.sin(t*0.35+j.id)*1.2;
+  for(const j of cranes)j.rotation.y=Math.sin(t*0.35+j.id)*1.2;for(const r of spins)r.rotation.y=t*1.2;
   for(const id in B){const o=B[id];if(o.bd&&o.model){const p=bProgress(o.bd);o.model.scale.y=o.fresh?0.08+0.92*p:0.7+0.3*p}}
-  const pose=(p,sw,arm)=>{const l=p.limbs;if(!l)return;l[0].rotation.x=sw;l[1].rotation.x=-sw;l[2].rotation.x=arm!=null?arm:-sw*0.8;l[3].rotation.x=arm!=null?-1.3+Math.sin(t*9+p.userData.ph)*0.6:sw*0.8};
+  const pose=(p,sw,arm)=>{const l=p.limbs;if(!l)return;l[0].rotation.x=sw;l[1].rotation.x=-sw;l[2].rotation.x=arm!=null?arm:-sw*0.8;l[3].rotation.x=arm!=null?-1.3+Math.sin(t*9+p.userData.ph)*0.6:p.roll?0.35:(p.bag?sw*0.3:sw*0.8)};
   for(const p of people){const u=p.userData;if(u.worker){p.rotation.y=Math.sin(t*0.8+u.ph)*1.5;p.position.y=0;pose(p,0,0.1);continue}
-    const dx=u.to[0]-p.position.x,dz=u.to[1]-p.position.z,dd=Math.hypot(dx,dz);
-    if(dd<0.15){u.to=NODES[Math.floor(Math.random()*NODES.length)];u.wait=Math.random()<0.3?1+Math.random()*3:0;continue}
-    if(u.wait>0){u.wait-=dts;pose(p,0);p.position.y=0;continue}
-    const sp=u.spd*dts,k=t*u.spd*14+u.ph;p.position.x+=dx/dd*sp;p.position.z+=dz/dd*sp;p.rotation.y=Math.atan2(dx,dz);p.position.y=Math.abs(Math.cos(k))*0.018;pose(p,Math.sin(k)*0.55)}
+    if(u.onTrain!=null)continue;
+    if(u.wait>0){u.wait-=dts;pose(p,0);continue}
+    if(!u.path||!u.path.length){if(u.board){u.onTrain=u.board.track;u.board=null;p.visible=false;continue}
+      const q=G.n[u.node];if(q&&q.dwell&&!u.dwelt){u.dwelt=1;p.visible=false;u.wait=2+Math.random()*5;continue}u.dwelt=0;
+      newWalk(p);if(!(q&&q.inside))u.wait=Math.random()<0.35?0.5+Math.random()*2.5:0;continue}
+    const w=u.path[0],dx=w.x-p.position.x,dz=w.z-p.position.z,dd=Math.hypot(dx,dz);
+    p.visible=!w.hid&&!(G.n[u.node]&&G.n[u.node].inside&&w.hid);
+    if(dd<0.06){p.position.x=w.x;p.position.z=w.z;if(w.node!=null)u.node=w.node;u.path.shift();continue}
+    const sp=Math.min(dd,u.spd*dts),k=t*u.spd*14+u.ph;p.position.x+=dx/dd*sp;p.position.z+=dz/dd*sp;p.rotation.y=Math.atan2(dx,dz);
+    p.position.y=floorY(p.position.x,p.position.z)+Math.abs(Math.cos(k))*0.018;pose(p,Math.sin(k)*0.55)}
   for(const tr of trains){const T=28,cyc=Math.floor((t/T)+tr.userData.off),ph0=((t/T)+tr.userData.off)%1;if(ph0>0.22&&ph0<0.3&&tr.userData.snd!==cyc){tr.userData.snd=cyc;sfx('horn',0.5);sfx('rumble',0.8)}if(ph0>0.56&&ph0<0.6&&tr.userData.dep!==cyc){tr.userData.dep=cyc;sfx('rumble',0.6)}
-    const ph=ph0,dir=tr.userData.track?-1:1,L=tr.userData.len;let x;const od=Math.max(0,Math.min(1,(ph-0.31)/0.025,(0.55-ph)/0.025));if(tr.userData.dgl)for(const [g,lr] of tr.userData.dgl)g.position.x=lr*0.1*od;
+    const ph=ph0,dir=tr.userData.track?-1:1,L=tr.userData.len;let x;const od=Math.max(0,Math.min(1,(ph-0.31)/0.025,(0.55-ph)/0.025)),side=tr.userData.track?1:-1;if(tr.userData.dgl)for(const [g,lr,f] of tr.userData.dgl)g.position.x=f===side?lr*0.1*od:0;
+    const U=tr.userData,tk=U.track;if(od>0.6&&U.opened!==cyc){U.opened=cyc;const dxs=(U.doorX||[0]).map(v=>tk?-4-v:4+v),ez=tk?8.25:5.85,pz=tk?8.9:6.3;
+      let k=0;for(const p of people){const q=p.userData;if(q.onTrain===tk&&k<4){k++;q.onTrain=null;const x=dxs[Math.floor(Math.random()*dxs.length)];p.position.set(x,0.32,pz);p.visible=true;q.node=nearestNode(x,ez,true);q.path=[{x,z:ez,y:0.32}];q.wait=0}}
+      let m=0;for(const p of people){const q=p.userData;if(m>=4||q.onTrain!=null||q.worker||!p.visible)continue;if(Math.abs(p.position.z-ez)<1&&Math.abs(p.position.x)<6.5){m++;const x=dxs[Math.floor(Math.random()*dxs.length)];q.path=[{x,z:ez,y:0.32},{x,z:pz,y:0.32,hid:true}];q.board={track:tk};q.wait=0}}}
+    if(od<0.05&&U.opened===cyc&&!U.closed){U.closed=cyc;for(const p of people){const q=p.userData;if(q.board&&q.board.track===tk&&q.path&&q.path.length>1){q.board=null;q.path=[]}}}
+    if(U.closed===cyc&&od>0.05)U.closed=null;
     if(ph<0.3)x=-48+52*eOut(ph/0.3);else if(ph<0.56)x=4;else if(ph<0.86)x=4+52*eIn((ph-0.56)/0.3);else x=999;
     tr.visible=x<900;tr.position.x=dir*(x)+(dir<0?0:0);if(dir<0)tr.position.x=-x}
-  for(const pl of planes){const T=44,ph=((t/T)+pl.userData.off)%1,cyc=Math.floor((t/T)+pl.userData.off);if(ph>0.66&&ph<0.7&&pl.userData.snd!==cyc){pl.userData.snd=cyc;sfx('jet',0.8)}if(ph>0.12&&ph<0.15&&pl.userData.lnd!==cyc){pl.userData.lnd=cyc;sfx('jet',0.45)}if(ph>0.97){pl.visible=false;continue}pl.visible=true;
+  for(const pl of planes){const T=44,ph=((t/T)+pl.userData.off)%1,cyc=Math.floor((t/T)+pl.userData.off);if(ph>0.66&&ph<0.7&&pl.userData.snd!==cyc){pl.userData.snd=cyc;sfx('jet',0.8)}if(ph>0.12&&ph<0.15&&pl.userData.lnd!==cyc){pl.userData.lnd=cyc;sfx('jet',0.45)}if(ph>0.97){pl.visible=false;if(pl.userData.blob)pl.userData.blob.visible=false;continue}pl.visible=true;
     const a=planePos(ph,pl.userData.i),b=planePos(Math.min(0.999,ph+0.004),pl.userData.i);pl.position.set(a[0],a[1],a[2]);const u=pl.userData,od=Math.max(0,Math.min(1,(ph-0.345)/0.03,(0.565-ph)/0.03));
-    if(u.door)u.door.rotation.y=-od*1.75;if(u.stairs){u.stairs.visible=od>0.01;u.stairs.position.x=u.sx+(1-od)*1.8}if(u.gear)u.gear.visible=a[1]<3;
+    if(u.door)u.door.rotation.y=-od*1.75;if(u.stairs){u.stairs.visible=od>0.01;u.stairs.position.x=u.sx+(1-od)*1.8}const y=a[1];let gd=1;if(ph>0.76)gd=Math.max(0,Math.min(1,1-(y-0.35)/1.4));else if(ph<0.16)gd=Math.max(0,Math.min(1,(7.5-y)/2));
+    if(u.legs){for(const L of u.legs){if(L.ax==='x')L.g.rotation.x=-(1-gd)*1.55;else L.g.rotation.z=-L.sd*(1-gd)*1.55}u.gear.visible=gd>0.02}
+    if(u.blob){u.blob.position.set(a[0]-y*0.6,0.03,a[2]-y*0.46);u.blob.rotation.y=pl.rotation.y;u.blobm.material.opacity=1;u.blob.visible=y<14;u.blob.scale.setScalar(1+y*0.02);u.blobm.material.opacity=Math.max(0,1-y/14)}
     const dx=b[0]-a[0],dz=b[2]-a[2],dy=b[1]-a[1];if(Math.hypot(dx,dz)>1e-4)pl.rotation.y=Math.atan2(dx,dz);pl.rotation.x=-Math.atan2(dy,Math.hypot(dx,dz)||1)*0.8}
   for(const pr of props)pr.rotation.z=t*30}
 
@@ -1359,13 +1575,26 @@ function effText(s,id,L){
     case 'local':{let e=localDef(s).eff;if(e==='transfer'&&s!=='hq')e='ticket';
       if(e==='transfer')return L===1?'Штраф −20% снят':'Штраф снят, выручка +'+(5*(L-1))+'%';
       return {ticket:'Выручка +'+(10*L)+'%',cargo:'Грузы +'+(15*L)+'%',hotel:'Гостиница и кафе +'+(8*L)+'%',demand:'Спрос +'+(10*L)+'%',fuel:'Топливо −'+(7*L)+'%'}[e]}
-    case 'intl':return 'Международные рейсы из этой базы, выручка за рубежом +'+(30+10*(L-1))+'%';}}
+    case 'intl':return 'Международные рейсы из этой базы, выручка за рубежом +'+(30+10*(L-1))+'%';
+    case 'service':return 'ТО за '+ghr(toTime(L))+' ч, модернизация до '+(L>=5?3:L>=3?2:1)+' ступени'+(L>=3?', авто-ТО':'');
+    case 'school':return 'Курс: '+plur(1+L,'экипаж','экипажа','экипажей')+' за '+ghr(trainTime(L))+' ч';
+    case 'ads':return 'До '+L+' кампаний, спрос ×'+(1.2+0.06*L).toFixed(2).replace('.',',');
+    case 'pvo':return 'Перехват '+(15*L)+'% налётов, урон −'+(15*L)+'%, закрытие короче на '+(10*L)+'%';
+    case 'logist':return 'Контрактов: '+(1+L)+', грузы рейсов +'+(25*L)+'%';
+    case 'power':return 'Расход на '+(S.kind==='rail'?'электротягу':'энергию и топливо')+' −'+(4*L)+'%';}}
+const toTime=L=>Math.max(1,8/(1+0.5*(L||1))),trainTime=L=>Math.max(3,16-2.4*L);
 function bdesc(s,id){return {main:s==='hq'?'Главное здание штаба. Открывает дальность, новую технику, хабы и уровни остальных зданий.':'Главное здание хаба. Задаёт дальность маршрутов из этого города. Не выше уровня главного здания штаба.',
   depot:'Здесь стоит техника. Каждый уровень даёт ещё одно место, места всех баз суммируются.',
   kassa:'Сюда поступает выручка с рейсов этой базы. Собирайте её, пока касса не переполнилась: лишнее сгорает. Улучшение увеличивает вместимость.',
   cargo:'Возит грузы вместе с рейсами этой базы. Поезд даёт втрое больше грузов, чем самолёт.',
   hotel:'Доход с каждого пассажира этой базы и больше спрос на её рейсы.',
   local:localDef(s).d+'. Здание есть только в этом городе.',
+  service:'Техника изнашивается с каждым рейсом, и изношенная ломается чаще. Здесь её обслуживают и модернизируют: быстрее и больше мест.',
+  school:'Готовит '+(S.kind==='rail'?'машинистов':'пилотов')+'. Каждому рейсу нужен экипаж. Опытные экипажи приносят больше денег и меньше опаздывают в непогоду.',
+  ads:'Рекламные кампании на выбранные направления: на время растёт спрос на рейсы туда.',
+  pvo:'Радары и средства РЭБ защищают базу: часть налётов перехватывается, а урон и простой меньше.',
+  logist:'Грузовые контракты: доставить груз в город к сроку за большую награду. Рейсы этой базы везут больше груза.',
+  power:S.kind==='rail'?'Своя подстанция питает контактную сеть: расход на тягу ниже.':'Солнечные панели питают аэропорт: расходы на рейсы ниже.',
   intl:s==='hq'?'Выход в мир: открывает международные рейсы из штаба и зарубежную технику. Строится с 6 уровня главного здания.':'Открывает международные рейсы из этого хаба. Не выше уровня терминала штаба.'}[id]}
 let selBld=null;
 function openBuilding(id){selBld=id;openSheet(()=>bSheet(id))}
@@ -1379,6 +1608,7 @@ function bSheet(id){const s=view,b=siteB(s)[id],L=b.l;
   if(rows.length)h+='<div class="rows">'+rows.map(r=>`<div class="row"><span>${r[0]}</span><b>${esc(r[1])}</b></div>`).join('')+'</div>';
   if((id==='kassa'||id==='cargo')&&L)h+=`<button class="btn gold w" data-a="collect" data-v="${id}" ${b.st<1?'disabled':''}>Собрать ${fm(b.st)} ₽</button>`;
   if(id==='depot')h+=depotHTML();
+  if(L&&XSHEET[id])h+=XSHEET[id](s,L);
   h+='<div class="sec">'+(L?'Улучшение':'Постройка')+'</div>';
   if(bOf(s,id))h+=`<div class="note">Идёт стройка до уровня ${bOf(s,id).to}. Осталось ${rdur(bOf(s,id).end-S.h)}.</div>`+(S.test?`<button class="btn ghost w" data-a="finish" data-s="${s}" data-v="${id}">Закончить сейчас (тест)</button>`:'');
   else if(L>=maxL(s,id))h+='<div class="note">Максимальный уровень.</div>';
@@ -1402,8 +1632,8 @@ function depotHTML(){let h=`<div class="sec">Техника всех баз · $
 function clsSeg(cur,act,rid){return '<div class="seg">'+Object.entries(CLS).map(([k,c])=>`<button class="${k===cur?'on':''}" data-a="${act}" data-v="${k}" ${rid?`data-r="${rid}"`:''}>${c.n}</button>`).join('')+'</div>'}
 function money(n){return `<span class="${n>=0?'pos':'ng'}">${n>=0?'+':'−'}${fm(Math.abs(n))} ₽</span>`}
 function routeCard(r){const v=vehOf(r),e=routeEst(r),rs=routeState(r);
-  return `<div class="opt" style="flex-direction:column;align-items:stretch">${rs.why?`<div class="note warn">${esc(rs.why)}</div>`:''}<div class="t"><b>${esc(CITIES[siteCity(r.site)].n)} — ${esc(CITIES[r.to].n)}</b><small>${esc(VEH[v.type].n)} · ${e.pax} из ${VEH[v.type].seats} мест · рейс ${ghr(e.time)} ч · за рейс ${money(e.net)} · в час ${money(e.perH)}</small>
-    <div class="bar2"><i style="width:${Math.round(Math.min(1,r.t/e.time)*100)}%"></i></div></div>${clsSeg(r.cls,'rcls',r.id)}<button class="btn red sm" data-a="close" data-v="${r.id}">Закрыть маршрут</button></div>`}
+  return `<div class="opt" style="flex-direction:column;align-items:stretch">${rs.why?`<div class="note warn">${esc(rs.why)}</div>`:''}<div class="t"><b>${esc(CITIES[siteCity(r.site)].n)} — ${esc(CITIES[r.to].n)}</b><small>${esc(VEH[v.type].n)} · ${e.pax} из ${e.seats} мест · рейс ${ghr(e.time)} ч · за рейс ${money(e.net)} · в час ${money(e.perH)}</small>
+    <div class="bar2"><i style="width:${Math.round(Math.min(1,r.t/e.time)*100)}%"></i></div>${r.sch&&r.sch!=='any'&&r.t<=0&&!schOk(r.sch,S.h%24)?'<small>Ждёт отправления по расписанию</small>':''}</div>${clsSeg(r.cls,'rcls',r.id)}<div class="seg">${Object.entries(SCH).map(([k,c])=>`<button class="${(r.sch||'any')===k?'on':''}" data-a="rsch" data-v="${k}" data-r="${r.id}">${c.n}</button>`).join('')}</div><button class="btn red sm" data-a="close" data-v="${r.id}">Закрыть маршрут</button></div>`}
 function citySheet(id){const c=CITIES[id],isHQ=id===hubStation()||id===S.city,isHub=!!S.hubs[id];
   let h=`<div class="sh-h"><h2>${esc(c.n)}</h2>${isHQ?'<span class="pill">Штаб</span>':isHub?'<span class="pill">Хаб</span>':c.w?'<span class="pill grey">За рубежом</span>':''}</div>`;
   if(isHQ){const n=S.routes.filter(r=>r.site==='hq').length;
@@ -1420,7 +1650,7 @@ function citySheet(id){const c=CITIES[id],isHQ=id===hubStation()||id===S.city,is
     h+=`<div class="note warn"><b>Слишком далеко.</b> Ближайшая ${c.w?'база с международным терминалом':'база'} — ${esc(siteName(best.s))}: до неё ${fm(best.d)} км, а её дальность ${fm(siteReach(best.s))} км. Улучшите главное здание или откройте хаб ближе.</div>`;
     return h+hubSection(id)}
   if(!from.includes(selFrom))selFrom=from.includes('hq')?'hq':from[0];
-  h+=`<div class="sec">Новый маршрут</div>`;
+  h+=`<div class="sec">Новый маршрут</div>`;if(S.crew&&S.routes.length>=S.crew.n)h+=`<div class="note warn">Все ${S.crew.n} экипажей в рейсах. Обучите новых в учебном центре.</div>`;
   if(from.length>1)h+='<div class="seg">'+from.map(s=>`<button class="${s===selFrom?'on':''}" data-a="sfrom" data-v="${s}">Из: ${esc(s==='hq'?'штаба':CITIES[s].n)}</button>`).join('')+'</div>';
   h+=`<p class="sub">Откуда: ${esc(siteName(selFrom))} (${esc(CITIES[siteCity(selFrom)].n)}). ${S.kind==='rail'?'По железной дороге':'По воздуху'} ≈ ${fm(dist(siteCity(selFrom),id,S.kind))} км.${c.w?' Международный рейс: билеты дороже.':''}</p>`;
   const nT=tripsOn(selFrom,id);if(nT>=MAXTRIPS)return h+`<div class="note">На этом направлении уже ${MAXTRIPS} рейса, это максимум.</div>`+hubSection(id);
@@ -1429,7 +1659,7 @@ function citySheet(id){const c=CITIES[id],isHQ=id===hubStation()||id===S.city,is
   h+=`${clsSeg(selCls,'scls')}<div class="opts">`;
   let any=false;const reasons=[];
   for(const v of S.veh){if(v.route)continue;const why=canServe(v.type,selFrom,id);if(why){reasons.push(VEH[v.type].n+' (ваша): '+why);continue}
-    const e=est(v.type,selFrom,id,selCls,v.used,VEH[v.type].seats/(pairSeats(selFrom,id)+VEH[v.type].seats));any=true;
+    const e=est(v.type,selFrom,id,selCls,v.used,VEH[v.type].seats/(pairSeats(selFrom,id)+VEH[v.type].seats),v.mod);any=true;
     h+=`<div class="opt"><div class="t"><b>${esc(VEH[v.type].n)}${v.used?' · б/у':''}</b><small>Ваша · ${e.pax} из ${VEH[v.type].seats} мест · рейс ${ghr(e.time)} ч · в час ${money(e.perH)}</small></div><button class="btn sm" data-a="go" data-v="v:${v.id}" data-c="${id}">Запустить</button></div>`}
   const full=S.veh.length>=slots();
   for(const [t,v] of Object.entries(VEH)){if(v.k!==S.kind)continue;const why=canServe(t,selFrom,id);if(why){if(v.tier<=tierAvail(v.k,selFrom)&&!(v.foreign&&S.b.intl.l<1))reasons.push(v.n+': '+why);continue}
@@ -1469,7 +1699,7 @@ function menuSheet(){return `<div class="sh-h"><h2>Магистраль</h2><spa
   <div class="rows"><div class="row"><span>Компания</span><b>${esc(brandName())}</b></div></div><button class="btn ghost w" data-a="brand">Название и цвет компании</button>
   <div class="seg"><button class="${AU.pref.music?'on':''}" data-a="mus">Музыка: ${AU.pref.music?'вкл':'выкл'}</button><button class="${AU.pref.sfx?'on':''}" data-a="snd">Звуки: ${AU.pref.sfx?'вкл':'выкл'}</button></div>
   <button class="btn ghost w" data-a="eco">Экономия батареи: ${GFX.eco?'включена':'выключена'}</button>
-  <button class="btn ghost w" data-a="evs">События и погода</button>${S.kind==='rail'?'<button class="btn ghost w" data-a="vsmo">Высокоскоростные магистрали</button>':''}
+  <button class="btn ghost w" data-a="evs">События и погода</button><button class="btn ghost w" data-a="mg">Мини-игра «Диспетчер»</button>${S.kind==='rail'?'<button class="btn ghost w" data-a="vsmo">Высокоскоростные магистрали</button>':''}
   <button class="btn ghost w" data-a="test">Режим теста: ${S.test?'включён':'выключен'}</button>
   <div class="sec">Как играть</div>
   <div class="note">1. На карте коснитесь города с жёлтой точкой и запустите рейс.<br>2. Выручка копится в кассе базы. Собирайте её касанием по монете.<br>3. Улучшайте здания штаба: главное здание открывает дальность, технику и хабы.<br>4. Хаб открывается в городе, куда уже идёт ваш рейс.<br>5. С 6 уровня главного здания стройте международный терминал и выходите в мир: карта «Мир» на вкладке «Карта».<br>6. Цель: оценка компании 100 трлн ₽.</div>
@@ -1508,6 +1738,16 @@ $('#sheetBody').addEventListener('click',e=>{const t=e.target.closest('[data-a]'
     case 'rcls':setCls(+t.dataset.r,v);break;
     case 'close':closeRoute(+v);break;
     case 'hub':openHub(v);break;
+    case 'qclaim':{const q=S.q.list[+v];if(q&&q.got>=q.need&&!q.claimed){q.claimed=true;S.money+=q.reward;toast('+'+fm(q.reward)+' ₽');sfx('coin');refreshQChip();refreshSheet();hud();save()}break}
+    case 'mg':mgOpen();break;
+    case 'rsch':{const r=S.routes.find(x=>x.id===+t.dataset.r);if(r){r.sch=v;refreshSheet();save()}break}
+    case 'to':{const x=S.veh.find(q=>q.id===+v);if(x)doTO(x);break}
+    case 'mod':{const x=S.veh.find(q=>q.id===+v);if(x)doMod(x);break}
+    case 'autoto':S.autoTO=!S.autoTO;refreshSheet();save();break;
+    case 'train':trainCrew();break;
+    case 'trfin':if(S.crew.train){S.crew.train.end=S.h}break;
+    case 'ad':startAd(v);break;
+    case 'lgacc':{const o=S.lg.offers.find(q=>q.id===+v);if(o){o.acc=true;o.end=S.h+o.hrs;toast('Контракт принят');refreshSheet();save()}break}
     case 'gov':{const g=S.ev.list.find(x=>x.id===+v);if(g){g.acc=true;toast('Госзаказ принят');refreshSheet();save()}break}
     case 'evs':openSheet(eventsSheet);break;
     case 'eco':setEco(!GFX.eco);refreshSheet();toast(GFX.eco?'Экономия включена: проще тени и картинка, телефон греется меньше':'Полная графика включена');break;
@@ -1527,7 +1767,7 @@ function hud(){if(!S)return;$('#vMoney').textContent=fm(S.money);$('#cMoney').cl
 $('#cVal').addEventListener('click',()=>openSheet(valSheet));
 $('#winOk').addEventListener('click',()=>{$('#win').hidden=true});
 $('#cBuild').addEventListener('click',()=>openSheet(buildersSheet));
-$('#cEv').addEventListener('click',()=>openSheet(eventsSheet));$('#cTime').addEventListener('click',()=>openSheet(eventsSheet));
+$('#cEv').addEventListener('click',()=>openSheet(eventsSheet));$('#cQ').addEventListener('click',()=>openSheet(questsSheet));$('#cTime').addEventListener('click',()=>openSheet(eventsSheet));
 $('#bMenu').addEventListener('click',()=>openSheet(menuSheet));
 let tab='hub';
 function setTab(t){if(t==='routes'){openSheet(routesSheet);return}
@@ -1585,8 +1825,8 @@ function loop(now){let dt=now-lastT;lastT=now;
     saveAcc+=dt;if(saveAcc>4000){saveAcc=0;save()}
     uiAcc+=dt;if(uiAcc>500){uiAcc=0;hud();if(sheetFn&&!sheetStatic&&!$('#sheet').matches(':active')&&!tooSoon())renderSheet()}
     const gap=now-lastR,need=tab==='hub'?(sheetFn?100:(GFX.eco?41:32)):66;
-    if(gap>=need-3){lastR=now;
-      if(tab==='hub'){animateBase(now,gap);if(++shadowTick>=3||shadowDirty){shadowTick=0;shadowDirty=false;renderer.shadowMap.needsUpdate=true}renderer.render(scene,camera);placeTags()}
+    if(gap>=need-3&&!MG.on){lastR=now;
+      if(tab==='hub'){animateBase(now,gap);if(shadowDirty||(S.builds.length&&++shadowTick>=15)){shadowTick=0;shadowDirty=false;renderer.shadowMap.needsUpdate=true}renderer.render(scene,camera);placeTags()}
       else if(tab==='map'){if(mapDirty)renderMap();animateMap()}}
   }
   requestAnimationFrame(loop)}
