@@ -34,8 +34,48 @@ object Llm {
         http.newCall(Request.Builder().url(url)
             .header("Authorization", if (br) "Bearer $key" else key).get().build()).execute().use { it.code to (it.body?.string() ?: "") }
 
-    /** Один ход модели. Ответ просим JSON-объектом; модель не умеет response_format — повтор без него. */
-    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply {
+    /** Один ход модели. Неизвестное gptunnel название модели — подбираем верное, запоминаем и повторяем. */
+    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply =
+        try {
+            chatOnce(model, messages, maxTokens, json)
+        } catch (e: ModelNotFound) {
+            val fixed = findModel(model) ?: error("gptunnel не знает модель «$model», и подобрать название не вышло — впиши его в «Подключениях»")
+            if (model == Prefs.fastModel) Prefs.fastModel = fixed
+            if (model == Prefs.smartModel) Prefs.smartModel = fixed
+            chatOnce(fixed, messages, maxTokens, json)
+        }
+
+    class ModelNotFound(msg: String) : Exception(msg)
+
+    /** Названия-кандидаты: у gptunnel бывает «claude-4.5-haiku», бывает и наоборот; плюс список /v1/models, если он есть. */
+    fun findModel(model: String): String? {
+        val m = model.lowercase()
+        val kind = listOf("haiku", "sonnet", "opus").firstOrNull { m.contains(it) } ?: return null
+        val ver = Regex("(\\d+)[.-](\\d+)").find(m)?.let { "${it.groupValues[1]}.${it.groupValues[2]}" }
+            ?: Regex("(\\d+)").find(m)?.groupValues?.get(1) ?: return null
+        val listed = runCatching { models() }.getOrDefault(emptyList())
+            .filter { it.lowercase().contains(kind) && (it.contains(ver) || it.contains(ver.replace('.', '-'))) }
+        val guesses = listOf("claude-$ver-$kind", "claude-$kind-$ver", "claude-$kind-${ver.replace('.', '-')}",
+            "claude-${ver.replace('.', '-')}-$kind", "anthropic/claude-$kind-$ver")
+        for (c in (listed + guesses).distinct()) {
+            if (c == model) continue
+            val ok = runCatching {
+                chatOnce(c, JSONArray().put(JSONObject().put("role", "user").put("content", "ok")), 5, false); true
+            }.getOrElse { it !is ModelNotFound && it.message?.contains("404") != true }
+            if (ok) return c
+        }
+        return null
+    }
+
+    /** Список моделей gptunnel (формат OpenAI: data[].id), если такой адрес у них есть. */
+    fun models(): List<String> {
+        val r = get("$BASE/models", bearer)
+        if (r.first !in 200..299) return emptyList()
+        val a = JSONObject(r.second).optJSONArray("data") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("id")?.takeIf { s -> s.isNotBlank() } }
+    }
+
+    private fun chatOnce(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         if (key.isBlank()) error("В сборке нет ключа GPTUNNEL_KEY — проверь секрет на GitHub и пересобери")
         fun body(js: Boolean) = JSONObject().put("model", model).put("temperature", 0.2).put("max_tokens", maxTokens)
             .put("useWalletBalance", true).put("messages", messages)
@@ -48,6 +88,8 @@ object Llm {
             r = r2
         }
         if (r.first == 400 && json) { b = body(false); r = post("$BASE/chat/completions", b, bearer) }
+        if (r.first == 404 || r.second.contains("invalid_model_error") || r.second.contains("Model not found", true))
+            throw ModelNotFound("модель «$model» не найдена")
         if (r.first !in 200..299) error("модель «$model» ответила ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
         val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")

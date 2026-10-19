@@ -19,8 +19,8 @@ object Prefs {
     private fun b(k: String, d: Boolean) = sp.getBoolean(k, d)
     private fun putB(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
 
-    var fastModel: String get() = s("fm", "claude-haiku-5-5"); set(v) = put("fm", v.trim())
-    var smartModel: String get() = s("sm", "claude-sonnet-5-5"); set(v) = put("sm", v.trim())
+    var fastModel: String get() = s("fm", "claude-5.5-haiku"); set(v) = put("fm", v.trim())
+    var smartModel: String get() = s("sm", "claude-5.5-sonnet"); set(v) = put("sm", v.trim())
     var fastIn: String get() = s("fi", "0.03"); set(v) = put("fi", v.trim())
     var fastOut: String get() = s("fo", "0.15"); set(v) = put("fo", v.trim())
     var smartIn: String get() = s("si", "0.4"); set(v) = put("si", v.trim())

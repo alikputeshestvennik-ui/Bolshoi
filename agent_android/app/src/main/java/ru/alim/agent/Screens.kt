@@ -505,6 +505,12 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit) {
                         }.getOrElse { "модель: ${it.message}" }
                         "$m\n$bal"
                     }
+                    // модель могла подобраться автоматически — показать новые названия
+                    fast = Prefs.fastModel; smart = Prefs.smartModel
+                    if (Prefs.smartModel.isNotBlank()) withContext(Dispatchers.IO) {
+                        runCatching { Llm.chat(Prefs.smartModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", "ok")), 5, false) }
+                    }.onSuccess { smart = Prefs.smartModel; check = "$check\n${Prefs.smartModel} отвечает" }
+                        .onFailure { check = "$check\nсильная модель: ${it.message}" }
                 }
             }, bg = Card, fg = Ink, border = Line)
             check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
