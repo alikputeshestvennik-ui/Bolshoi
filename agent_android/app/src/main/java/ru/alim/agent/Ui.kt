@@ -51,7 +51,7 @@ enum class Scr { Home, Task, History, Rules, Settings }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS)
+        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS)
     if (Build.VERSION.SDK_INT >= 33) { l += Manifest.permission.READ_MEDIA_IMAGES; l += Manifest.permission.POST_NOTIFICATIONS }
     else l += Manifest.permission.READ_EXTERNAL_STORAGE
     return l.toTypedArray()
@@ -78,7 +78,7 @@ fun App(voice: Voice) {
             val home: () -> Unit = { if (scr == Scr.Task) Agent.close(); scr = Scr.Home }
             when (scr) {
                 Scr.Home -> HomeScreen(voice, go)
-                Scr.Task -> TaskScreen(home)
+                Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home)
                 Scr.Rules -> RulesScreen(home)
                 Scr.Settings -> SettingsScreen(home) { perms.launch(neededPerms()) }

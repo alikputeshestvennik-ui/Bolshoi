@@ -120,7 +120,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             IconTile(Icons.Filled.Settings, "Подключения", { go(Scr.Settings) })
         }
 
-        Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        if (!typing) Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             LayerStack(Idle, if (voice.listening) 1600 else 4000, 140.dp, voice.level,
                 Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
@@ -206,7 +206,9 @@ fun fieldColors() = OutlinedTextFieldDefaults.colors(
 // ————————————————— Задача —————————————————
 
 @Composable
-fun TaskScreen(back: () -> Unit) {
+fun TaskScreen(voice: Voice, back: () -> Unit) {
+    var reply by remember { mutableStateOf("") }
+    var hint by remember { mutableStateOf<String?>(null) }
     val phase = Agent.phase
     val running = phase == Agent.Phase.WORKING
     val pal = when (phase) {
@@ -245,7 +247,10 @@ fun TaskScreen(back: () -> Unit) {
                         Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(14.dp))
                     } else Box(Modifier.size(26.dp).border(2.dp, Violet, RoundedCornerShape(13.dp)))
                     HGap(12)
-                    Text(s.text, style = body(15, if (s.done) FontWeight.Normal else FontWeight.SemiBold))
+                    Column(Modifier.weight(1f)) {
+                        Text(s.text, style = body(15, if (s.done) FontWeight.Normal else FontWeight.SemiBold))
+                        if (s.detail.isNotBlank()) Text(s.detail, style = body(12, color = Muted), maxLines = 2)
+                    }
                 }
             }
             Agent.pending?.let { p ->
@@ -269,6 +274,24 @@ fun TaskScreen(back: () -> Unit) {
             Stat("Шагов", "${Agent.steps.size}", Modifier.weight(1f))
             Stat("Время", "%d:%02d".format(secs / 60, secs % 60), Modifier.weight(1f))
             Stat("Стоимость", "≈ ${rub(Agent.cost)}", Modifier.weight(1f))
+        }
+        if (Agent.canFollowUp) {
+            if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Teal))
+            hint?.let { Text(it, style = body(13, color = Amber)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(reply, { reply = it }, Modifier.weight(1f), placeholder = { Text("Ответить агенту…", style = body(15, color = Muted)) },
+                    textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Agent.followUp(reply); reply = "" } }))
+                HGap(8)
+                if (reply.isNotBlank()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Agent.followUp(reply); reply = "" }, 52.dp)
+                else Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(if (voice.listening) Danger else Teal)
+                    .clickable(onClickLabel = "Ответить голосом") {
+                        hint = null
+                        if (voice.listening) voice.stopListen()
+                        else voice.listen(onText = { Agent.followUp(it) }, onError = { hint = it })
+                    }, contentAlignment = Alignment.Center) { MicIcon(Bg, 26.dp) }
+            }
         }
         if (Agent.busy) BigButton("Остановить", { Agent.stop() }, bg = Color(0xFF251516), fg = Danger, border = Color(0xFF5A2A2A))
         else BigButton("Готово", back)
@@ -529,7 +552,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit) {
                 "Микрофон" to granted(Manifest.permission.RECORD_AUDIO),
                 "Контакты" to granted(Manifest.permission.READ_CONTACTS),
                 "Звонки" to granted(Manifest.permission.CALL_PHONE),
-                "SMS" to granted(Manifest.permission.SEND_SMS),
+                "SMS: отправка" to granted(Manifest.permission.SEND_SMS),
+                "SMS: чтение" to granted(Manifest.permission.READ_SMS),
                 "Фото" to granted(if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE),
                 "Уведомления (мессенджеры)" to (NotifStore.accessGranted(ctx) && t >= 0),
             )

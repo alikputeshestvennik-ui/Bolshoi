@@ -28,7 +28,11 @@ import java.util.Locale
 object Agent {
     enum class Phase { IDLE, WORKING, CONFIRM, DONE }
 
-    class Step(val text: String) { var done by mutableStateOf(false) }
+    class Step(val text: String) {
+        var done by mutableStateOf(false)
+        /** Что вернул инструмент — видно под шагом, чтобы понять, где агент ошибся. */
+        var detail by mutableStateOf("")
+    }
     class Pending(val text: String, val answer: CompletableDeferred<Boolean>)
 
     var phase by mutableStateOf(Phase.IDLE); private set
@@ -47,6 +51,10 @@ object Agent {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
+    /** Переписка последней задачи — чтобы ответить агенту на его вопрос и продолжить. */
+    private var lastMsgs: JSONArray? = null
+    private var lastSmart = false
+    private var lastEnded = 0L
 
     val busy: Boolean get() = phase == Phase.WORKING || phase == Phase.CONFIRM
 
@@ -56,8 +64,23 @@ object Agent {
         task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
         startedAt = System.currentTimeMillis(); endedAt = 0L
         model = Prefs.fastModel; phase = Phase.WORKING
-        job = scope.launch { loop(t) }
+        lastMsgs = null
+        job = scope.launch { loop(t, null, false) }
     }
+
+    /** Продолжить последнюю задачу (ответ на вопрос агента). Старше 30 минут — новая задача. */
+    fun followUp(text: String) {
+        val t = text.trim()
+        if (t.isEmpty() || busy) return
+        val base = lastMsgs
+        if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
+        task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
+        startedAt = System.currentTimeMillis(); endedAt = 0L
+        model = if (lastSmart) Prefs.smartModel else Prefs.fastModel; phase = Phase.WORKING
+        job = scope.launch { loop(t, base, lastSmart) }
+    }
+
+    val canFollowUp: Boolean get() = lastMsgs != null && phase == Phase.DONE
 
     fun answer(yes: Boolean) { pending?.answer?.complete(yes) }
 
@@ -81,7 +104,12 @@ object Agent {
         append("- Задача выполнена или делать нечего — \"tool\": null, \"done\": true и короткий итог в \"say\" (1-2 фразы, по-русски, просто).\n")
         append("- Не хватает данных (кому, когда, какой) — спроси в \"say\" и \"done\": true.\n")
         append("- Людей сначала ищи через contacts_find. Похожих несколько — спроси, кого именно.\n")
-        append("- Звонок, SMS, отправку фото и ответы приложение само подтвердит у Алима — просто вызывай инструмент.\n")
+        append("- Попросили действие (позвонить, написать, отправить) — делай сразу. Не спрашивай «отправить?»: подтверждение покажет приложение кнопкой.\n")
+        append("- «Последнее фото» — photos_last. SMS — sms_read. Уведомления мессенджеров — messages_recent.\n")
+        append("- Тариф, баланс, остатки мобильной связи — ussd с кодом оператора (МТС: тариф *111*59#, баланс *100#), если код знаешь.\n")
+        append("- Посты Telegram-канала — tg_channel; ник не знаешь — web_search «<название> telegram канал» и возьми ник из ссылки t.me.\n")
+        append("- Нужна информация из интернета — web_search, затем при необходимости web_read.\n")
+        append("- Не говори «я не могу», пока не попробовал подходящий инструмент. Если правда нельзя — скажи коротко, что можешь вместо этого.\n")
         append("- Никогда не пересылай и не зачитывай коды из SMS, пароли, данные банков.\n")
         append("- Для простого (одно-два действия) хватает тебя. Если задача сложная (несколько приложений, покупки, длинная цепочка, тонкий текст) — первым шагом вызови escalate.\n")
         append("Сейчас: ").append(SimpleDateFormat("EEEE, d MMMM yyyy, HH:mm", Locale("ru")).format(Date()))
@@ -96,9 +124,11 @@ object Agent {
         return runCatching { JSONObject(t.substring(a, b + 1)) }.getOrNull()
     }
 
-    private suspend fun loop(text: String) {
-        val msgs = JSONArray().put(msg("system", system())).put(msg("user", text))
-        var smart = false
+    private suspend fun loop(text: String, base: JSONArray?, smartStart: Boolean) {
+        val msgs = base ?: JSONArray().put(msg("system", system()))
+        msgs.put(msg("user", text))
+        lastMsgs = msgs
+        var smart = smartStart
         var final: String? = null
         try {
             var i = 0
@@ -146,8 +176,10 @@ object Agent {
                     withContext(Dispatchers.IO) { t.run(app, args) }
                 } catch (e: CancellationException) { throw e } catch (e: Exception) { "ошибка: ${e.message}" }
                 step.done = true
+                step.detail = res.take(300)
                 msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: ${res.take(3000)}"))
             }
+            lastSmart = smart
             finish(true, final ?: "Слишком много шагов — остановился. Попробуй сформулировать проще.")
         } catch (e: CancellationException) {
             throw e
@@ -160,6 +192,7 @@ object Agent {
         steps.forEach { it.done = true }
         result = text; failed = !ok
         endedAt = System.currentTimeMillis()
+        lastEnded = endedAt
         phase = Phase.DONE
         runCatching { Journal.add(app, TaskRec(startedAt, task, steps.size, short(model), cost, ok)) }
         if (ok && Prefs.speak) onSpeak?.invoke(text)
