@@ -18,6 +18,7 @@ android {
         versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
         versionName = "1.0"
         buildConfigField("String", "GPTUNNEL_KEY", secret("GPTUNNEL_KEY"))
+        buildConfigField("String", "YOOMONEY_CLIENT_ID", secret("YOOMONEY_CLIENT_ID"))
     }
     val ksPath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
     signingConfigs {

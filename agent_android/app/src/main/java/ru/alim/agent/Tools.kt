@@ -318,6 +318,12 @@ object Tools {
             clean(body).replace(Regex("\\s{2,}"), " ").take(4000).ifBlank { "страница пустая" }
         },
 
+        Tool("yoomoney_balance", "{} — баланс кошелька ЮMoney") { ctx, _ -> Yoo.balance(ctx) },
+
+        Tool("yoomoney_history", "{\"days\": 7, \"limit\": 30} — операции ЮMoney за последние дни: приходы и расходы") { ctx, a ->
+            Yoo.history(ctx, a.optInt("days", 7).coerceIn(1, 90), a.optInt("limit", 30))
+        },
+
         Tool("escalate", "{\"reason\": \"…\"} — передать задачу сильной модели (только для сложных задач)") { _, _ -> "" },
     )
 

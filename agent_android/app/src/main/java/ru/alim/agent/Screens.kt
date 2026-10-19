@@ -484,7 +484,7 @@ fun RulesScreen(back: () -> Unit) {
 // ————————————————— Подключения —————————————————
 
 @Composable
-fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var fast by remember { mutableStateOf(Prefs.fastModel) }
@@ -535,6 +535,16 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit) {
                 }
             }, bg = Card, fg = Ink, border = Line)
             check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+
+            Label("ЮMoney · только просмотр", Violet)
+            CardBox {
+                val yc = Yoo.connected(ctx) && tick >= 0
+                Text(if (yc) "Подключено: агент видит баланс и историю, платить не может" else "Не подключено",
+                    style = body(14, FontWeight.SemiBold, if (yc) Teal else Muted))
+                Gap(4)
+                if (yc) BigButton("Отключить", { Yoo.disconnect(ctx); tick++ }, bg = Card, fg = Ink, border = Line)
+                else BigButton("Подключить ЮMoney", openYoo, bg = Violet, fg = Bg)
+            }
 
             Label("Прочее")
             Field("Город для погоды", city) { city = it; Prefs.homeCity = it }
