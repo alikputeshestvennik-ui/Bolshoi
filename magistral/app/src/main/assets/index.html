@@ -1200,7 +1200,21 @@ function panto(car,x,y){const d=mat(0x3a3d41,MTO);bx(car,0.34,0.04,0.32,d,x,y,0)
   const a=bx(car,0.34,0.022,0.022,d,x+0.06,y+0.12,0,false);a.rotation.z=0.55;const b=bx(car,0.32,0.022,0.022,d,x-0.02,y+0.25,0,false);b.rotation.z=-0.55;
   bx(car,0.05,0.025,0.4,0x6b6e72,x-0.09,y+0.31,0,false)}
 const ELEC={ivolga:1,er2:1,chs2:1,ep2k:1,lastochka:1,sapsan:1,kre:1,velaro:1,crh380:1,flirt:1};
-function trainModel(type){const t=new THREE.Group(),cf=TCFG[type]||{t:'emubox',cars:4},LV=liv(),c=hexs(LV.txt);
+
+/* ===== detailed external models (ЭР2 trainset) ===== */
+const EXTM={er2:{bin:'er2.wasm',tex:'er2.jpg',st:0,x0:3601.23,y0:-128.34,zc:71.7,k:0.6/193,cars:[[-547,600,1],[550,1576,0],[1527,2506,0],[2454,3601,1]]}};
+function loadExt(key){const e=EXTM[key];if(!e||e.st)return;e.st=1;
+  Promise.all([fetch(e.bin).then(r=>{if(!r.ok)throw new Error('no model');return r.arrayBuffer()}),new Promise((res,rej)=>new THREE.TextureLoader().load(e.tex,res,undefined,rej))]).then(([ab,tx])=>{
+    const dv=new DataView(ab),n=dv.getUint32(4,true),ni=dv.getUint32(8,true),mn=[0,1,2].map(i=>dv.getFloat32(12+i*4,true)),sc=[0,1,2].map(i=>dv.getFloat32(24+i*4,true));
+    let o=36;const q=new Uint16Array(ab,o,3*n);o+=6*n;o=(o+3)&~3;const nr=new Int8Array(ab,o,3*n);o+=3*n;o=(o+3)&~3;const uv=new Float32Array(ab,o,2*n);o+=8*n;
+    const ix=n>65535?new Uint32Array(ab,o,ni):new Uint16Array(ab,o,ni),p=new Float32Array(3*n),k=e.k;
+    for(let i=0;i<n;i++){const x=mn[0]+q[3*i]*sc[0],y=mn[1]+q[3*i+1]*sc[1],z=mn[2]+q[3*i+2]*sc[2];p[3*i]=(x-e.x0)*k;p[3*i+1]=(y-e.y0)*k+0.19;p[3*i+2]=(z-e.zc)*k}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('normal',new THREE.BufferAttribute(nr,3,true));g.setAttribute('uv',new THREE.BufferAttribute(uv,2));g.setIndex(new THREE.BufferAttribute(ix,1));g.computeBoundingSphere();
+    tx.encoding=THREE.sRGBEncoding;tx.anisotropy=4;e.geo=g;e.mat=new THREE.MeshStandardMaterial({map:tx,roughness:0.62,metalness:0.12});e.st=2;if(S&&view&&S.kind==='rail')buildVehicles()}).catch(()=>{e.st=3})}
+function extTrain(key){const e=EXTM[key],t=new THREE.Group(),m=new THREE.Mesh(e.geo,e.mat);m.castShadow=false;m.receiveShadow=true;t.add(m);const k=e.k,X=v=>(v-e.x0)*k;
+  t.userData.doorX=[];for(const [a,b,cab] of e.cars){const L=b-a;t.userData.doorX.push(X(a+L*(cab&&a<0?0.13:0.07)),X(b-L*(cab&&a>0?0.13:0.07)))}
+  t.userData.dgl=[];t.userData.len=(e.x0-e.cars[0][0])*k;t.userData.ext=1;return t}
+function trainModel(type){if(EXTM[type]){if(EXTM[type].st===2)return extTrain(type);loadExt(type)}const t=new THREE.Group(),cf=TCFG[type]||{t:'emubox',cars:4},LV=liv(),c=hexs(LV.txt);
   const dg={1:{},'-1':{}};t.userData.dg=dg;t.userData.dgl=[];t.userData.doorX=[];for(const f of[1,-1])for(const lr of[-1,1]){const g=new THREE.Group();g.userData.dyn=true;t.add(g);dg[f][lr]=g;t.userData.dgl.push([g,lr,f])}
   const white=mat(LV.tbody,{roughness:0.4,metalness:0.25});t.userData.lv=LV;t.userData.white=white;const roof=mat(0x8b9096,MTO),brand=mat(LV.loco,{roughness:0.45,metalness:0.2}),strp=mat(LV.tacc,{roughness:0.45,metalness:0.2}),s2=LV.tacc2?mat(LV.tacc2):null,drs=mat(LV.tdoor,{roughness:0.45,metalness:0.2}),dark=mat(0x1d2126,{roughness:0.2,metalness:0.5}),lamp=mat(0xfff6d0,{emissive:new THREE.Color(0x887744)});
   let x=0,named=false;const L=2.3,G=0.08;
@@ -1823,7 +1837,7 @@ $('#contBox').addEventListener('click',e=>{if(e.target.id==='contBtn'){const x=l
   if(e.target.id==='freshBtn'){if(freshArm&&Date.now()-freshArm<3000){freshArm=0;freshOpen=true;try{localStorage.removeItem(keyFor(setup.kind))}catch(_){}drawStart()}else{freshArm=Date.now();drawStart()}}});
 $('#startBtn').addEventListener('click',()=>{setup.name=($('#compName').value||'').trim()||'AlimTransport';newGame(setup.city,setup.kind,setup.mode);save();enterGame(true)});
 
-function enterGame(fresh){$('#start').hidden=true;['#bar','#nav'].forEach(s=>$(s).hidden=false);
+function enterGame(fresh){if(S&&S.kind==='rail')loadExt('er2');$('#start').hidden=true;['#bar','#nav'].forEach(s=>$(s).hidden=false);
   if(gameMap){gameMap=null;const old=$('#map'),n=old.cloneNode(false);old.replaceWith(n)}mapMode='ru';
   if(!S.company)S.company={name:'AlimTransport',color:COLORS[0]};const needBrand=!S.branded;S.branded=1;
   view='hq';makeTags();buildWorld();placeCam();setTab('hub');resize();hud();
