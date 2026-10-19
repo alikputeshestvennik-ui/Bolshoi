@@ -432,7 +432,7 @@ const HREACH=[700,1000,1400,1900,2600,3500,4600,6000,8000,10000];
 const TIER_AT=[1,1,2,2,3,3,4,4,4,4];
 const KCAP=[8000,25000,70000,2e5,5e5,1.3e6,3.5e6,9e6,2.5e7,7e7];
 const CCAP=[0,5000,15000,40000,1e5,2.5e5,6.5e5,1.7e6,4.5e6,1.2e7,3e7];
-const SLOT={main:[0,-0.6],kassa:[4.7,-3.7],hotel:[-4.7,-3.7],depot:[-4.6,2.8],cargo:[4.6,2.8],local:[0,-5.4],intl:[0,3.7],service:[-5.6,-0.4],school:[5.6,-0.4],ads:[-3.3,-6.5],logist:[3.3,-6.5],pvo:[6.6,-6.5],power:[-6.6,-6.5]};
+const SLOT={main:[0,-0.6],kassa:[4.7,-3.7],hotel:[-4.7,-3.7],depot:[-4.6,2.8],cargo:[4.6,2.8],local:[0,-5.4],intl:[0,3.7],service:[-6.5,-9.2],school:[-3.9,-9.2],ads:[-1.3,-9.2],logist:[1.3,-9.2],pvo:[3.9,-9.2],power:[6.5,-9.2]};
 const keyFor=k=>'magistral-'+k;
 const BUILDER_COST=[0,50000,250000,1200000,6000000];
 const HUB_COST=(n,id)=>Math.round(150000*Math.pow(2.5,n)*(id&&CITIES[id].w?2:1)/1000)*1000;
@@ -1147,6 +1147,7 @@ function buildGraph(){const n=[],e=[],add_=(x,z,o)=>{n.push(Object.assign({x,z},
   const b=siteB(view),row=(z,xs)=>xs.map(x=>add_(x,z)),chain=a=>{for(let k=1;k<a.length;k++)link(a[k-1],a[k])};
   const xs=[-5.8,-4.7,-2.5,0,2.5,4.6,5.8],R1=row(-2.2,xs),R2=row(1.6,xs);chain(R1);chain(R2);link(R1[0],R2[0]);link(R1[6],R2[6]);
   const top=add_(0,-4.4);link(top,R1[3]);
+  const BR=row(-7.55,[-6.9,-3.9,-1.3,1.3,3.9,6.9]);chain(BR);link(R1[0],BR[0]);link(R1[6],BR[5]);
   const mIn=add_(0,-0.6,{inside:1,dwell:1});link(R1[3],mIn,1);link(mIn,R2[3],1);
   const door=(x,z,ix,iz,from,ok)=>{if(!ok)return;const d=add_(x,z),inn=add_(ix,iz,{inside:1,dwell:1});link(from,d);link(d,inn,1)};
   door(-4.7,-2.75,-4.7,-3.7,R1[1],b.hotel.l>0);door(4.7,-3.0,4.7,-3.7,R1[5],true);door(-4.6,1.95,-4.6,2.8,R2[1],b.depot.l>0);door(4.6,1.95,4.6,2.8,R2[5],b.cargo.l>0);
@@ -1270,8 +1271,8 @@ function planeModel(type){const cf=PCFG[type]||PCFG.a320,p=new THREE.Group(),LV=
     for(const zz of[dz,rz]){bx(p,0.008,R*0.98,0.13,darkS,sd*(R+0.008),cyY-R*0.4,zz,false)}
     decal(p,Math.min(1.6,body*0.45),R*0.75,brandTex(hexs(LV.txt),null),sd*(R+0.02),cyY+R*0.6,z0+body*0.1,sd>0?Math.PI/2:-Math.PI/2)}
   /* doors (left = +x) and the stair truck */
-  const hg=new THREE.Group();hg.position.set(R+0.01,cyY+R*0.09,dz+0.06);hg.userData.dyn=true;p.add(hg);add(hg,new THREE.BoxGeometry(0.014,R*0.9,0.115),white,0.007,0,-0.058,false);add(hg,new THREE.BoxGeometry(0.016,R*0.15,0.04),dark,0.008,R*0.18,-0.058,false);p.userData.door=hg;
-  const sg=new THREE.Group();sg.userData.dyn=true;sg.visible=false;p.add(sg);const ht=cyY-R*0.38,sx=R+0.5;sg.position.set(sx,0,dz);p.userData.stairs=sg;p.userData.sx=sx;
+  const hg=new THREE.Group();hg.position.set(-(R+0.01),cyY+R*0.09,dz+0.06);hg.scale.x=-1;hg.userData.dyn=true;p.add(hg);add(hg,new THREE.BoxGeometry(0.014,R*0.9,0.115),white,0.007,0,-0.058,false);add(hg,new THREE.BoxGeometry(0.016,R*0.15,0.04),dark,0.008,R*0.18,-0.058,false);p.userData.door=hg;
+  const sg=new THREE.Group();sg.userData.dyn=true;sg.visible=false;p.add(sg);const ht=cyY-R*0.38,sx=R+0.5;sg.position.set(-sx,0,dz);sg.scale.x=-1;p.userData.stairs=sg;p.userData.sx=sx;
   const sw=mat(0xe8e8e4,MTO);bx(sg,1.1,0.1,0.42,0x3a3d41,0.15,0.06,0);bx(sg,0.34,0.3,0.4,0xe07a10,0.55,0.12,0);bx(sg,0.3,0.12,0.38,GLASS(),0.55,0.3,0,false);
   const n=Math.max(4,Math.round(ht/0.09));for(let i=0;i<=n;i++)bx(sg,0.11,0.025,0.3,sw,-0.45+0.75*i/n,ht*(1-i/n)+0.02,0,false);
   const ln=Math.hypot(0.75,ht),ang=Math.atan2(ht,0.75);for(const zs of[-0.16,0.16]){const r=bx(sg,ln,0.03,0.02,sw,-0.075,ht*0.5+0.18,zs,false);r.rotation.z=-ang}
@@ -1337,7 +1338,7 @@ function buildWorld(){
   const W0=new THREE.Group();world.add(W0);
   const st=siteStyle(view);
   const gr=new THREE.Mesh(new THREE.PlaneGeometry(140,140),texMat('grass',36,36));gr.rotation.x=-Math.PI/2;gr.position.y=-0.02;gr.receiveShadow=true;W0.add(gr);
-  bx(W0,15.4,0.06,15.4,texMat('paving',9,9),0,-0.06,0.4,false);
+  bx(W0,15.4,0.06,15.4,texMat('paving',9,9),0,-0.06,0.4,false);bx(W0,15.4,0.06,4.0,texMat('paving',9,2),0,-0.059,-9.2,false);bx(W0,13,0.02,1.0,texMat('asphalt',6,1),0,0.001,-7.55,false);
   for(const [w,d,x,z] of[[1.2,hasRail(view)?11:14,0,hasRail(view)?-1.1:0.4],[13,1.2,0,-2.2],[13,1.2,0,1.6]])bx(W0,w,0.02,d,texMat('asphalt',Math.max(1,w/2),Math.max(1,d/2)),x,0,z,false);
   if(hasRail(view)){bx(W0,90,0.12,4.4,texMat('ballast',30,1),0,-0.04,7.6,false);
     const sl=new THREE.InstancedMesh(new THREE.BoxGeometry(0.18,0.06,1.0),mat(0x5a4632),330);const m4=new THREE.Matrix4();let n=0;
@@ -1362,7 +1363,7 @@ function buildWorld(){
     const ws=new THREE.Group();ws.position.set(RWX-2.6,0,10);W0.add(ws);cy(ws,0.02,0.02,1.4,STEEL(),0,0,0,6);const sock=add(ws,new THREE.ConeGeometry(0.1,0.5,10,1,true),mat(0xe07a10),0.25,1.35,0);sock.rotation.z=Math.PI/2}
   let seed=7+Object.keys(CITIES).indexOf(siteCity(view));const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
   for(let i=0;i<48;i++){const a=rnd()*Math.PI*2,r=10+rnd()*16,x=Math.cos(a)*r,z=Math.sin(a)*r+0.4;
-    if(z>4.2&&z<11&&hasRail(view))continue;if(hasAir(view)&&x<-6&&x>-20.5)continue;if(Math.abs(x)<8.2&&Math.abs(z-0.4)<8.2)continue;
+    if(z>4.2&&z<11&&hasRail(view))continue;if(hasAir(view)&&x<-6&&x>-20.5)continue;if(Math.abs(x)<8.2&&z>-11.8&&z<8.6)continue;
     const t=new THREE.Group();t.position.set(x,0,z);W0.add(t);const s=0.9+rnd()*0.7;t.scale.setScalar(s);
     if(st.tree==='palm')palm(t,0,0,1.5);
     else if(st.tree==='round'){cy(t,0.07,0.1,0.8,0x5a4330,0,0,0,6);const c=0x3f6a2e+((rnd()*20)|0)*0x000100;sp(t,0.55,c,0,1.15,0);sp(t,0.4,0x4c7a36,0.25,1.4,0.1)}
@@ -1397,7 +1398,7 @@ function animateBase(now,dt){const t=now/1000,dts=Math.min(0.1,dt/1000);
     tr.visible=x<900;tr.position.x=dir*(x)+(dir<0?0:0);if(dir<0)tr.position.x=-x}
   for(const pl of planes){const T=44,ph=((t/T)+pl.userData.off)%1,cyc=Math.floor((t/T)+pl.userData.off);if(ph>0.85&&ph<0.88&&pl.userData.snd!==cyc){pl.userData.snd=cyc;sfx('jet',0.8)}if(ph>0.05&&ph<0.08&&pl.userData.lnd!==cyc){pl.userData.lnd=cyc;sfx('jet',0.45)}if(ph>0.995){pl.visible=false;if(pl.userData.blob)pl.userData.blob.visible=false;continue}pl.visible=true;
     const a=planePos(ph,pl.userData.i,pl.userData.SX),b=planePos(Math.min(0.999,ph+0.004),pl.userData.i,pl.userData.SX);pl.position.set(a[0],a[1],a[2]);pl.rotation.y=a[3];const u=pl.userData,od=Math.max(0,Math.min(1,(ph-0.345)/0.03,(0.565-ph)/0.03));
-    if(u.door)u.door.rotation.y=-od*1.75;if(u.stairs){u.stairs.visible=od>0.01;u.stairs.position.x=u.sx+(1-od)*1.8}const y=a[1];let gd=1;if(ph>0.85)gd=Math.max(0,Math.min(1,1-(y-0.35)/1.4));else if(ph<0.06)gd=Math.max(0,Math.min(1,(7.5-y)/2));
+    if(u.door)u.door.rotation.y=-od*1.75;if(u.stairs){u.stairs.visible=od>0.01;u.stairs.position.x=-(u.sx+(1-od)*1.8)}const y=a[1];let gd=1;if(ph>0.85)gd=Math.max(0,Math.min(1,1-(y-0.35)/1.4));else if(ph<0.06)gd=Math.max(0,Math.min(1,(7.5-y)/2));
     if(u.legs){for(const L of u.legs){if(L.ax==='x')L.g.rotation.x=-(1-gd)*1.55;else L.g.rotation.z=-L.sd*(1-gd)*1.55}u.gear.visible=gd>0.02}
     if(u.blob){u.blob.position.set(a[0]-y*0.6,0.07,a[2]-y*0.46);u.blob.rotation.y=pl.rotation.y;u.blobm.material.opacity=1;u.blob.visible=y<14;u.blob.scale.setScalar(1+y*0.02);u.blobm.material.opacity=Math.max(0,1-y/14)}
     const dx=b[0]-a[0],dz=b[2]-a[2],dy=b[1]-a[1];pl.rotation.x=-Math.atan2(dy,Math.hypot(dx,dz)||1)*0.8}
