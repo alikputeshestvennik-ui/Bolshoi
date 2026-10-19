@@ -388,6 +388,7 @@ const VEH={
   chs2:{n:'ЧС2 с вагонами',k:'rail',tier:2,seats:450,v:100,max:99999,price:30000,fuel:2.2},
   ep2k:{n:'ЭП2К с вагонами',k:'rail',tier:3,seats:550,v:115,max:99999,price:60000,fuel:2.6},
   lastochka:{n:'«Ласточка»',k:'rail',tier:3,seats:440,v:140,max:900,price:80000,fuel:2.4},
+  ivolga:{n:'«Иволга»',k:'rail',tier:3,seats:900,v:120,max:600,price:75000,fuel:1.9},
   kre:{n:'«Белый кречет»',k:'rail',tier:4,seats:680,v:360,max:2500,price:1500000,fuel:5,vsm:1},
   sapsan:{n:'«Сапсан»',k:'rail',tier:4,seats:600,v:220,max:1000,price:220000,fuel:4,only:['msk','spb','nn']},
   an2:{n:'Ан-2',k:'air',tier:1,seats:12,v:190,max:900,price:4000,fuel:0.6},
@@ -761,7 +762,7 @@ function mgLoop(now){if(!MG.on)return;const c=$('#mgC'),g=c.getContext('2d'),W=M
   else{const rw=W*0.16,cx=W/2,ry=H*0.86;g.fillStyle='#3a3d41';g.fillRect(cx-rw/2,ry-6,rw,H-ry+6);g.fillStyle='#ffffff';for(let y=ry;y<H;y+=24)g.fillRect(cx-2,y,4,12);
     for(let i=0;i<40;i++){g.fillStyle='rgba(255,255,255,0.15)';g.fillRect((i*97+el*260*(1+i%3))%W,(i*53+el*120)%H,26,2)}
     if(!MG.done){if(!MG.cur){if(MG.n>=6){mgFinish()}else{MG.n++;MG.cur={x:W*(0.2+Math.random()*0.6),y:-20,vx:0}}}
-      if(MG.cur){const p=MG.cur;MG.wind+=(Math.random()-0.5)*dt*240;MG.wind*=0.985;MG.wind=Math.max(-160,Math.min(160,MG.wind));p.vx+=(MG.wind*0.9+MG.input*340)*dt;p.vx*=0.94;p.x+=p.vx*dt;p.y+=H*0.11*dt;
+      if(MG.cur){const p=MG.cur;MG.wt=(MG.wt||0)-dt;if(MG.wt<=0){MG.wt=1.2+Math.random()*2;MG.wtar=(Math.random()<0.5?-1:1)*(50+Math.random()*120)}MG.wind+=((MG.wtar||0)-MG.wind)*Math.min(1,dt*1.5)+(Math.random()-0.5)*dt*400;p.vx+=(MG.wind*1.5+MG.input*420)*dt;p.vx*=Math.pow(0.94,dt*60);p.x+=p.vx*dt;p.y+=H*0.11*dt;
         if(p.y>=ry){const off=Math.abs(p.x-cx);if(off<rw/2){const pts=off<rw/6?2:1;MG.score+=pts;sfx('coin')}else sfx('error');MG.cur=null}
         else{g.save();g.translate(p.x,p.y);g.fillStyle='#f4f5f6';g.fillRect(-4,-22,8,44);g.fillRect(-26,0,52,8);g.fillRect(-10,-21,20,5);g.fillStyle='#1f262e';g.fillRect(-3,14,6,5);g.restore()}}
       g.fillStyle='#ffffff';g.font='600 14px Rubik,Arial';g.fillText('Ветер '+(MG.wind>0?'→':'←')+' '+Math.round(Math.abs(MG.wind)/10)+' м/с',12,H-14)}}
@@ -929,15 +930,19 @@ function vault(g,len,r,c,x,y,z){const m=add(g,new THREE.CylinderGeometry(r,r,len
 const COLORS=['#c8102e','#0b5fa5','#1f7a4c','#e07a10','#5b2a86','#202428'];
 const brandColor=()=>(S&&S.company&&S.company.color)||COLORS[0];
 const LIVS={brand:{n:'Фирменная полоса'},
-  aeroflot:{n:'Как «Аэрофлот»',body:0xf4f5f6,acc:0x1a3d8f,eng:0x1a3d8f,txt:'#1a3d8f',tail:'flagRU',belly:0xc9ccd1,tbody:0xf1f2f3,tacc:0x1a3d8f,tacc2:0xd52b1e,tdoor:0xd52b1e},
-  s7:{n:'Как S7',body:0x9cc531,acc:0xa0185a,eng:0x9cc531,txt:'#ffffff',tail:0xa0185a,tbody:0x9cc531,tacc:0xa0185a,tdoor:0xa0185a},
-  emirates:{n:'Как Emirates',body:0xf4f4f2,acc:0xc49a3c,eng:0xe6e6e2,txt:'#b48a34',tail:'flagUAE',tbody:0xf4f4f2,tacc:0xc49a3c,tacc2:0xc8102e,tdoor:0xc8102e},
+  mosc:{n:'Как «Московский транспорт»',rail:1,body:0xf4f4f2,acc:0xd6232a,eng:0xf4f4f2,txt:'#d6232a',tail:0xd6232a,tbody:0xf4f4f2,tacc:0xd6232a,tdoor:0xd6232a,lower:0xd6232a,arcs:1},
+  sbahn:{n:'Как S-Bahn',rail:1,body:0xe8b030,acc:0x9b1c1c,eng:0x9b1c1c,txt:'#ffffff',tail:0x9b1c1c,tbody:0xe8b030,tacc:0x9b1c1c,tdoor:0x9b1c1c,lower:0x9b1c1c,nose:0x9b1c1c},
+  ivolga:{n:'Как «Иволга»',rail:1,body:0xf2f3f4,acc:0xd6232a,eng:0xf2f3f4,txt:'#d6232a',tail:0xd6232a,tbody:0xf2f3f4,tacc:0x5a5f66,tacc2:0xd6232a,tdoor:0xd6232a,nose:0xd6232a,loco:0xd6232a},
+  aeroflot:{air:1,n:'Как «Аэрофлот»',body:0xf4f5f6,acc:0x1a3d8f,eng:0x1a3d8f,txt:'#1a3d8f',tail:'flagRU',belly:0xc9ccd1,tbody:0xf1f2f3,tacc:0x1a3d8f,tacc2:0xd52b1e,tdoor:0xd52b1e},
+  s7:{air:1,n:'Как S7',body:0x9cc531,acc:0xa0185a,eng:0x9cc531,txt:'#ffffff',tail:0xa0185a,tbody:0x9cc531,tacc:0xa0185a,tdoor:0xa0185a},
+  emirates:{air:1,n:'Как Emirates',body:0xf4f4f2,acc:0xc49a3c,eng:0xe6e6e2,txt:'#b48a34',tail:'flagUAE',tbody:0xf4f4f2,tacc:0xc49a3c,tacc2:0xc8102e,tdoor:0xc8102e},
   rzd:{n:'Как РЖД',body:0xc8ccd1,acc:0xe21a1a,eng:0xc8ccd1,txt:'#e21a1a',tail:0xe21a1a,tbody:0xc8ccd1,tacc:0xe21a1a,tdoor:0xe21a1a},
-  lufthansa:{n:'Как Lufthansa',body:0xf4f5f6,acc:0x0a1d3d,eng:0x0a1d3d,txt:'#0a1d3d',tail:'circle',belly:0xb9bdc3,tbody:0xf4f5f6,tacc:0x0a1d3d,tacc2:0xf2b705,tdoor:0xf2b705,loco:0x0a1d3d},
-  pobeda:{n:'Как «Победа»',body:0xf4f5f6,acc:0x1c4f9c,eng:0x1c4f9c,txt:'#1c4f9c',tail:'diag',tbody:0xf4f5f6,tacc:0x1c4f9c,tdoor:0x1c4f9c}};
+  lufthansa:{air:1,n:'Как Lufthansa',body:0xf4f5f6,acc:0x0a1d3d,eng:0x0a1d3d,txt:'#0a1d3d',tail:'circle',belly:0xb9bdc3,tbody:0xf4f5f6,tacc:0x0a1d3d,tacc2:0xf2b705,tdoor:0xf2b705,loco:0x0a1d3d},
+  pobeda:{air:1,n:'Как «Победа»',body:0xf4f5f6,acc:0x1c4f9c,eng:0x1c4f9c,txt:'#1c4f9c',tail:'diag',tbody:0xf4f5f6,tacc:0x1c4f9c,tdoor:0x1c4f9c}};
 function liv(k){k=k||(S&&S.company&&S.company.liv)||'brand';const c=brandColor();
   if(!LIVS[k]||k==='brand')return{k:'brand',body:0xf1f2f3,acc:c,eng:0xc3c7cc,txt:c,tail:c,tbody:0xe9ecee,tacc:c,tdoor:c,loco:c,nose:c};
   const L=LIVS[k];return Object.assign({k,loco:L.tacc,nose:L.tacc},L)}
+const livKeys=()=>Object.keys(LIVS).filter(k=>S.kind==='rail'?!LIVS[k].air:!LIVS[k].rail);
 const hexs=c=>typeof c==='number'?'#'+c.toString(16).padStart(6,'0'):c;
 const brandName=()=>(S&&S.company&&S.company.name)||'AlimTransport';
 const BT={};function brandTex(fg,bg){const key=brandName()+fg+bg;if(BT[key])return BT[key];
@@ -1149,7 +1154,7 @@ function buildGraph(){const n=[],e=[],add_=(x,z,o)=>{n.push(Object.assign({x,z},
   const pl=[];
   if(S.kind==='rail'){const p1=[-5.4,-3,-0.5,0,2.5,5,6.2].map(x=>add_(x,4.85,{y:0.32,plat:0}));chain(p1);link(sth,p1[3]);
     const p2=[-5.4,-3,-0.5,2.5,5,6.2].map(x=>add_(x,7.65,{y:0.32,plat:1}));chain(p2);const cr=add_(6.2,6.3,{y:0.3});link(p1[6],cr);link(cr,p2[5]);pl.push(p1,p2)}
-  else{const ap=[-6.6,-6.6].map((x,k)=>add_(x,k?1.6:-2.2));link(ap[0],R1[0]);link(ap[1],R2[0]);link(ap[0],ap[1])}
+  else{const ap=[-6.0,-6.0].map((x,k)=>add_(x,k?1.6:-2.2));link(ap[0],R1[0]);link(ap[1],R2[0]);link(ap[0],ap[1])}
   G={n,e,pl}}
 function nearestNode(x,z,vis){let bi=0,bd=1e9;G.n.forEach((q,k)=>{if(vis&&q.inside)return;const d=(q.x-x)**2+(q.z-z)**2;if(d<bd){bd=d;bi=k}});return bi}
 function gpath(a,b){const prev=new Array(G.n.length).fill(-1),fl=new Array(G.n.length).fill(false),q=[a];prev[a]=a;
@@ -1161,20 +1166,22 @@ function pickDest(){const n=G.n;let k;const r=Math.random();
   else k=Math.floor(Math.random()*n.length);return k}
 function newWalk(p){const u=p.userData,a=u.node!=null?u.node:nearestNode(p.position.x,p.position.z,true);let b=pickDest();if(b===a)b=(a+3)%G.n.length;const path=gpath(a,b);u.path=path||[];u.node=a}
 const floorY=(x,z)=>{if(S.kind!=='rail'||Math.abs(x)>6.6)return 0;if((z>4.5&&z<5.8)||(z>7.0&&z<8.35))return 0.32;if(Math.abs(x-6.2)<0.5&&z>5.8&&z<7)return 0.3;return 0};
-const blobMat=new THREE.MeshBasicMaterial({map:canvasTex(64,64,(g,w,h)=>{const r=g.createRadialGradient(w/2,h/2,2,w/2,h/2,w/2);r.addColorStop(0,'rgba(0,0,0,0.55)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,w,h)}),transparent:true,depthWrite:false});
+const blobMat=new THREE.MeshBasicMaterial({polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-6,map:canvasTex(64,64,(g,w,h)=>{const r=g.createRadialGradient(w/2,h/2,2,w/2,h/2,w/2);r.addColorStop(0,'rgba(0,0,0,0.55)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,w,h)}),transparent:true,depthWrite:false});
 function addBlob(o,w,d,y){const m=new THREE.Mesh(pg('blob',()=>new THREE.PlaneGeometry(1,1)),blobMat);m.rotation.x=-Math.PI/2;m.scale.set(w,d,1);m.position.y=y||0.012;m.userData.dyn=true;m.renderOrder=1;o.add(m);return m}
 function spawnPeople(){buildGraph();const b=siteB(view),n=Math.min(GFX.eco?16:28,6+2*(b.main.l+b.hotel.l));
   for(let i=0;i<n;i++){const p=person(SHIRTS[i%SHIRTS.length],false,i*37+7);const k=Math.floor(Math.random()*G.n.length),q=G.n[k];p.position.set(q.x,q.y||0,q.z);
-    p.userData={node:k,spd:0.45+Math.random()*0.3,ph:Math.random()*6,wait:Math.random()*2};p.scale.setScalar(0.95+Math.random()*0.15);if(!GFX.eco)addBlob(p,0.32,0.32);
+    p.userData={node:k,spd:0.45+Math.random()*0.3,ph:Math.random()*6,wait:Math.random()*2};p.scale.setScalar(0.95+Math.random()*0.15);if(!GFX.eco)addBlob(p,0.32,0.32,0.04);
     if(q.inside)p.visible=false;if(G.pl.length&&i%5===4){p.userData.onTrain=i%2;p.visible=false}
     world.add(p);people.push(p)}}
 /* vehicles in company livery, shaped after the real models */
 const TCFG={tem2:{t:'hood',cars:3},er2:{t:'emubox',cars:4},te10:{t:'diesel2',cars:4},chs2:{t:'cabround',cars:5},ep2k:{t:'cabangular',cars:5},
-  lastochka:{t:'desiro',cars:5},sapsan:{t:'hsr',cars:6,nose:1.7},kre:{t:'hsr',cars:7,nose:2.6},flirt:{t:'flirt',cars:4},talgo:{t:'talgo',cars:8},velaro:{t:'hsr',cars:6,nose:1.5},crh380:{t:'hsr',cars:6,nose:2.2}};
+  lastochka:{t:'desiro',cars:5},ivolga:{t:'ivolga',cars:5},sapsan:{t:'hsr',cars:6,nose:1.7},kre:{t:'hsr',cars:7,nose:2.6},flirt:{t:'flirt',cars:4},talgo:{t:'talgo',cars:8},velaro:{t:'hsr',cars:6,nose:1.5},crh380:{t:'hsr',cars:6,nose:2.2}};
 function railCar(t,x,len,o){const c=new THREE.Group();c.position.x=x;t.add(c);const h=o.h||0.56,w=0.6,y0=o.y0||0.24,dg=t.userData.dg;
-  bx(c,len,h,w,o.body,0,y0,0);vault(c,len,w/2,o.roof,0,y0+h,0).scale.set(0.38,1,1);
+  bx(c,len,h,w,o.body,0,y0,0);vault(c,len,w/2,o.roof,0,y0+h,0).scale.set(0.38,1,1);const LV_=t.userData.lv,pc=o.body===t.userData.white;
+  if(LV_&&LV_.arcs&&pc)for(const f of[1,-1])decal(c,0.5,0.5,arcTex(),f*(len/2-0.32),y0+h*0.5,f*(w/2+0.02),f>0?0:Math.PI).rotation.y=f>0?0:Math.PI;
   bx(c,len*0.9,0.07,w*0.72,0x2b2e32,0,y0-0.07,0,false);for(const ux of[-len*0.12,len*0.12])bx(c,0.3,0.1,w*0.5,0x3a3d41,ux,y0-0.1,0,false);
   const dx=o.doors?(o.dpos||[-len*0.32,len*0.32]):[];
+  if(LV_&&LV_.lower&&pc){const cuts=[-len/2,...dx.slice().sort((p,q)=>p-q).flatMap(d=>[d-0.13,d+0.13]),len/2];for(let i=0;i<cuts.length;i+=2){const a0=cuts[i],a1=cuts[i+1];if(a1-a0>0.02)bx(c,a1-a0,h*0.34,w+0.018,LV_.lower,(a0+a1)/2,y0,0,false)}}
   if(o.win!==false){const n=Math.max(2,Math.floor(len/0.27)),ww=len*0.88/n*0.72;for(let i=0;i<n;i++){const wx=-len*0.44+len*0.88*(i+0.5)/n;if(dx.some(d=>Math.abs(d-wx)<0.16))continue;
     for(const f of[1,-1])bx(c,ww,0.17,0.012,GLASS(),wx,y0+h*0.52,f*(w/2+0.004),false)}}
   if(o.stripe)bx(c,len,0.06,w+0.016,o.stripe,0,y0+h*0.22,0,false);
@@ -1187,13 +1194,14 @@ function railCar(t,x,len,o){const c=new THREE.Group();c.position.x=x;t.add(c);co
   for(const bxp of[-len*0.34,len*0.34]){bx(c,0.46,0.12,0.5,0x26292d,bxp,0.1,0,false);for(const dx2 of[-0.13,0.13])for(const f of[1,-1]){const wh=add(c,pg('whl',()=>new THREE.CylinderGeometry(0.075,0.075,0.04,12)),mat(0x3a3d41,MTO),bxp+dx2,0.12,f*0.27,false);wh.rotation.x=Math.PI/2}
     for(const f of[1,-1])bx(c,0.34,0.05,0.02,0x55585c,bxp,0.1,f*0.29,false)}
   return c}
+let ARC=null;function arcTex(){return ARC||(ARC=canvasTex(128,128,(g,w,h)=>{g.strokeStyle='#d6232a';g.lineCap='round';for(const [r,lw] of[[40,9],[66,9],[92,9]]){g.lineWidth=lw;g.beginPath();g.arc(w,h,r,Math.PI,Math.PI*1.5);g.stroke()}}))}
 function panto(car,x,y){const d=mat(0x3a3d41,MTO);bx(car,0.34,0.04,0.32,d,x,y,0);for(const z of[-0.1,0.1])cy(car,0.025,0.025,0.06,0xcfcfcf,x,y+0.04,z,6);
   const a=bx(car,0.34,0.022,0.022,d,x+0.06,y+0.12,0,false);a.rotation.z=0.55;const b=bx(car,0.32,0.022,0.022,d,x-0.02,y+0.25,0,false);b.rotation.z=-0.55;
   bx(car,0.05,0.025,0.4,0x6b6e72,x-0.09,y+0.31,0,false)}
-const ELEC={er2:1,chs2:1,ep2k:1,lastochka:1,sapsan:1,kre:1,velaro:1,crh380:1,flirt:1};
+const ELEC={ivolga:1,er2:1,chs2:1,ep2k:1,lastochka:1,sapsan:1,kre:1,velaro:1,crh380:1,flirt:1};
 function trainModel(type){const t=new THREE.Group(),cf=TCFG[type]||{t:'emubox',cars:4},LV=liv(),c=hexs(LV.txt);
   const dg={1:{},'-1':{}};t.userData.dg=dg;t.userData.dgl=[];t.userData.doorX=[];for(const f of[1,-1])for(const lr of[-1,1]){const g=new THREE.Group();g.userData.dyn=true;t.add(g);dg[f][lr]=g;t.userData.dgl.push([g,lr,f])}
-  const white=mat(LV.tbody,{roughness:0.4,metalness:0.25}),roof=mat(0x8b9096,MTO),brand=mat(LV.loco,{roughness:0.45,metalness:0.2}),strp=mat(LV.tacc,{roughness:0.45,metalness:0.2}),s2=LV.tacc2?mat(LV.tacc2):null,drs=mat(LV.tdoor,{roughness:0.45,metalness:0.2}),dark=mat(0x1d2126,{roughness:0.2,metalness:0.5}),lamp=mat(0xfff6d0,{emissive:new THREE.Color(0x887744)});
+  const white=mat(LV.tbody,{roughness:0.4,metalness:0.25});t.userData.lv=LV;t.userData.white=white;const roof=mat(0x8b9096,MTO),brand=mat(LV.loco,{roughness:0.45,metalness:0.2}),strp=mat(LV.tacc,{roughness:0.45,metalness:0.2}),s2=LV.tacc2?mat(LV.tacc2):null,drs=mat(LV.tdoor,{roughness:0.45,metalness:0.2}),dark=mat(0x1d2126,{roughness:0.2,metalness:0.5}),lamp=mat(0xfff6d0,{emissive:new THREE.Color(0x887744)});
   let x=0,named=false;const L=2.3,G=0.08;
   const nameOn=(car,y)=>{if(named)return;named=true;const G0=GLASS();for(const m of car.children.slice())if(m.material===G0&&Math.abs(m.position.x)<0.75&&m.geometry.parameters&&m.geometry.parameters.height===0.17)car.remove(m);for(const f of[1,-1])decal(car,1.3,0.22,brandTex(c,null),0,y,f*0.31,f>0?0:Math.PI)};
   const pax=(n,len,o)=>{for(let i=0;i<n;i++){const car=railCar(t,x-len/2,len,Object.assign({body:white,roof,stripe:strp,stripe2:s2,doors:drs,gang:1},o||{}));nameOn(car,0.62);x-=len+G}};
@@ -1219,6 +1227,9 @@ function trainModel(type){const t=new THREE.Group(),cf=TCFG[type]||{t:'emubox',c
     const n=sp(hd,0.3,white,L/2,0.52,0);n.scale.set(nl*1.6,0.95,1);const v=sp(hd,0.22,dark,L/2+nl*0.18,0.66,0);v.scale.set(nl*0.9,0.42,0.95);
     const st=sp(hd,0.3,brand,L/2,0.4,0);st.scale.set(nl*1.55,0.3,1.01);sp(hd,0.03,lamp,L/2+nl*0.42,0.42,0.1);sp(hd,0.03,lamp,L/2+nl*0.42,0.42,-0.1);
     t.children[t.children.length-1].position.x+=0;nameOn(hd,0.62);x-=L+G;pax(cf.cars-1,L,{dpos:[-L*0.4,L*0.4],h:0.58});break}
+  case 'ivolga':{const hd=railCar(t,x-L/2,L,{body:white,roof,stripe:strp,stripe2:s2,doors:drs,gang:1,h:0.62});const n=bx(hd,0.6,0.66,0.6,white,L/2+0.16,0.24,0);n.rotation.z=-0.5;
+    const ws=bx(hd,0.36,0.3,0.6,GLASS(),L/2+0.27,0.58,0,false);ws.rotation.z=-0.62;const sk=bx(hd,0.62,0.24,0.61,brand,L/2+0.2,0.24,0,false);sk.rotation.z=-0.42;bx(hd,0.06,0.62,0.61,brand,L/2-0.02,0.24,0,false);
+    for(const z of[-0.2,0.2])sp(hd,0.035,lamp,L/2+0.44,0.38,z);nameOn(hd,0.66);x-=L+G;pax(cf.cars-1,L,{h:0.62});break}
   case 'flirt':{const hd=railCar(t,x-L/2,L,{body:white,roof,stripe:strp,stripe2:s2,doors:drs,gang:1,h:0.62});const n=bx(hd,0.5,0.62,0.6,white,L/2+0.12,0.24,0);n.rotation.z=-0.32;
     bx(hd,0.3,0.26,0.58,GLASS(),L/2+0.2,0.58,0,false).rotation.z=-0.55;bx(hd,0.52,0.1,0.61,brand,L/2+0.12,0.28,0,false).rotation.z=-0.32;for(const z of[-0.18,0.18])sp(hd,0.035,lamp,L/2+0.38,0.36,z);nameOn(hd,0.66);x-=L+G;pax(cf.cars-1,L,{h:0.62});break}
   case 'talgo':{const lo=railCar(t,x-1.0,2.0,{body:brand,roof,win:false,stripe:white,h:0.66});const n=bx(lo,0.4,0.5,0.6,brand,1.08,0.3,0);n.rotation.z=0.45;bx(lo,0.04,0.22,0.54,GLASS(),1.12,0.7,0,false);nameOn(lo,0.6);x-=2.0+G;
@@ -1244,6 +1255,7 @@ const TT={};function tailMat(LV){const k=LV.tail;if(typeof k==='number'||(typeof
   return TT[k]=new THREE.MeshStandardMaterial({map:tx,roughness:0.45})}
 function planeModel(type){const cf=PCFG[type]||PCFG.a320,p=new THREE.Group(),LV=liv(),Lf=cf.L,R=cf.R,cyY=R*1.7+R;
   const white=mat(LV.body,{roughness:0.32,metalness:0.2}),grey=mat(0xc3c7cc,{roughness:0.38,metalness:0.45}),eng=mat(LV.eng,{roughness:0.35,metalness:0.4}),col=mat(LV.acc,{roughness:0.45}),dark=mat(0x1f262e,GLO),blk=mat(0x2a2d31);
+  const PO={polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3},colS=mat(LV.acc,Object.assign({roughness:0.45},PO)),darkS=mat(0x1f262e,Object.assign({},GLO,PO));
   const body=Lf*0.7,z0=Lf*0.05;const f=add(p,new THREE.CylinderGeometry(R,R,body,24),white,0,cyY,z0);f.rotation.x=Math.PI/2;
   const nose=sp(p,R,white,0,cyY,z0+body/2);nose.scale.set(1,1,1.8);
   const ck=sp(p,R*0.98,cf.glass?GLASS():dark,0,cyY+R*0.25,z0+body/2+R*0.55);ck.scale.set(0.9,0.42,0.9);if(cf.glass){const g2=sp(p,R*0.7,GLASS(),0,cyY-R*0.15,z0+body/2+R*1.1);g2.scale.set(0.8,0.6,0.8)}
@@ -1251,14 +1263,14 @@ function planeModel(type){const cf=PCFG[type]||PCFG.a320,p=new THREE.Group(),LV=
   if(cf.hump){const h=sp(p,R*0.8,white,0,cyY+R*0.6,z0+body*0.28);h.scale.set(0.9,0.75,2.6)}
   const dz=z0+body*0.42,rz=z0-body*0.42,nw=Math.floor(body*0.86/0.1);
   for(const sd of[1,-1]){
-    if(LV.k==='brand')bx(p,0.01,R*0.3,body*0.92,col,sd*(R+0.003),cyY-R*0.35,z0,false);
-    else if(LV.belly)bx(p,0.01,R*0.42,body*0.95,mat(LV.belly,{roughness:0.4,metalness:0.3}),sd*(R*0.93),cyY-R*0.78,z0,false);
-    if(LV.tacc2&&LV.k!=='brand')bx(p,0.01,R*0.06,body*0.9,mat(LV.tacc2),sd*(R+0.004),cyY-R*0.12,z0,false);
-    for(let i=0;i<nw;i++){const wz=z0+body*0.39-i*(body*0.86/nw);if(Math.abs(wz-dz)<0.08||Math.abs(wz-rz)<0.08)continue;bx(p,0.012,R*0.17,0.045,dark,sd*(R*0.985),cyY+R*0.12,wz,false)}
-    for(const zz of[dz,rz]){bx(p,0.008,R*0.98,0.13,dark,sd*(R*0.995),cyY-R*0.4,zz,false)}
-    decal(p,Math.min(1.6,body*0.45),R*0.75,brandTex(hexs(LV.txt),null),sd*(R+0.006),cyY+R*0.6,z0+body*0.1,sd>0?Math.PI/2:-Math.PI/2)}
+    if(LV.k==='brand')bx(p,0.01,R*0.3,body*0.92,colS,sd*(R+0.012),cyY-R*0.35,z0,false);
+    else if(LV.belly)bx(p,0.01,R*0.42,body*0.95,mat(LV.belly,Object.assign({roughness:0.4,metalness:0.3},PO)),sd*(R*0.94+0.012),cyY-R*0.78,z0,false);
+    if(LV.tacc2&&LV.k!=='brand')bx(p,0.01,R*0.06,body*0.9,mat(LV.tacc2,PO),sd*(R+0.014),cyY-R*0.12,z0,false);
+    for(let i=0;i<nw;i++){const wz=z0+body*0.39-i*(body*0.86/nw);if(Math.abs(wz-dz)<0.08||Math.abs(wz-rz)<0.08)continue;bx(p,0.012,R*0.17,0.045,darkS,sd*(R+0.008),cyY+R*0.12,wz,false)}
+    for(const zz of[dz,rz]){bx(p,0.008,R*0.98,0.13,darkS,sd*(R+0.008),cyY-R*0.4,zz,false)}
+    decal(p,Math.min(1.6,body*0.45),R*0.75,brandTex(hexs(LV.txt),null),sd*(R+0.02),cyY+R*0.6,z0+body*0.1,sd>0?Math.PI/2:-Math.PI/2)}
   /* doors (left = +x) and the stair truck */
-  const hg=new THREE.Group();hg.position.set(R*1.0,cyY+R*0.09,dz+0.06);hg.userData.dyn=true;p.add(hg);add(hg,new THREE.BoxGeometry(0.014,R*0.9,0.115),white,0.007,0,-0.058,false);add(hg,new THREE.BoxGeometry(0.016,R*0.15,0.04),dark,0.008,R*0.18,-0.058,false);p.userData.door=hg;
+  const hg=new THREE.Group();hg.position.set(R+0.01,cyY+R*0.09,dz+0.06);hg.userData.dyn=true;p.add(hg);add(hg,new THREE.BoxGeometry(0.014,R*0.9,0.115),white,0.007,0,-0.058,false);add(hg,new THREE.BoxGeometry(0.016,R*0.15,0.04),dark,0.008,R*0.18,-0.058,false);p.userData.door=hg;
   const sg=new THREE.Group();sg.userData.dyn=true;sg.visible=false;p.add(sg);const ht=cyY-R*0.38,sx=R+0.5;sg.position.set(sx,0,dz);p.userData.stairs=sg;p.userData.sx=sx;
   const sw=mat(0xe8e8e4,MTO);bx(sg,1.1,0.1,0.42,0x3a3d41,0.15,0.06,0);bx(sg,0.34,0.3,0.4,0xe07a10,0.55,0.12,0);bx(sg,0.3,0.12,0.38,GLASS(),0.55,0.3,0,false);
   const n=Math.max(4,Math.round(ht/0.09));for(let i=0;i<=n;i++)bx(sg,0.11,0.025,0.3,sw,-0.45+0.75*i/n,ht*(1-i/n)+0.02,0,false);
@@ -1290,23 +1302,26 @@ function planeModel(type){const cf=PCFG[type]||PCFG.a320,p=new THREE.Group(),LV=
     cy(lg,0.025,0.025,ln,STEEL(),0,-ln,0,6);for(const ww of(z<0?[-0.04,0.04]:[0])){const wh=add(lg,pg('pwh',()=>new THREE.CylinderGeometry(0.07,0.07,0.05,12)),blk,ww,-ln,0,false);wh.rotation.z=Math.PI/2}
     if(z<0)bx(lg,0.012,R*0.9,0.18,white,sd*0.06,-ln+0.11,0,false);mergeStatic(lg);p.userData.legs.push({g:lg,ax:sd===0?'x':'z',sd})}
   mergeStatic(sg);mergeStatic(p);p.userData.L=Lf;return p}
-const RWX=-12.6;
+const RWX=-16.9;
 const ease=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2,eOut=t=>1-(1-t)*(1-t),eIn=t=>t*t;
-function planePos(p,spot){
-  if(p<0.16){const q=p/0.16;return[RWX,9*(1-q)*(1-q)+0.0,70-58*q]}
-  if(p<0.26){const q=eOut((p-0.16)/0.1);return[RWX,0,12-18*q]}
-  if(p<0.33){const q=ease((p-0.26)/0.07);return[RWX+(-9.8-RWX)*q,0,-6+(spot+6)*q]}
-  if(p<0.58)return[-9.8,0,spot];
-  if(p<0.65){const q=ease((p-0.58)/0.07);return[-9.8+(RWX+9.8)*q,0,spot+(-16-spot)*q]}
-  if(p<0.76){const q=eIn((p-0.65)/0.11);return[RWX,0,-16+22*q]}
-  const q=(p-0.76)/0.24;return[RWX,q*q*16,6+66*q]}
+/* one runway, one direction (landing and take-off towards -z); each plane only uses it inside its own time window */
+function planePos(p,spot,SX){const H=Math.PI,E=Math.PI/2;
+  if(p<0.06){const q=p/0.06;return[RWX,9*(1-q)*(1-q)+0.25*(1-q),70-52*q,H]}
+  if(p<0.1){const q=eOut((p-0.06)/0.04);return[RWX,0,18+(spot-18)*q,H]}
+  if(p<0.115){const q=ease((p-0.1)/0.015);return[RWX,0,spot,H+(E-H)*q]}
+  if(p<0.14){const q=ease((p-0.115)/0.025);return[RWX+(SX-RWX)*q,0,spot,E]}
+  if(p<0.8)return[SX,0,spot,E];
+  if(p<0.83){const q=ease((p-0.8)/0.03);return[SX+(RWX-SX)*q,0,spot,E]}
+  if(p<0.845){const q=ease((p-0.83)/0.015);return[RWX,0,spot,E+(H-E)*q]}
+  if(p<0.9){const q=eIn((p-0.845)/0.055);return[RWX,0,spot-16*q,H]}
+  const q=(p-0.9)/0.1;return[RWX,q*q*15+q*1.5,spot-16-56*q,H]}
 function buildVehicles(){for(const o of trains.concat(planes)){world.remove(o);if(o.userData.blob)world.remove(o.userData.blob)}trains=[];planes=[];props=[];
   const rs=S.routes.filter(r=>r.site===view&&!paused(r));
   const pick=arr=>{const seen=new Set(),a=[],b=[];for(const r of arr){const t=vehOf(r).type;(seen.has(t)?b:a).push(r);seen.add(t)}return a.concat(b)};
   const rail=pick(rs.filter(r=>VEH[vehOf(r).type].k==='rail')).slice(0,2),air=pick(rs.filter(r=>VEH[vehOf(r).type].k==='air')).slice(0,3);
   rail.forEach((r,i)=>{const t=trainModel(vehOf(r).type);t.userData.track=i;t.userData.off=i*0.47;t.position.z=i?8.9:6.3;if(i)t.rotation.y=Math.PI;world.add(t);trains.push(t)});
   let cur=-4.6;const fit=[];for(const r of air){const sp_=(PCFG[vehOf(r).type]||PCFG.a320).span;if(cur+sp_>11.4)continue;fit.push([r,cur+sp_/2]);cur+=sp_+0.5}
-  fit.forEach(([r,spot],i)=>{const p=planeModel(vehOf(r).type);p.userData.i=spot;p.userData.off=i/Math.max(1,fit.length)+0.08;world.add(p);planes.push(p);
+  fit.forEach(([r,spot],i)=>{const p=planeModel(vehOf(r).type);p.userData.i=spot;p.userData.SX=-7.4-0.5*p.userData.L;p.userData.off=i/Math.max(1,fit.length);world.add(p);planes.push(p);
     const bl=new THREE.Mesh(pg('blob',()=>new THREE.PlaneGeometry(1,1)),planeShadowMat().clone());bl.rotation.x=-Math.PI/2;const c=PCFG[vehOf(r).type]||PCFG.a320;bl.scale.set(c.span*1.05,c.L*1.05,1);bl.renderOrder=1;
     const bg=new THREE.Group();bg.add(bl);world.add(bg);p.userData.blob=bg;p.userData.blobm=bl})
   rail.forEach(t=>{});for(const o of trains)for(const ch of [o]){ch.traverse(m=>{if(m.isMesh)m.castShadow=false});const L=o.userData.len;const b=addBlob(o,L+0.4,1.05,0.2);b.position.x=-L/2+0.6}
@@ -1315,7 +1330,7 @@ function buildVehicles(){for(const o of trains.concat(planes)){world.remove(o);i
 let PSM=null;function planeShadowMat(){if(PSM)return PSM;const tx=canvasTex(128,128,(g,w,h)=>{g.filter='blur(3px)';g.fillStyle='rgba(0,0,0,0.6)';
   g.beginPath();g.ellipse(w/2,h/2,7,56,0,0,7);g.fill();g.beginPath();g.moveTo(4,h*0.52);g.lineTo(w-4,h*0.52);g.lineTo(w/2+10,h*0.42);g.lineTo(w/2-10,h*0.42);g.fill();
   g.beginPath();g.moveTo(w*0.32,h*0.12);g.lineTo(w*0.68,h*0.12);g.lineTo(w/2+4,h*0.2);g.lineTo(w/2-4,h*0.2);g.fill()});
-  return PSM=new THREE.MeshBasicMaterial({map:tx,transparent:true,depthWrite:false})}
+  return PSM=new THREE.MeshBasicMaterial({map:tx,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-6})}
 const hasRail=s=>S.kind==='rail',hasAir=s=>S.kind==='air';
 function buildWorld(){
   while(world.children.length)world.remove(world.children[0]);cranes=[];spins=[];people=[];for(const k in B)delete B[k];
@@ -1343,11 +1358,11 @@ function buildWorld(){
     for(let z=-20;z<20;z+=2.4)bx(W0,0.1,0.01,1.2,0xf2f2f2,RWX,0.03,z,false);
     for(const z of[-22,22])for(let i=-5;i<=5;i++)bx(W0,0.12,0.01,1.0,0xf2f2f2,RWX+i*0.24,0.03,z+(z>0?-1:1),false);
     for(let z=-22;z<=22;z+=2)for(const x of[RWX-1.55,RWX+1.55])add(W0,new THREE.SphereGeometry(0.05,8,6),mat(0xfff3c4,{emissive:new THREE.Color(0x665a20)}),x,0.05,z,false);
-    bx(W0,4.2,0.03,16.2,texMat('concrete',2,8),-9.6,0,3.3,false);bx(W0,2.8,0.03,1.4,texMat('asphalt',2,1),-11.2,0,-5.5,false);
-    const ws=new THREE.Group();ws.position.set(RWX+2.4,0,10);W0.add(ws);cy(ws,0.02,0.02,1.4,STEEL(),0,0,0,6);const sock=add(ws,new THREE.ConeGeometry(0.1,0.5,10,1,true),mat(0xe07a10),0.25,1.35,0);sock.rotation.z=Math.PI/2}
+    bx(W0,9.4,0.03,16.6,texMat('concrete',4,8),-10.9,0,3.3,false);bx(W0,2.8,0.03,1.4,texMat('asphalt',2,1),-11.2,0,-5.5,false);
+    const ws=new THREE.Group();ws.position.set(RWX-2.6,0,10);W0.add(ws);cy(ws,0.02,0.02,1.4,STEEL(),0,0,0,6);const sock=add(ws,new THREE.ConeGeometry(0.1,0.5,10,1,true),mat(0xe07a10),0.25,1.35,0);sock.rotation.z=Math.PI/2}
   let seed=7+Object.keys(CITIES).indexOf(siteCity(view));const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
   for(let i=0;i<48;i++){const a=rnd()*Math.PI*2,r=10+rnd()*16,x=Math.cos(a)*r,z=Math.sin(a)*r+0.4;
-    if(z>4.2&&z<11&&hasRail(view))continue;if(hasAir(view)&&x<-7.5&&x>-15)continue;if(Math.abs(x)<8.2&&Math.abs(z-0.4)<8.2)continue;
+    if(z>4.2&&z<11&&hasRail(view))continue;if(hasAir(view)&&x<-6&&x>-20.5)continue;if(Math.abs(x)<8.2&&Math.abs(z-0.4)<8.2)continue;
     const t=new THREE.Group();t.position.set(x,0,z);W0.add(t);const s=0.9+rnd()*0.7;t.scale.setScalar(s);
     if(st.tree==='palm')palm(t,0,0,1.5);
     else if(st.tree==='round'){cy(t,0.07,0.1,0.8,0x5a4330,0,0,0,6);const c=0x3f6a2e+((rnd()*20)|0)*0x000100;sp(t,0.55,c,0,1.15,0);sp(t,0.4,0x4c7a36,0.25,1.4,0.1)}
@@ -1380,12 +1395,12 @@ function animateBase(now,dt){const t=now/1000,dts=Math.min(0.1,dt/1000);
     if(U.closed===cyc&&od>0.05)U.closed=null;
     if(ph<0.3)x=-48+52*eOut(ph/0.3);else if(ph<0.56)x=4;else if(ph<0.86)x=4+52*eIn((ph-0.56)/0.3);else x=999;
     tr.visible=x<900;tr.position.x=dir*(x)+(dir<0?0:0);if(dir<0)tr.position.x=-x}
-  for(const pl of planes){const T=44,ph=((t/T)+pl.userData.off)%1,cyc=Math.floor((t/T)+pl.userData.off);if(ph>0.66&&ph<0.7&&pl.userData.snd!==cyc){pl.userData.snd=cyc;sfx('jet',0.8)}if(ph>0.12&&ph<0.15&&pl.userData.lnd!==cyc){pl.userData.lnd=cyc;sfx('jet',0.45)}if(ph>0.97){pl.visible=false;if(pl.userData.blob)pl.userData.blob.visible=false;continue}pl.visible=true;
-    const a=planePos(ph,pl.userData.i),b=planePos(Math.min(0.999,ph+0.004),pl.userData.i);pl.position.set(a[0],a[1],a[2]);const u=pl.userData,od=Math.max(0,Math.min(1,(ph-0.345)/0.03,(0.565-ph)/0.03));
-    if(u.door)u.door.rotation.y=-od*1.75;if(u.stairs){u.stairs.visible=od>0.01;u.stairs.position.x=u.sx+(1-od)*1.8}const y=a[1];let gd=1;if(ph>0.76)gd=Math.max(0,Math.min(1,1-(y-0.35)/1.4));else if(ph<0.16)gd=Math.max(0,Math.min(1,(7.5-y)/2));
+  for(const pl of planes){const T=44,ph=((t/T)+pl.userData.off)%1,cyc=Math.floor((t/T)+pl.userData.off);if(ph>0.85&&ph<0.88&&pl.userData.snd!==cyc){pl.userData.snd=cyc;sfx('jet',0.8)}if(ph>0.05&&ph<0.08&&pl.userData.lnd!==cyc){pl.userData.lnd=cyc;sfx('jet',0.45)}if(ph>0.995){pl.visible=false;if(pl.userData.blob)pl.userData.blob.visible=false;continue}pl.visible=true;
+    const a=planePos(ph,pl.userData.i,pl.userData.SX),b=planePos(Math.min(0.999,ph+0.004),pl.userData.i,pl.userData.SX);pl.position.set(a[0],a[1],a[2]);pl.rotation.y=a[3];const u=pl.userData,od=Math.max(0,Math.min(1,(ph-0.345)/0.03,(0.565-ph)/0.03));
+    if(u.door)u.door.rotation.y=-od*1.75;if(u.stairs){u.stairs.visible=od>0.01;u.stairs.position.x=u.sx+(1-od)*1.8}const y=a[1];let gd=1;if(ph>0.85)gd=Math.max(0,Math.min(1,1-(y-0.35)/1.4));else if(ph<0.06)gd=Math.max(0,Math.min(1,(7.5-y)/2));
     if(u.legs){for(const L of u.legs){if(L.ax==='x')L.g.rotation.x=-(1-gd)*1.55;else L.g.rotation.z=-L.sd*(1-gd)*1.55}u.gear.visible=gd>0.02}
-    if(u.blob){u.blob.position.set(a[0]-y*0.6,0.03,a[2]-y*0.46);u.blob.rotation.y=pl.rotation.y;u.blobm.material.opacity=1;u.blob.visible=y<14;u.blob.scale.setScalar(1+y*0.02);u.blobm.material.opacity=Math.max(0,1-y/14)}
-    const dx=b[0]-a[0],dz=b[2]-a[2],dy=b[1]-a[1];if(Math.hypot(dx,dz)>1e-4)pl.rotation.y=Math.atan2(dx,dz);pl.rotation.x=-Math.atan2(dy,Math.hypot(dx,dz)||1)*0.8}
+    if(u.blob){u.blob.position.set(a[0]-y*0.6,0.07,a[2]-y*0.46);u.blob.rotation.y=pl.rotation.y;u.blobm.material.opacity=1;u.blob.visible=y<14;u.blob.scale.setScalar(1+y*0.02);u.blobm.material.opacity=Math.max(0,1-y/14)}
+    const dx=b[0]-a[0],dz=b[2]-a[2],dy=b[1]-a[1];pl.rotation.x=-Math.atan2(dy,Math.hypot(dx,dz)||1)*0.8}
   for(const pr of props)pr.rotation.z=t*30}
 
 /* base camera + input */
@@ -1710,7 +1725,7 @@ function updPrev(){const p=$('#brandPrev');if(!p)return;const n=($('#brandIn').v
 function brandSheet(){brandDraft.color=brandColor();brandDraft.liv=(S.company&&S.company.liv)||'brand';return `<div class="sh-h"><h2>Ваша компания</h2></div><p class="sub">Название и фирменный цвет появятся на поездах, самолётах и вокзалах.</p>
   <input class="inp" id="brandIn" maxlength="24" value="${esc(brandName())}" placeholder="AlimTransport" autocomplete="off">
   <div class="sw">${COLORS.map(c=>`<button type="button" class="${c===brandDraft.color?'on':''}" data-a="ccol" data-v="${c}" style="background:${c}" aria-label="Цвет"></button>`).join('')}</div>
-  <div class="sec">Ливрея</div><div class="livs">${Object.keys(LIVS).map(k=>{const L=liv(k);return `<button type="button" class="${k===brandDraft.liv?'on':''}" data-a="cliv" data-v="${k}"><i style="background:${k==='brand'?brandDraft.color:hexs(S.kind==='rail'?L.tbody:L.body)}"></i><i style="background:${k==='brand'?'#f1f2f3':hexs(S.kind==='rail'?L.tacc:(typeof L.tail==='number'?L.tail:L.acc))}"></i><span>${esc(LIVS[k].n)}</span></button>`}).join('')}</div>
+  <div class="sec">Ливрея</div><div class="livs">${livKeys().map(k=>{const L=liv(k);return `<button type="button" class="${k===brandDraft.liv?'on':''}" data-a="cliv" data-v="${k}"><i style="background:${k==='brand'?brandDraft.color:hexs(S.kind==='rail'?L.tbody:L.body)}"></i><i style="background:${k==='brand'?'#f1f2f3':hexs(S.kind==='rail'?L.tacc:(typeof L.tail==='number'?L.tail:L.acc))}"></i><span>${esc(LIVS[k].n)}</span></button>`}).join('')}</div>
   <p class="sub">Схемы окраски в стиле известных перевозчиков, но надпись на технике всегда ваша.</p>
   <div class="prev" id="brandPrev"><div class="bodyc"><span style="color:${brandDraft.color}">${esc(brandName())}</span><i style="background:${brandDraft.color}"></i></div></div>
   <button class="btn w" data-a="csave">Сохранить</button>`}
