@@ -536,6 +536,13 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
             }, bg = Card, fg = Ink, border = Line)
             check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
 
+            Label("Поиск в интернете")
+            CardBox {
+                Text(if (YaSearch.ready) "Яндекс Поиск: ключ и каталог есть" else "Яндекс Поиск: ${YaSearch.missing()}",
+                    style = body(14, FontWeight.SemiBold, if (YaSearch.ready) Teal else Amber))
+                Text("Запасной — DuckDuckGo, без ключей.", style = body(12, color = Muted))
+            }
+
             Label("ЮMoney · только просмотр", Violet)
             CardBox {
                 val yc = Yoo.connected(ctx) && tick >= 0

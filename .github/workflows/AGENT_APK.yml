@@ -62,6 +62,10 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           GPTUNNEL_KEY: ${{ secrets.GPTUNNEL_KEY }}
           YOOMONEY_CLIENT_ID: ${{ secrets.YOOMONEY_CLIENT_ID }}
+          YANDEX_SEARCH_KEY: ${{ secrets.YANDEX_SEARCH_KEY }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
         shell: bash
         run: |
           set -o pipefail

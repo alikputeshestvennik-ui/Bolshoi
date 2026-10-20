@@ -301,11 +301,11 @@ object Tools {
             val q = a.optString("query").trim()
             if (q.isEmpty()) return@t "пустой запрос"
             val errs = ArrayList<String>()
-            for (engine in listOf(::ddgHtml, ::ddgLite, ::bing)) {
+            for (engine in listOf(YaSearch::search, ::ddgHtml, ::ddgLite, ::bing)) {
                 val r = runCatching { engine(q) }.onFailure { errs += it.message ?: "ошибка" }.getOrNull()
                 if (!r.isNullOrEmpty()) return@t r.take(6).joinToString("\n\n")
             }
-            "поиск ничего не дал" + if (errs.isNotEmpty()) " (${errs.joinToString("; ").take(160)})" else ""
+            "поиск ничего не дал" + if (errs.isNotEmpty()) " (${errs.joinToString("; ").take(300)})" else ""
         },
 
         Tool("web_read", "{\"url\": \"https://…\"} — прочитать текст страницы") t@{ _, a ->

@@ -19,6 +19,11 @@ android {
         versionName = "1.0"
         buildConfigField("String", "GPTUNNEL_KEY", secret("GPTUNNEL_KEY"))
         buildConfigField("String", "YOOMONEY_CLIENT_ID", secret("YOOMONEY_CLIENT_ID"))
+        // Яндекс Поиск API: свой ключ или общий ключ Yandex Cloud из Маршрута; каталог — отдельно или из адреса модели Qwen
+        buildConfigField("String", "YANDEX_SEARCH_KEY", secret("YANDEX_SEARCH_KEY"))
+        buildConfigField("String", "YANDEX_API_KEY", secret("YANDEX_API_KEY"))
+        buildConfigField("String", "YANDEX_FOLDER_ID", secret("YANDEX_FOLDER_ID"))
+        buildConfigField("String", "QWEN_MODEL", secret("QWEN_MODEL"))
     }
     val ksPath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
     signingConfigs {
