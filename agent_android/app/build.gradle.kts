@@ -16,7 +16,7 @@ android {
         targetSdk = 34
         // Номер растёт с каждой сборкой — обновление ставится поверх
         versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
-        versionName = "1.0"
+        versionName = "1.1"
         buildConfigField("String", "GPTUNNEL_KEY", secret("GPTUNNEL_KEY"))
         buildConfigField("String", "YOOMONEY_CLIENT_ID", secret("YOOMONEY_CLIENT_ID"))
         // Яндекс Поиск API: свой ключ или общий ключ Yandex Cloud из Маршрута; каталог — отдельно или из адреса модели Qwen
