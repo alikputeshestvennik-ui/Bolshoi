@@ -104,6 +104,30 @@ object Monitor {
         return c.get(Calendar.HOUR_OF_DAY) >= Prefs.digestHour && Prefs.lastDigest != today
     }
 
+    /** Свежие ролики YouTube по интересам Алима из памяти: запись в истории с карточками + уведомление. */
+    fun ytPicks(ctx: Context): String {
+        if (!Prefs.ytPicks) return "подборка выключена"
+        val mem = Memory.forPrompt(ctx, 50)
+        if (mem.isBlank()) return "в памяти пока нет интересов"
+        val model = Prefs.fastModel
+        val sys = "По фактам об Алиме придумай до 3 коротких запросов (2-4 слова, по-русски) для поиска свежих роликов на YouTube по его устойчивым интересам: " +
+            "хобби, увлечения, темы, техника, места, проекты. Не про здоровье и деньги. Ответь ТОЛЬКО JSON {\"q\": [\"…\"]}; интересов не видно — {\"q\": []}."
+        val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", mem)), 200)
+        val qa = json(r.text).optJSONArray("q") ?: JSONArray()
+        val queries = (0 until minOf(3, qa.length())).map { qa.optString(it) }.filter { it.isNotBlank() }
+        if (queries.isEmpty()) return "интересов не нашёл"
+        val seen = Prefs.ytSeen.split(',').filter { it.isNotBlank() }.toMutableList()
+        val picks = queries.flatMap { q -> runCatching { YouTube.search(q, "week", 8) }.getOrDefault(emptyList()).filter { it.id !in seen }.take(2) }
+            .distinctBy { it.id }.take(6)
+        if (picks.isEmpty()) return "нового нет"
+        seen += picks.map { it.id }; Prefs.ytSeen = seen.takeLast(400).joinToString(",")
+        val text = "Свежее на YouTube по твоим интересам (${queries.joinToString(", ")}):\n" + picks.joinToString("\n") { "- **${it.title}** — ${it.channel}" }
+        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Подборка YouTube: ${queries.joinToString(", ")}", 1, Agent.short(model), r.cost(model), true,
+            0, text, "подбираю ролики по интересам\t${queries.joinToString(" · ")}", Shop.toJson(picks.map { it.item() })))
+        notify(ctx, 6998, "YouTube: ${picks.size} новых по интересам", picks.joinToString("\n") { it.title }, open = "yt")
+        return "подборка: ${picks.size}"
+    }
+
     /** Итог дня: события за сутки и задачи агента → короткая сводка + факты в память. */
     fun digest(ctx: Context): String {
         val from = System.currentTimeMillis() - 24 * 3600_000L
@@ -134,7 +158,8 @@ object Monitor {
         j.optJSONArray("facts")?.let { a -> (0 until minOf(3, a.length())).forEach { Memory.add(ctx, a.optString(it), "авто") } }
         Prefs.lastDigest = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         notify(ctx, 6999, "Итог дня", text, open = "digest")
-        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Итог дня", 1, Agent.short(model), r.cost(model), true))
+        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Итог дня", 1, Agent.short(model), r.cost(model), true, 0, text))
+        runCatching { ytPicks(ctx) }
         return "итог готов"
     }
 

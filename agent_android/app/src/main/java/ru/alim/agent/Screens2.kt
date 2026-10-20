@@ -227,6 +227,14 @@ fun MonitorSettings() {
         }
     }, bg = Amber)
     else Text("Ограничения батареи сняты", style = body(13, color = Teal))
+    var yt by remember { mutableStateOf(Prefs.ytPicks) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Подборка YouTube по интересам", style = body(15, FontWeight.SemiBold))
+            Text("Раз в день, вместе с итогом: свежие ролики по тому, что агент знает о тебе", style = body(12, color = Muted))
+        }
+        Toggle(yt) { yt = it; Prefs.ytPicks = it }
+    }
     if (status.isNotBlank()) Text("Последняя проверка: $status", style = body(12, color = Muted), lineHeight = 17.sp)
     BigButton("Проверить сейчас", { Monitor.runNow(ctx) }, bg = Card, fg = Ink, border = Line)
 

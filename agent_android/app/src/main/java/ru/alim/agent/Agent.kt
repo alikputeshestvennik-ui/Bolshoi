@@ -42,6 +42,8 @@ object Agent {
     val photos = mutableStateListOf<Long>()
     /** Товары, найденные в этой задаче, — карточками на экране. */
     val products = mutableStateListOf<Shop.Item>()
+    /** Файлы Word/Excel, сделанные в этой задаче. */
+    val files = mutableStateListOf<Docs.FileRef>()
     var pending by mutableStateOf<Pending?>(null); private set
     var result by mutableStateOf(""); private set
     var failed by mutableStateOf(false); private set
@@ -68,7 +70,7 @@ object Agent {
         task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
         startedAt = System.currentTimeMillis(); endedAt = 0L
         model = Prefs.fastModel; phase = Phase.WORKING
-        lastMsgs = null; photos.clear(); products.clear()
+        lastMsgs = null; photos.clear(); products.clear(); files.clear()
         job = scope.launch { loop(t, null, false) }
     }
 
@@ -100,7 +102,7 @@ object Agent {
     /** Открыть прошлую задачу из истории: шаги, ответ, товары. Можно продолжить разговор. */
     fun showPast(r: TaskRec) {
         if (busy) return
-        task = r.title; steps.clear(); photos.clear(); products.clear(); pending = null
+        task = r.title; steps.clear(); photos.clear(); products.clear(); files.clear(); pending = null
         r.log.lines().filter { it.isNotBlank() }.forEach { l ->
             steps.add(Step(l.substringBefore('\t')).also { it.done = true; it.detail = l.substringAfter('\t', "").replace("⏎", "\n") })
         }
@@ -132,7 +134,12 @@ object Agent {
         append("- Посты Telegram-канала — tg_channel; ник не знаешь — web_search «<название> telegram канал» и возьми ник из ссылки t.me.\n")
         append("- ЮMoney: баланс — yoomoney_balance, траты и приходы — yoomoney_history. Не открывай приложение ЮMoney, если есть эти инструменты.\n")
         append("- Нарисовать картинку, обои, иллюстрацию — image_generate (Alice AI ART), промпт подробный, по-русски. Отправляй картинку (photos_send) ТОЛЬКО если Алим сам попросил отправить.\n")
-        append("- Во вложениях могут быть файлы и фото Алима: их содержимое приходит в сообщении. Переслать — attachment_send.\n")
+        append("- Во вложениях могут быть файлы и фото Алима: их содержимое приходит в сообщении. Пересылай (attachment_send) только по прямой просьбе «отправь/перешли» — не предлагай поделиться сам.\n")
+        append("- «Найди такое же / что это / где купить» с фото — ищи по строке «Для поиска» из описания (shop_search, web_search, maps_search).\n")
+        append("- YouTube: ролики — youtube_search (свежие — period week/today), открыть — youtube_open. Интересы Алима бери из ПАМЯТИ.\n")
+        append("- Маршрут, «как доехать», «сколько ехать» — maps_route (по умолчанию на машине, «на автобусе» — mt, «пешком» — pd). Места на карте — maps_search.\n")
+        append("- Документ, список, письмо, договор — file_create type docx; таблица, бюджет, учёт, расчёт — type xlsx с формулами. Поправить файл — file_read, затем file_create с изменениями. Не вставляй содержимое файла в ответ — карточка будет на экране.\n")
+        append("- Приложения: найти или обновить — play_open. Фильмы и сериалы KION — kion_open.\n")
         append("- Покупки и товары (Ozon, Wildberries) — shop_search. Запрос короткий: бренд + модель/тип + пол (размер в запрос не пиши). Если назван размер — проверь его у 3-4 лучших вариантов через shop_check. «открой N» — shop_open. Не открывай приложение магазина без поиска. Оплату не делаешь.\n")
         append("- Назван продавец («у продавца Ozon Россия», «от самого Озона») — shop_search с seller. Важна оригинальность («оригинал», «не подделку») — original=true. На уточнение в продолжении разговора повтори shop_search с новым фильтром, а не открывай поиск в приложении.\n")
         append("- Размер на Ozon («в сетке») — значит, он есть в размерной сетке, но мог быть распродан: так и скажи «43 в сетке, наличие проверь в карточке». На WB «есть» — точно в наличии.\n")

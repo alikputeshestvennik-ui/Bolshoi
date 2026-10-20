@@ -68,7 +68,14 @@ fun App(voice: Voice) {
     }
     val phase = Agent.phase
     val open = Nav.open
-    LaunchedEffect(open) { if (open == "digest") { scr = Scr.Digest; Nav.open = "" } }
+    val uiCtx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(open) {
+        if (open == "digest") { scr = Scr.Digest; Nav.open = "" }
+        if (open == "yt") {
+            Nav.open = ""
+            Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
+        }
+    }
     LaunchedEffect(phase) {
         if ((phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM) && scr != Scr.Task) { taskBack = Scr.Home; scr = Scr.Task }
     }

@@ -36,6 +36,12 @@
         <package android:name="ru.oneme.app" />
         <package android:name="ru.ozon.app.android" />
         <package android:name="com.wildberries.ru" />
+        <package android:name="ru.yandex.yandexmaps" />
+        <package android:name="ru.yandex.yandexnavi" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.android.vending" />
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="yandexmaps" /></intent>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="market" /></intent>
     </queries>
 
     <application

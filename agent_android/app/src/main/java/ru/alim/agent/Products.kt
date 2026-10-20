@@ -49,7 +49,7 @@ fun ProductCards(items: List<Shop.Item>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items.forEachIndexed { i, it ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).clickable(onClickLabel = "Открыть товар") {
-                val pkg = when (it.store) { "Ozon" -> Shop.OZON_PKG; "WB" -> Shop.WB_PKG; else -> null }
+                val pkg = when { it.store == "Ozon" -> Shop.OZON_PKG; it.store == "WB" -> Shop.WB_PKG; it.store.startsWith("YouTube") -> YouTube.PKG; else -> null }
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 runCatching { ctx.startActivity(Intent(intent).apply { pkg?.let { p -> setPackage(p) } }) }
                     .onFailure { runCatching { ctx.startActivity(intent) } }
@@ -64,7 +64,7 @@ fun ProductCards(items: List<Shop.Item>) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(it.price.ifBlank { "цена ?" }, style = body(15, FontWeight.Bold, Teal))
                         HGap(8)
-                        Text("${i + 1} · ${it.store}", style = body(12, color = Muted))
+                        Text("${i + 1} · ${it.store}", style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (it.size.isNotBlank()) {
                             HGap(8)
                             Text(it.size, style = body(12, FontWeight.SemiBold, if (it.size.contains("есть")) Teal else if (it.size.contains("сетке")) Ink else Amber))
@@ -75,6 +75,34 @@ fun ProductCards(items: List<Shop.Item>) {
                         if (it.seller.isNotBlank()) Text(it.seller, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Файлы, которые сделал агент: нажатие — открыть в Word/Excel/Документах, «Отправить» — поделиться. */
+@Composable
+fun FileCards(files: List<Docs.FileRef>) {
+    val ctx = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        files.forEach { f ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).clickable(onClickLabel = "Открыть файл") {
+                runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val xl = f.mime == Docs.XLSX
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(if (xl) Color(0xFF1D6F42) else Color(0xFF2B579A)), contentAlignment = Alignment.Center) {
+                    Text(if (xl) "XLS" else "DOC", style = body(13, FontWeight.Bold, Color.White))
+                }
+                HGap(12)
+                Column(Modifier.weight(1f)) {
+                    Text(f.name, style = body(14, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("Загрузки/Агент · нажми, чтобы открыть", style = body(12, color = Muted))
+                }
+                Text("Отправить", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clickable {
+                    runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                }.padding(6.dp))
             }
         }
     }

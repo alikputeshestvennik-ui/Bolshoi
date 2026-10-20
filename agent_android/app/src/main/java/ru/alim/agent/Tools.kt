@@ -48,6 +48,8 @@ object Tools {
     val lastPhotos = ArrayList<Long>()
     /** Товары из последнего поиска — «открой второй». */
     val lastShop = ArrayList<Shop.Item>()
+    /** Ролики из последнего поиска YouTube. */
+    val lastVideos = ArrayList<YouTube.Video>()
     private val ru = Locale("ru")
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).callTimeout(25, TimeUnit.SECONDS).build()
 
@@ -504,6 +506,108 @@ object Tools {
             }
             withContext(Dispatchers.Main) { val cp = Agent.products.toList(); Agent.products.clear(); Agent.products.addAll(cp) }
             res.joinToString("\n")
+        },
+
+        Tool("youtube_search", "{\"query\": \"обзор asics gel-kayano 33\", \"period\": \"\" | \"today\" | \"week\" | \"month\"} — найти ролики на YouTube (карточки с превью, нажатие открывает YouTube)") t@{ _, a ->
+            val q = a.optString("query").trim()
+            if (q.isEmpty()) return@t "нужен запрос"
+            val l = YouTube.search(q, a.optString("period"))
+            if (l.isEmpty()) return@t "ничего не нашёл"
+            lastVideos.clear(); lastVideos += l
+            withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(l.map { it.item() }) }
+            "Нашёл ${l.size}:\n" + YouTube.format(l) + "\nКарточки на экране. Открыть ролик — youtube_open с номером."
+        },
+
+        Tool("youtube_open", "{\"n\": 1} или {\"query\": \"…\"} — открыть найденный ролик или поиск в приложении YouTube") t@{ ctx, a ->
+            val url = lastVideos.getOrNull(a.optInt("n", 0) - 1)?.url
+                ?: a.optString("query").takeIf { it.isNotBlank() }?.let { "https://www.youtube.com/results?search_query=" + URLEncoder.encode(it, "UTF-8") }
+                ?: return@t "нужен номер или запрос"
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            if (launch(ctx, Intent(i).setPackage(YouTube.PKG)) || launch(ctx, i)) "открыл" else "не открылось"
+        },
+
+        Tool("maps_route", "{\"to\": \"Ливадийский дворец\", \"from\": \"\", \"mode\": \"auto\"} — маршрут в Яндекс Картах. from пусто — от того места, где Алим сейчас. mode: auto машина, mt общественный транспорт, pd пешком, taxi такси") t@{ ctx, a ->
+            val to = a.optString("to").trim()
+            if (to.isEmpty()) return@t "куда?"
+            val from = a.optString("from").trim()
+            val mode = a.optString("mode", "auto").lowercase().let { if (it in setOf("auto", "mt", "pd", "taxi", "bc")) it else "auto" }
+            val dst = Geo.find(to)
+            val src = if (from.isNotBlank()) Geo.find(from) else null
+            val rtext = (src?.ll ?: from) + "~" + (dst?.ll ?: to)
+            val q = "rtext=" + URLEncoder.encode(rtext, "UTF-8") + "&rtt=$mode"
+            val ok = launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("yandexmaps://maps.yandex.ru/?$q")).setPackage(Geo.MAPS_PKG)) ||
+                launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("https://yandex.ru/maps/?$q")))
+            val eta = if (src != null && dst != null && mode != "mt") Geo.eta(src, dst, mode == "pd") else ""
+            buildString {
+                append(if (ok) "открыл маршрут в Яндекс Картах" else "Карты не открылись")
+                if (dst != null) append("; куда: ${dst.name.take(140)}") else append("; точный адрес «$to» не нашёл — Карты поищут сами")
+                if (eta.isNotBlank()) append("; $eta")
+            }
+        },
+
+        Tool("maps_search", "{\"query\": \"аптека рядом\"} — найти места в Яндекс Картах (кафе, аптеки, адрес)") t@{ ctx, a ->
+            val q = a.optString("query").trim()
+            if (q.isEmpty()) return@t "что искать?"
+            val e = URLEncoder.encode(q, "UTF-8")
+            val ok = launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("yandexmaps://maps.yandex.ru/?text=$e")).setPackage(Geo.MAPS_PKG)) ||
+                launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("https://yandex.ru/maps/?text=$e")))
+            if (ok) "открыл поиск «$q» в Яндекс Картах" else "Карты не открылись"
+        },
+
+        Tool("file_create", "{\"type\": \"docx\", \"name\": \"Список дел\", \"text\": \"# Заголовок\\n## Раздел\\n- пункт\\n**жирный**\\n| Колонка | Колонка |\\n| a | b |\"} или {\"type\": \"xlsx\", \"name\": \"Бюджет\", \"sheets\": [{\"name\": \"Октябрь\", \"rows\": [[\"Статья\", \"Сумма\"], [\"Еда\", 15000], [\"Итого\", \"=SUM(B2:B2)\"]]}]} — создать документ Word или таблицу Excel (формулы через =). Сохраняется в Загрузки/Агент, карточка на экране") t@{ ctx, a ->
+            val type = a.optString("type").lowercase().ifBlank { if (a.has("sheets") || a.has("rows")) "xlsx" else "docx" }
+            val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
+            val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, Docs.xlsx(a))
+                else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
+            withContext(Dispatchers.Main) { Agent.files.add(0, ref) }
+            "создал «${ref.name}» в Загрузки/Агент — карточка на экране, нажатием открывается, там же «Отправить»."
+        },
+
+        Tool("file_read", "{\"n\": 1, \"from\": \"attachment\" | \"made\"} — прочитать .docx/.xlsx (из вложений Алима или из файлов, сделанных агентом), чтобы ответить по ним или поправить") t@{ ctx, a ->
+            val n = a.optInt("n", 1)
+            val att = Attach.sent.filter { it.name.endsWith(".docx", true) || it.name.endsWith(".xlsx", true) }
+            val useMade = a.optString("from").lowercase() == "made" || att.isEmpty()
+            val (uri, name) = if (useMade) Docs.made.getOrNull(n - 1)?.let { it.uri to it.name } ?: return@t "файлов Word/Excel нет"
+                else att.getOrNull(n - 1)?.let { it.uri to it.name } ?: return@t "нет такого вложения"
+            val t = Docs.read(ctx, uri, name)
+            "Файл «$name»:\n${t.take(14000)}\n\nЧтобы изменить — file_create с тем же type и исправленным содержимым целиком (новый файл рядом, оригинал не тронется)."
+        },
+
+        Tool("file_send", "{\"n\": 1, \"app\": \"telegram|whatsapp|max|any\"} — отправить файл, сделанный агентом",
+            confirm = { a -> "Отправить файл «${Docs.made.getOrNull(a.optInt("n", 1) - 1)?.name ?: "?"}» в ${a.optString("app", "приложение")}? Там выберешь чат." }) t@{ ctx, a ->
+            val f = Docs.made.getOrNull(a.optInt("n", 1) - 1) ?: return@t "файлов нет"
+            val i = Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val pkg = installed(ctx, a.optString("app"))
+            val ok = if (pkg != null) launch(ctx, i.setPackage(pkg)) else launch(ctx, Intent.createChooser(i, "Отправить"))
+            if (ok) "открыл отправку «${f.name}»" else "не получилось открыть отправку"
+        },
+
+        Tool("play_open", "{\"query\": \"Яндекс Go\"} или {\"package\": \"ru.yandex.taxi\"} — Google Play: найти приложение или открыть его страницу (установить/обновить Алим нажмёт сам)") t@{ ctx, a ->
+            val pkg = a.optString("package").trim(); val q = a.optString("query").trim()
+            val (m, w) = when {
+                pkg.isNotBlank() -> "market://details?id=$pkg" to "https://play.google.com/store/apps/details?id=$pkg"
+                q.isNotBlank() -> URLEncoder.encode(q, "UTF-8").let { "market://search?q=$it&c=apps" to "https://play.google.com/store/search?q=$it&c=apps" }
+                else -> return@t "что искать?"
+            }
+            if (launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(m)).setPackage("com.android.vending")) || launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(w))))
+                "открыл Google Play" else "Google Play не открылся"
+        },
+
+        Tool("kion_open", "{\"query\": \"Нюрнберг\"} — найти фильм или сериал в KION и открыть; без query — просто открыть KION") t@{ ctx, a ->
+            val pm = ctx.packageManager
+            val kion = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .firstOrNull { it.loadLabel(pm).toString().contains("kion", true) || it.activityInfo.packageName.contains("mtstv") }?.activityInfo?.packageName
+            val q = a.optString("query").trim()
+            val openApp: suspend () -> Boolean = { kion?.let { pm.getLaunchIntentForPackage(it) }?.let { launch(ctx, it) } ?: false }
+            if (q.isEmpty()) return@t if (openApp()) "открыл KION" else "KION не установлен"
+            val link = runCatching { YaSearch.search("site:kion.ru $q") }.getOrDefault(emptyList())
+                .firstNotNullOfOrNull { Regex("https?://(www\\.)?kion\\.ru/[^\\s]+").find(it)?.value }
+            if (link != null) {
+                val i = Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                if (kion != null && launch(ctx, Intent(i).setPackage(kion))) return@t "открыл «$q» в KION: $link"
+                if (launch(ctx, i)) return@t "открыл «$q» на сайте KION (приложение ссылку не приняло): $link"
+            }
+            if (openApp()) "поиском «$q» в KION не нашёл — открыл приложение, найди там" else "KION не установлен и «$q» не нашёл"
         },
 
         Tool("web_page", "{\"url\": \"https://…\"} — прочитать сайт, который не открывается через web_read (тяжёлый, на JavaScript)") t@{ ctx, a ->

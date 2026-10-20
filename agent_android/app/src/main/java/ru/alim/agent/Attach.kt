@@ -88,6 +88,8 @@ object Attach {
                         val txt = ctx.contentResolver.openInputStream(a.uri)?.use { s -> s.readBytes().let { b -> String(b, 0, minOf(b.size, 400_000), Charsets.UTF_8) } }.orEmpty()
                         "Текст файла:\n" + txt.take(15000) + if (txt.length > 15000) "\n…(обрезано)" else ""
                     }
+                    a.name.endsWith(".docx", true) -> { onStep("Читаю ${a.name}"); "Документ Word (разметка: # заголовки, **жирный**, | таблицы |):\n" + Docs.read(ctx, a.uri, a.name).take(15000) }
+                    a.name.endsWith(".xlsx", true) -> { onStep("Читаю ${a.name}"); "Таблица Excel (JSON листов и строк, формулы через =):\n" + Docs.read(ctx, a.uri, a.name).take(15000) }
                     a.mime.startsWith("image/") -> { onStep("Смотрю ${a.name}"); "Что на изображении:\n" + look(listOfNotNull(image(ctx, a.uri))) }
                     a.mime == "application/pdf" -> { onStep("Читаю PDF ${a.name}"); "Содержимое PDF (первые страницы):\n" + look(pdfPages(ctx, a.uri, 3)) }
                     else -> "(файл такого типа прочитать нельзя, но его можно переслать)"
@@ -95,7 +97,9 @@ object Attach {
             }.getOrElse { "(не удалось прочитать: ${it.message?.take(100)})" }
             sb.append(body).append("\n\n")
         }
-        sb.append("Переслать вложения — attachment_send.\n")
+        sb.append("Вложения — это контекст к просьбе Алима. Делай с ними то, что он просит (ответить, найти, поправить, посчитать). ")
+        sb.append("Пересылать (attachment_send) — ТОЛЬКО если он прямо сказал отправить или переслать.\n")
+        sb.append("Просит найти по фото — возьми из описания бренд, модель, цвет, надписи и ищи: товар — shop_search, место — maps_search или web_search, остальное — web_search.\n")
         return sb.toString()
     }
 
@@ -137,7 +141,8 @@ object Attach {
         if (urls.isEmpty()) return "(не удалось открыть)"
         val model = Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
         val content = JSONArray().put(JSONObject().put("type", "text").put("text",
-            "Опиши по-русски, что на изображении, и перепиши весь видимый текст как есть. Коротко, по делу."))
+            "Опиши по-русски, что на изображении, и перепиши весь видимый текст как есть. Если это вещь или товар — назови тип, бренд и модель как можно точнее " +
+                "(по логотипу, надписям, дизайну), цвет, материал; если место или здание — что это и где, если узнаёшь. В конце строка «Для поиска: …» — 3-6 слов, по которым это искать. Коротко, по делу."))
         urls.forEach { content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", it))) }
         val r = Llm.chat(model, JSONArray().put(JSONObject().put("role", "user").put("content", content)), 1500, json = false)
         return r.text.trim().take(6000)

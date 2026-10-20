@@ -169,7 +169,8 @@ object Shop {
         val j = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if (j.optInt("n") < 300) return null
         val sel = j.optJSONArray("seller")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
-            .filterNot { it.equals("Перейти", true) || it.contains("магазин", true) && it.length < 12 }
+            .map { it.replace(Regex("\\s*(Подписаться|Подписка|Отписаться)\\s*", RegexOption.IGNORE_CASE), " ").trim() }
+            .filterNot { it.isBlank() || it.equals("Перейти", true) || it.contains("магазин", true) && it.length < 12 }.distinct()
         val own = sel.any { it.contains("Ozon Россия", true) }
         // товары, которые продаёт сам Ozon, — оригинал по умолчанию, отметку «Оригинал» им не ставят
         return OzonInfo(sel.joinToString(" / "), j.optBoolean("orig") || own, j.optString("sizes"),

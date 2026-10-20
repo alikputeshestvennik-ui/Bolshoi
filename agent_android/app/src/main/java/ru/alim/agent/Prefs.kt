@@ -43,6 +43,9 @@ object Prefs {
     var digestHour: Int get() = sp.getInt("dh", 21); set(v) = sp.edit().putInt("dh", v).apply()
     var lastDigest: String get() = s("ld", ""); set(v) = put("ld", v)
     var monitorStatus: String get() = s("ms", ""); set(v) = put("ms", v)
+    /** Подборка свежих роликов YouTube по интересам из памяти — вместе с итогом дня. */
+    var ytPicks: Boolean get() = b("yt", true); set(v) = putB("yt", v)
+    var ytSeen: String get() = s("yts", ""); set(v) = put("yts", v)
 
     fun num(t: String) = t.replace(',', '.').trim().toDoubleOrNull() ?: 0.0
     /** Цена вызова в рублях по токенам. */
