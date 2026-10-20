@@ -261,6 +261,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                     }
                 }
             }
+            if (Agent.photos.isNotEmpty()) item { PhotoGrid(Agent.photos.toList()) }
             if (phase == Agent.Phase.DONE) item {
                 CardBox(bg = if (Agent.failed) Color(0xFF251516) else Color(0xFF12302C)) {
                     Text(Agent.result, style = body(16, color = if (Agent.failed) Danger else Color(0xFFD8FFF8)), lineHeight = 22.sp)

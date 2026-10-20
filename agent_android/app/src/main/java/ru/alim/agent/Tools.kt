@@ -238,6 +238,19 @@ object Tools {
                 "Отправить — photos_send с \"which\": \"all\" или \"1\"."
         },
 
+        Tool("photos_show", "{\"which\": \"all\" | \"1,3\"} — показать найденные фото сеткой на экране задачи") t@{ _, a ->
+            val ids = pick(a.optString("which", "all")).take(60)
+            if (ids.isEmpty()) return@t "сначала photos_find или photos_last"
+            withContext(Dispatchers.Main) { Agent.photos.clear(); Agent.photos.addAll(ids) }
+            "показал ${ids.size} фото на экране; нажатие на фото откроет его в Галерее"
+        },
+
+        Tool("photos_open", "{\"which\": \"1\"} — открыть одно найденное фото в Галерее") t@{ ctx, a ->
+            val id = pick(a.optString("which", "1")).firstOrNull() ?: return@t "сначала photos_find или photos_last"
+            val ok = launch(ctx, Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(id), "image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            if (ok) "открыл фото в Галерее" else "Галерея не открылась"
+        },
+
         Tool("sms_read", "{\"from\": \"имя или номер, можно пусто\", \"limit\": 5} — последние входящие SMS") t@{ ctx, a ->
             if (!has(ctx, Manifest.permission.READ_SMS)) return@t "нет разрешения на чтение SMS — пусть Алим выдаст его в «Подключениях»"
             val from = a.optString("from").trim().lowercase(); val lim = a.optInt("limit", 5).coerceIn(1, 20)

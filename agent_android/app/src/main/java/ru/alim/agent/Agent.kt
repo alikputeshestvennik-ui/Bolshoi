@@ -38,6 +38,8 @@ object Agent {
     var phase by mutableStateOf(Phase.IDLE); private set
     var task by mutableStateOf(""); private set
     val steps = mutableStateListOf<Step>()
+    /** Фото, которые агент показывает на экране задачи. */
+    val photos = mutableStateListOf<Long>()
     var pending by mutableStateOf<Pending?>(null); private set
     var result by mutableStateOf(""); private set
     var failed by mutableStateOf(false); private set
@@ -64,7 +66,7 @@ object Agent {
         task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
         startedAt = System.currentTimeMillis(); endedAt = 0L
         model = Prefs.fastModel; phase = Phase.WORKING
-        lastMsgs = null
+        lastMsgs = null; photos.clear()
         job = scope.launch { loop(t, null, false) }
     }
 
@@ -105,6 +107,7 @@ object Agent {
         append("- Не хватает данных (кому, когда, какой) — спроси в \"say\" и \"done\": true.\n")
         append("- Людей сначала ищи через contacts_find. Похожих несколько — спроси, кого именно.\n")
         append("- Попросили действие (позвонить, написать, отправить) — делай сразу. Не спрашивай «отправить?»: подтверждение покажет приложение кнопкой.\n")
+        append("- Попросили показать или открыть фото — после поиска вызови photos_show (сетка на экране, нажатие открывает в Галерее). Одно фото сразу в Галерее — photos_open.\n")
         append("- «Последнее фото» — photos_last. SMS — sms_read. Уведомления мессенджеров — messages_recent.\n")
         append("- Тариф, баланс, остатки мобильной связи — ussd с кодом оператора (МТС: тариф *111*59#, баланс *100#), если код знаешь.\n")
         append("- Посты Telegram-канала — tg_channel; ник не знаешь — web_search «<название> telegram канал» и возьми ник из ссылки t.me.\n")
