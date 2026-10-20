@@ -32,6 +32,11 @@ object Prefs {
     var autoReply: Boolean get() = b("ar", false); set(v) = putB("ar", v)
     var speak: Boolean get() = b("speak", true); set(v) = putB("speak", v)
     var askedPerms: Boolean get() = b("asked", false); set(v) = putB("asked", v)
+    var monitorOn: Boolean get() = b("mon", true); set(v) = putB("mon", v)
+    var interval: Int get() = sp.getInt("int", 30); set(v) = sp.edit().putInt("int", v).apply()
+    var digestHour: Int get() = sp.getInt("dh", 21); set(v) = sp.edit().putInt("dh", v).apply()
+    var lastDigest: String get() = s("ld", ""); set(v) = put("ld", v)
+    var monitorStatus: String get() = s("ms", ""); set(v) = put("ms", v)
 
     fun num(t: String) = t.replace(',', '.').trim().toDoubleOrNull() ?: 0.0
     /** Цена вызова в рублях по токенам. */

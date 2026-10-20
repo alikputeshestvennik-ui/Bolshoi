@@ -335,6 +335,39 @@ object Tools {
             Yoo.history(ctx, a.optInt("days", 7).coerceIn(1, 90), a.optInt("limit", 30))
         },
 
+        Tool("memory_save", "{\"text\": \"Денис — брат Алима\"} — запомнить факт об Алиме надолго") { ctx, a ->
+            Memory.add(ctx, a.optString("text"), "агент")?.let { "запомнил" } ?: "не запомнил (пусто или похоже на код/деньги)"
+        },
+
+        Tool("memory_search", "{\"query\": \"Денис\"} — найти в памяти") { ctx, a ->
+            Memory.search(ctx, a.optString("query")).joinToString("\n") { "[${it.id}] ${it.text} (${it.source})" }.ifBlank { "в памяти ничего" }
+        },
+
+        Tool("memory_forget", "{\"id\": 123} — удалить запись из памяти",
+            confirm = { a -> "Забыть запись #${a.optLong("id")}?" }) { ctx, a ->
+            Memory.remove(ctx, a.optLong("id")); "забыл"
+        },
+
+        Tool("events", "{\"kind\": \"mail|sms|msg|notif|\", \"hours\": 24, \"query\": \"\", \"important\": false} — что пришло на телефон: письма, SMS, сообщения, уведомления") { ctx, a ->
+            val kind = a.optString("kind").trim(); val q = a.optString("query").trim().lowercase()
+            val from = System.currentTimeMillis() - a.optInt("hours", 24).coerceIn(1, 96) * 3600_000L
+            val l = Events.since(ctx, from).filter {
+                (kind.isBlank() || it.kind == kind) && (!a.optBoolean("important") || it.urgent) && !it.bulk &&
+                    (q.isBlank() || (it.from + " " + it.title + " " + it.text).lowercase().contains(q))
+            }.takeLast(a.optInt("limit", 20).coerceIn(1, 40))
+            if (l.isEmpty()) "ничего не найдено" else l.joinToString("\n") { Events.line(it).take(300) }
+        },
+
+        Tool("mail_check", "{\"limit\": 10} — забрать новую почту из обоих ящиков Gmail и показать последние письма людей") { ctx, a ->
+            val st = Monitor.pullMail(ctx)
+            val l = Events.all(ctx).filter { it.kind == "mail" && !it.bulk }.takeLast(a.optInt("limit", 10).coerceIn(1, 30))
+            "$st\n" + (if (l.isEmpty()) "писем от людей нет (или почта не подключена в «Подключениях»)" else l.joinToString("\n") { Events.line(it).take(300) })
+        },
+
+        Tool("event_read", "{\"id\": 123} — полный текст письма или уведомления по номеру") { ctx, a ->
+            Events.byId(ctx, a.optLong("id"))?.let { "${it.source} · ${it.from} · ${it.title}\n${it.text}" } ?: "не найдено"
+        },
+
         Tool("escalate", "{\"reason\": \"…\"} — передать задачу сильной модели (только для сложных задач)") { _, _ -> "" },
     )
 

@@ -47,11 +47,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Task, History, Rules, Settings, YooMoney }
+enum class Scr { Home, Task, History, Rules, Settings, YooMoney, Memory, Digest }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS)
+        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
     if (Build.VERSION.SDK_INT >= 33) { l += Manifest.permission.READ_MEDIA_IMAGES; l += Manifest.permission.POST_NOTIFICATIONS }
     else l += Manifest.permission.READ_EXTERNAL_STORAGE
     return l.toTypedArray()
@@ -65,6 +65,8 @@ fun App(voice: Voice) {
         if (!Prefs.askedPerms) { Prefs.askedPerms = true; perms.launch(neededPerms()) }
     }
     val phase = Agent.phase
+    val open = Nav.open
+    LaunchedEffect(open) { if (open == "digest") { scr = Scr.Digest; Nav.open = "" } }
     LaunchedEffect(phase) {
         if (phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM) scr = Scr.Task
     }
@@ -83,6 +85,8 @@ fun App(voice: Voice) {
                 Scr.Rules -> RulesScreen(home)
                 Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney })
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
+                Scr.Memory -> MemoryScreen(home)
+                Scr.Digest -> DigestScreen(home)
             }
         }
     }

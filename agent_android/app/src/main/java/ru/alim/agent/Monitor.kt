@@ -1,0 +1,184 @@
+package ru.alim.agent
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.ContactsContract
+import android.provider.Telephony
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+/**
+ * Фон: раз в N минут забрать почту, разобрать новое (важное — сразу уведомлением, факты — в память),
+ * вечером собрать итог дня. Модели уходит только новое и не рассылки; коды и деньги вычищены заранее.
+ */
+object Monitor {
+    fun schedule(ctx: Context, replace: Boolean = false) {
+        val wm = WorkManager.getInstance(ctx)
+        if (!Prefs.monitorOn) { wm.cancelUniqueWork("monitor"); return }
+        val req = PeriodicWorkRequestBuilder<MonitorWorker>(Prefs.interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+        wm.enqueueUniquePeriodicWork("monitor", if (replace) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP, req)
+    }
+
+    fun runNow(ctx: Context, digest: Boolean = false) {
+        val req = OneTimeWorkRequestBuilder<MonitorWorker>()
+            .setInputData(androidx.work.Data.Builder().putBoolean("digest", digest).build()).build()
+        WorkManager.getInstance(ctx).enqueueUniqueWork(if (digest) "digest-now" else "monitor-now", ExistingWorkPolicy.REPLACE, req)
+    }
+
+    private fun msg(role: String, text: String) = JSONObject().put("role", role).put("content", text)
+    private fun json(t: String): JSONObject {
+        val a = t.indexOf('{'); val b = t.lastIndexOf('}')
+        return if (a >= 0 && b > a) runCatching { JSONObject(t.substring(a, b + 1)) }.getOrElse { JSONObject() } else JSONObject()
+    }
+
+    /** Почта обоих ящиков. Ошибки — в статус, мониторинг продолжается. */
+    fun pullMail(ctx: Context): String {
+        val errs = ArrayList<String>()
+        var n = 0
+        Mail.accounts(ctx).forEach { acc -> runCatching { n += Mail.fetchNew(ctx, acc) }.onFailure { errs += (it.message ?: "ошибка почты").take(160) } }
+        return if (errs.isEmpty()) "почта: новых $n" else errs.joinToString("; ")
+    }
+
+    /** Разбор новых событий быстрой моделью. */
+    fun triage(ctx: Context): String {
+        val pending = Events.pending(ctx)
+        if (pending.isEmpty()) return "нового нет"
+        val batch = pending.take(40)
+        val sys = buildString {
+            append("Ты — фоновый помощник Алима. Тебе дают новые события с его телефона (уведомления, SMS, письма).\n")
+            append("1) Выбери ВАЖНОЕ — то, о чём Алиму стоит узнать в ближайший час: личное сообщение от живого человека с вопросом или просьбой, ")
+            append("пропущенный звонок, доставка/заказ готов к получению, письмо от человека или по работе, предупреждение безопасности, срочные сроки. ")
+            append("Реклама, акции, новости, игры, соцсети, «вы вошли» от сервисов, которыми он пользуется прямо сейчас, — не важно.\n")
+            append("2) Выпиши новые УСТОЙЧИВЫЕ факты о его жизни, если они явно видны (кто есть кто по имени, регулярные дела, сервисы, которыми он пользуется). ")
+            append("Не записывай здоровье, деньги, пароли, адреса, интимное и разовые события. Чаще всего фактов нет — это нормально.\n")
+            append("Что уже известно об Алиме:\n").append(Memory.forPrompt(ctx, 30).ifBlank { "(пока ничего)" }).append("\n")
+            append("Ответь ТОЛЬКО JSON: {\"urgent\": [{\"id\": 123, \"say\": \"коротко для уведомления, до 12 слов\"}], \"facts\": [\"…\"]}")
+        }
+        val user = "Сейчас: ${SimpleDateFormat("EEEE d MMMM, HH:mm", Locale("ru")).format(Date())}\nСобытия:\n" + batch.joinToString("\n") { Events.line(it) }
+        val model = Prefs.fastModel
+        val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 700)
+        val j = json(r.text)
+        val urgent = HashMap<Long, String>()
+        j.optJSONArray("urgent")?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.let { o ->
+                val id = o.optLong("id"); if (batch.any { it.id == id }) urgent[id] = o.optString("say").ifBlank { "Новое важное" }
+            }
+        }
+        val facts = j.optJSONArray("facts")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } }.orEmpty().take(3)
+        facts.forEach { Memory.add(ctx, it, "авто") }
+        Events.mark(ctx, batch.map { it.id }.toSet(), urgent)
+        val byId = batch.associateBy { it.id }
+        if (urgent.size > 3) notify(ctx, 7000, "Важное: ${urgent.size}", urgent.values.joinToString("\n"))
+        else urgent.forEach { (id, say) -> notify(ctx, (id % 100000).toInt() + 7001, byId[id]?.from?.ifBlank { null } ?: "Важное", say) }
+        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Мониторинг: ${batch.size} новых, важных ${urgent.size}", 1, Agent.short(model), r.cost(model), true))
+        return "разобрано ${batch.size}, важных ${urgent.size}${if (facts.isNotEmpty()) ", фактов ${facts.size}" else ""}"
+    }
+
+    fun digestDue(): Boolean {
+        val c = Calendar.getInstance()
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.time)
+        return c.get(Calendar.HOUR_OF_DAY) >= Prefs.digestHour && Prefs.lastDigest != today
+    }
+
+    /** Итог дня: события за сутки и задачи агента → короткая сводка + факты в память. */
+    fun digest(ctx: Context): String {
+        val from = System.currentTimeMillis() - 24 * 3600_000L
+        val ev = Events.since(ctx, from)
+        val tasks = Journal.since(ctx, Journal.startOfDay()).filterNot { it.title.startsWith("Мониторинг") }
+        val bulkCount = ev.count { it.bulk }
+        val sys = buildString {
+            append("Ты — помощник Алима. Составь ИТОГ ДНЯ по событиям с его телефона. По-русски, просто, на «ты», 6–10 коротких строк:\n")
+            append("— что было важного и от кого; — что ещё ЖДЁТ ответа или действия (самое полезное); — письма людей; — что делал агент.\n")
+            append("Рекламу не перечисляй, просто скажи, сколько её было. Не выдумывай того, чего нет в событиях.\n")
+            append("Отдельно выпиши до 3 новых устойчивых фактов о его жизни (без здоровья, денег, паролей, адресов).\n")
+            append("Что уже известно:\n").append(Memory.forPrompt(ctx, 30).ifBlank { "(пока ничего)" }).append("\n")
+            append("Ответь ТОЛЬКО JSON: {\"digest\": \"текст итога\", \"facts\": [\"…\"]}")
+        }
+        val user = buildString {
+            append("Дата: ").append(SimpleDateFormat("EEEE d MMMM", Locale("ru")).format(Date())).append("\n")
+            append("События (важные помечены !):\n")
+            ev.filterNot { it.bulk }.takeLast(120).forEach { append(if (it.urgent) "! " else "").append(Events.line(it).take(260)).append("\n") }
+            append("Рассылок и рекламы: $bulkCount\n")
+            append("Задачи агента сегодня:\n")
+            tasks.forEach { append("- ${it.title} (${if (it.ok) "ок" else "ошибка"})\n") }
+        }
+        val model = Prefs.fastModel
+        val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 1200)
+        val j = json(r.text)
+        val text = j.optString("digest").ifBlank { r.text.trim() }.take(3000)
+        Digests.add(ctx, text)
+        j.optJSONArray("facts")?.let { a -> (0 until minOf(3, a.length())).forEach { Memory.add(ctx, a.optString(it), "авто") } }
+        Prefs.lastDigest = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        notify(ctx, 6999, "Итог дня", text, open = "digest")
+        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Итог дня", 1, Agent.short(model), r.cost(model), true))
+        return "итог готов"
+    }
+
+    fun notify(ctx: Context, id: Int, title: String, text: String, open: String = "") {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel("important") == null)
+            nm.createNotificationChannel(NotificationChannel("important", "Важное и итог дня", NotificationManager.IMPORTANCE_HIGH))
+        val pi = PendingIntent.getActivity(ctx, id, Intent(ctx, MainActivity::class.java).putExtra("open", open)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        runCatching {
+            NotificationManagerCompat.from(ctx).notify(id, NotificationCompat.Builder(ctx, "important").setSmallIcon(R.drawable.ic_launcher_fg)
+                .setContentTitle(title).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setContentIntent(pi).setAutoCancel(true).build())
+        }
+    }
+}
+
+class MonitorWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val ctx = applicationContext
+        Prefs.init(ctx)
+        val forceDigest = inputData.getBoolean("digest", false)
+        if (!Prefs.monitorOn && !forceDigest) return@withContext Result.success()
+        val log = ArrayList<String>()
+        log += Monitor.pullMail(ctx)
+        log += runCatching { Monitor.triage(ctx) }.getOrElse { "разбор: ${it.message?.take(120)}" }
+        if (forceDigest || Monitor.digestDue()) log += runCatching { Monitor.digest(ctx) }.getOrElse { "итог: ${it.message?.take(120)}" }
+        Prefs.monitorStatus = SimpleDateFormat("d MMM HH:mm", Locale("ru")).format(Date()) + " — " + log.joinToString(" · ")
+        Result.success()
+    }
+}
+
+/** Входящие SMS сразу в ленту событий. */
+class SmsIn : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        Prefs.init(ctx)
+        val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
+        val from = parts.firstOrNull()?.originatingAddress.orEmpty()
+        val text = parts.joinToString("") { it.messageBody.orEmpty() }
+        val name = runCatching {
+            ctx.contentResolver.query(Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(from)),
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
+        }.getOrNull() ?: from
+        Events.add(ctx, "sms", "SMS", name, "", text)
+    }
+}

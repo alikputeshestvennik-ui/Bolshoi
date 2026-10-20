@@ -106,9 +106,10 @@ class NotifListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val pkg = sbn.packageName
-        val app = NotifStore.PACKAGES[pkg] ?: return
         val n = sbn.notification ?: return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        val app = NotifStore.PACKAGES[pkg]
+        if (app == null) { other(sbn, n); return }
         val ex = n.extras ?: return
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
         val last = style?.messages?.lastOrNull()
@@ -120,8 +121,29 @@ class NotifListener : NotificationListenerService() {
         if (from.isEmpty() || text.isEmpty()) return
         val action = n.actions?.firstOrNull { it.remoteInputs?.isNotEmpty() == true }
         val m = NotifStore.add(app, pkg, from, text, group, action) ?: return
+        // SMS ловит свой приёмник; группы — в ленту, но без разбора моделью (их слишком много)
+        if (app != "SMS") Events.add(applicationContext, "msg", app, from, if (group) "группа" else "", text, bulk = group)
         if (Prefs.autoReply && !group && m.canReply && !NotifStore.sensitive(text)) scope.launch { AutoReply.handle(applicationContext, m) }
     }
+}
+
+/** Уведомления остальных приложений — в ленту событий (без системных, текущих и служебных). */
+private val SKIP_PKG = setOf("android", "com.android.systemui", "com.android.providers.downloads", "com.samsung.android.lool",
+    "com.google.android.gms", "com.android.vending", "com.sec.android.app.launcher")
+private val SKIP_CAT = setOf(Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_PROGRESS, Notification.CATEGORY_SERVICE,
+    Notification.CATEGORY_SYSTEM, Notification.CATEGORY_NAVIGATION, Notification.CATEGORY_STATUS)
+
+private fun NotificationListenerService.other(sbn: StatusBarNotification, n: Notification) {
+    val pkg = sbn.packageName
+    if (pkg == packageName || pkg in SKIP_PKG || !sbn.isClearable) return
+    if (n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0) return
+    if (n.category in SKIP_CAT) return
+    val ex = n.extras ?: return
+    val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+    val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
+    if (title.isEmpty() && text.isEmpty()) return
+    val label = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+    Events.add(applicationContext, "notif", label, title, "", text)
 }
 
 /** Автоответчик: быстрая модель читает правила Алима и решает — ответить, промолчать или только пересказать. */

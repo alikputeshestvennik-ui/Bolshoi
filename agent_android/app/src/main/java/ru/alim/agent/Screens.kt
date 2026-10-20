@@ -115,8 +115,6 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
                 }
                 HGap(8)
             }
-            IconTile(Icons.Filled.Notifications, "Автоответчик", { go(Scr.Rules) })
-            HGap(8)
             IconTile(Icons.Filled.Settings, "Подключения", { go(Scr.Settings) })
         }
 
@@ -136,6 +134,15 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Погода на завтра", "Последние сообщения", "Сколько потратил?", "Будильник на 7:00").forEach { s ->
                     Chip(s) { Agent.start(s) }
+                }
+            }
+        }
+
+        Row(Modifier.padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Triple("Сводка", Scr.Digest, Amber), Triple("Память", Scr.Memory, Violet), Triple("Автоответ", Scr.Rules, Teal)).forEach { (t, s, c) ->
+                Row(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(14.dp)).background(Card).clickable { go(s) }.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Dot(c); HGap(8); Text(t, style = body(14, FontWeight.SemiBold))
                 }
             }
         }
@@ -536,6 +543,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 }
             }, bg = Card, fg = Ink, border = Line)
             check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+
+            MonitorSettings()
 
             Label("Поиск в интернете")
             CardBox {
