@@ -17,6 +17,8 @@ import android.telephony.SmsManager
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -396,21 +398,67 @@ object Tools {
             if (ok) "открыл отправку ${list.size} файл(ов) — Алим выберет чат" else "не получилось открыть отправку"
         },
 
-        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics мужские 43\", \"max_price\": 8000} — найти товары с ценами и ссылками") t@{ ctx, a ->
+        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics gel-kayano мужские\", \"max_price\": 8000, \"seller\": \"Ozon Россия\", \"original\": true} — найти товары. seller — только у этого продавца, original — только с отметкой «Оригинал» (агент сам откроет страницы товаров). Подделки (−90%, «осталось N ед», слишком дёшево для бренда) скрываются; all=true — показать всё") t@{ ctx, a ->
             val q = a.optString("query").trim()
             if (q.isEmpty()) return@t "нужен запрос"
             val maxP = a.optInt("max_price", 0).takeIf { it > 0 }
             val store = a.optString("store", "both").lowercase()
-            val out = StringBuilder(); lastShop.clear()
-            if (store != "ozon") runCatching { Shop.wb(q, maxP) }
-                .onSuccess { lastShop += it.take(8); out.append(Shop.format("Wildberries", it)).append("\n\n") }
-                .onFailure { out.append("Wildberries: ${it.message}\n") }
-            if (store != "wb") runCatching { Shop.ozon(ctx, q, maxP) }
-                .onSuccess { val base = lastShop.size; lastShop += it.take(8)
-                    out.append("Ozon, найдено ${it.size}:\n").append(it.take(8).mapIndexed { i, x -> "${base + i + 1}. ${x.title} — ${x.price.ifBlank { "цена ?" }} — ${x.url}" }.joinToString("\n")) }
-                .onFailure { out.append("Ozon: ${it.message}\n") }
-            withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(lastShop.take(8)) }
-            out.append("\nПроверить размер — shop_check. Открыть товар — shop_open с номером.")
+            val seller = a.optString("seller").trim()
+            val orig = a.optBoolean("original", false)
+            val found = ArrayList<Shop.Item>(); val notes = StringBuilder()
+            if (store != "ozon") runCatching { Shop.wb(q, maxP) }.onSuccess { found += it }.onFailure { notes.append("Wildberries: ${it.message}\n") }
+            if (store != "wb") runCatching { Shop.ozon(ctx, q, maxP) }.onSuccess { found += it }.onFailure { notes.append("Ozon: ${it.message}\n") }
+            // нужен конкретный продавец — добираем ссылки на товары через поиск Яндекса (как это делает Алиса)
+            if (seller.isNotBlank() && store != "wb" && YaSearch.ready) runCatching { YaSearch.search("site:ozon.ru $q $seller") }.onSuccess { res ->
+                res.forEach { line ->
+                    Regex("https?://(www\\.)?ozon\\.ru/product/[^\\s?#]+").find(line)?.value?.let { u ->
+                        if (found.none { it.url.trimEnd('/') == u.trimEnd('/') }) found.add(0, Shop.Item(line.substringBefore(" — ").take(150), "", u, "", "Ozon"))
+                    }
+                }
+            }
+            val showAll = a.optBoolean("all", false)
+            var hidden = 0
+            fun clean(l: List<Shop.Item>) = if (showAll) l else l.filter { Shop.suspect(it, q).isEmpty().also { ok -> if (!ok) hidden++ } }
+            var list = clean(found)
+            var checkedN = 0
+            if (seller.isNotBlank() || orig) {
+                val wbs = list.filter { it.store == "WB" }.filter { seller.isBlank() || Shop.sellerMatch(seller, it.seller) }
+                val ozc = list.filter { it.store == "Ozon" }.take(9)
+                checkedN = ozc.size
+                val checked = ozc.chunked(3).flatMap { ch ->
+                    coroutineScope { ch.map { it to async { runCatching { Shop.ozonInfo(ctx, it.url) }.getOrNull() } }.map { (it, d) -> it to d.await() } }
+                }
+                val oz = checked.mapNotNull { (it, inf) ->
+                    if (inf == null) return@mapNotNull null
+                    val item = if (it.price.isBlank()) Shop.Item(inf.title.ifBlank { it.title }.take(150), inf.price, it.url, inf.img, "Ozon")
+                               else it
+                    item.seller = inf.seller; item.original = inf.original
+                    item.takeIf {
+                        (seller.isBlank() || Shop.sellerMatch(seller, inf.seller)) && (!orig || seller.isNotBlank() || inf.original) &&
+                            (maxP == null || Shop.rub(it.price).let { r -> r == 0 || r <= maxP })
+                    }
+                }
+                list = clean(oz + if (orig && seller.isBlank()) emptyList() else wbs)
+            }
+            lastShop.clear(); lastShop += list.take(8)
+            withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(lastShop) }
+            val out = StringBuilder(notes)
+            if (lastShop.isEmpty()) out.append(when {
+                seller.isNotBlank() -> "У продавца «$seller» не нашёл (проверил $checkedN карточек Ozon). Попробуй другой запрос (модель, без лишних слов) или shop_open с store и query."
+                orig -> "С отметкой «Оригинал» не нашёл среди $checkedN карточек."
+                else -> "Ничего подходящего."
+            }) else {
+                out.append("Найдено ${lastShop.size}:\n")
+                lastShop.forEachIndexed { i, x ->
+                    out.append("${i + 1}. [${x.store}] ${x.title} — ${x.price.ifBlank { "цена ?" }}")
+                    if (x.seller.isNotBlank()) out.append(" — продавец ${x.seller}")
+                    if (x.original) out.append(" — отметка «Оригинал»")
+                    out.append("\n")
+                }
+            }
+            if (hidden > 0) out.append("\nСкрыл $hidden подозрительных (кричащие скидки −70…−95%, «осталось N ед», цена ниже реальной для бренда) — скорее всего подделки. Скажи Алиму об этом одной фразой.")
+            if (seller.isBlank() && !orig) out.append("\nПродавца и «Оригинал» на Ozon видно только в карточке: если Алиму важна оригинальность — повтори с original=true или seller.")
+            out.append("\nРазмер — shop_check. Открыть товар — shop_open с номером.")
             out.toString()
         },
 
@@ -426,17 +474,30 @@ object Tools {
             if (launch(ctx, i) || launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)))) "открыл${if (pkg != null) " в приложении" else ""}" else "не открылось"
         },
 
-        Tool("shop_check", "{\"n\": \"1,2,3\", \"size\": \"43\"} — проверить наличие размера у найденных товаров") t@{ ctx, a ->
+        Tool("shop_check", "{\"n\": \"1,2,3\", \"size\": \"43\"} — проверить у найденных товаров размер, продавца и отметку «Оригинал»") t@{ ctx, a ->
             val size = a.optString("size").trim()
-            if (size.isEmpty()) return@t "нужен размер"
             val ns = a.optString("n", "1,2,3").split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.take(5)
-            val res = ns.mapNotNull { n -> lastShop.getOrNull(n - 1)?.let { n to it } }.map { (n, it) ->
-                val r = runCatching { if (it.store == "WB") Shop.wbSize(it.url, size) else Shop.ozonSize(ctx, it.url, size) }.getOrElse { e -> "не проверил: ${e.message}" }
-                it.size = when { r.contains("ЕСТЬ") -> "$size есть"; r.contains("раскупили") || r.contains("нет в сетке") -> "$size нет"; else -> "" }
-                "$n. ${it.title.take(60)}: $r"
+            val pick = ns.mapNotNull { n -> lastShop.getOrNull(n - 1)?.let { n to it } }
+            if (pick.isEmpty()) return@t "сначала shop_search"
+            val res = coroutineScope {
+                pick.map { (n, it) -> async {
+                    runCatching {
+                        if (it.store == "WB") {
+                            val r = if (size.isNotBlank()) Shop.wbSize(it.url, size) else ""
+                            if (size.isNotBlank()) it.size = when { r.contains("ЕСТЬ") -> "$size есть"; r.contains("раскупили") || r.contains("нет в сетке") -> "$size нет"; else -> "" }
+                            "$n. ${it.title.take(60)}: $r${if (it.seller.isNotBlank()) "; продавец ${it.seller}" else ""}"
+                        } else {
+                            val inf = Shop.ozonInfo(ctx, it.url)
+                            if (inf != null) { it.seller = inf.seller; it.original = inf.original }
+                            val r = if (size.isNotBlank()) Shop.ozonSize(inf, size) else ""
+                            if (size.isNotBlank()) it.size = when { r.contains("есть в списке") -> "$size есть?"; r.contains("не видно") -> "$size нет"; else -> "" }
+                            "$n. ${it.title.take(60)}: $r; продавец ${inf?.seller?.ifBlank { "?" } ?: "?"}; ${if (inf?.original == true) "отметка «Оригинал» есть" else "отметки «Оригинал» нет"}"
+                        }
+                    }.getOrElse { e -> "$n. не проверил: ${e.message}" }
+                } }.map { it.await() }
             }
             withContext(Dispatchers.Main) { val cp = Agent.products.toList(); Agent.products.clear(); Agent.products.addAll(cp) }
-            if (res.isEmpty()) "сначала shop_search" else res.joinToString("\n")
+            res.joinToString("\n")
         },
 
         Tool("web_page", "{\"url\": \"https://…\"} — прочитать сайт, который не открывается через web_read (тяжёлый, на JavaScript)") t@{ ctx, a ->

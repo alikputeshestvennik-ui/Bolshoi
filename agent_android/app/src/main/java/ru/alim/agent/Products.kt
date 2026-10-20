@@ -67,8 +67,12 @@ fun ProductCards(items: List<Shop.Item>) {
                         Text("${i + 1} · ${it.store}", style = body(12, color = Muted))
                         if (it.size.isNotBlank()) {
                             HGap(8)
-                            Text(it.size, style = body(12, FontWeight.SemiBold, if (it.size.endsWith("есть")) Teal else Amber))
+                            Text(it.size, style = body(12, FontWeight.SemiBold, if (it.size.contains("есть")) Teal else Amber))
                         }
+                    }
+                    if (it.seller.isNotBlank() || it.original) Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (it.original) { Text("✓ Оригинал", style = body(12, FontWeight.SemiBold, Teal)); HGap(8) }
+                        if (it.seller.isNotBlank()) Text(it.seller, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
