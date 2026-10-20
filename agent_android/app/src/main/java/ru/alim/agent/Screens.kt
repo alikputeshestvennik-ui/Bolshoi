@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
@@ -102,7 +103,8 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
         else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) listen()
         else micPerm.launch(Manifest.permission.RECORD_AUDIO)
     }
-    val send: () -> Unit = { if (input.isNotBlank()) { Agent.start(input); input = ""; typing = false } }
+    val send: () -> Unit = { if (input.isNotBlank() || Attach.pending.isNotEmpty()) { Agent.start(input); input = ""; typing = false } }
+    val attach = rememberAttachPicker()
 
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -120,7 +122,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
         if (!typing) Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Guardian(Idle, if (voice.listening) 3 else 0, 176.dp, voice.level, voice.speaking,
+            Guardian(Idle, if (voice.listening) 3 else 0, 250.dp, voice.level, voice.speaking,
                 Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
             Text(
                 when {
@@ -142,7 +144,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             listOf(Triple("Сводка", Scr.Digest, Amber), Triple("Память", Scr.Memory, Violet), Triple("Автоответ", Scr.Rules, Teal)).forEach { (t, s, c) ->
                 Row(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(14.dp)).background(Card).clickable { go(s) }.padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Dot(c); HGap(8); Text(t, style = body(14, FontWeight.SemiBold))
+                    Dot(c); HGap(8); Text(t, style = body(13, FontWeight.SemiBold), maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -171,7 +173,10 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             }
         }
 
+        AttachChips()
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            IconTile(Icons.Filled.Add, "Прикрепить файл", attach, 52.dp)
+            HGap(12)
             IconTile(Icons.Filled.Edit, "Ввести текстом", { typing = !typing }, 52.dp)
             HGap(16)
             Box(Modifier.size(76.dp).clip(RoundedCornerShape(38.dp)).background(if (voice.listening) Danger else Teal)
@@ -213,6 +218,7 @@ fun fieldColors() = OutlinedTextFieldDefaults.colors(
 
 @Composable
 fun TaskScreen(voice: Voice, back: () -> Unit) {
+    val attach = rememberAttachPicker()
     var reply by remember { mutableStateOf("") }
     var hint by remember { mutableStateOf<String?>(null) }
     val phase = Agent.phase
@@ -231,7 +237,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
 
     Screen("Задача · ${Agent.short(Agent.model)}", back) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 96.dp, voice.level, voice.speaking)
+            Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 112.dp, voice.level, voice.speaking)
             HGap(14)
             Column {
                 Label(when (phase) {
@@ -284,13 +290,16 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
         if (Agent.canFollowUp) {
             if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Teal))
             hint?.let { Text(it, style = body(13, color = Amber)) }
+            AttachChips()
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconTile(Icons.Filled.Add, "Прикрепить файл", attach, 52.dp)
+                HGap(8)
                 OutlinedTextField(reply, { reply = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Ответить агенту…", style = body(15, color = Muted)) },
                     textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Agent.followUp(reply); reply = "" } }))
                 HGap(8)
-                if (reply.isNotBlank()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Agent.followUp(reply); reply = "" }, 52.dp)
+                if (reply.isNotBlank() || Attach.pending.isNotEmpty()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Agent.followUp(reply); reply = "" }, 52.dp)
                 else Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(if (voice.listening) Danger else Teal)
                     .clickable(onClickLabel = "Ответить голосом") {
                         hint = null

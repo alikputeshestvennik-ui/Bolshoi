@@ -61,7 +61,7 @@ object Agent {
     val busy: Boolean get() = phase == Phase.WORKING || phase == Phase.CONFIRM
 
     fun start(text: String) {
-        val t = text.trim()
+        val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
         if (t.isEmpty() || busy) return
         task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
         startedAt = System.currentTimeMillis(); endedAt = 0L
@@ -72,7 +72,7 @@ object Agent {
 
     /** Продолжить последнюю задачу (ответ на вопрос агента). Старше 30 минут — новая задача. */
     fun followUp(text: String) {
-        val t = text.trim()
+        val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения" else "" }
         if (t.isEmpty() || busy) return
         val base = lastMsgs
         if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
@@ -112,6 +112,8 @@ object Agent {
         append("- Тариф, баланс, остатки мобильной связи — ussd с кодом оператора (МТС: тариф *111*59#, баланс *100#), если код знаешь.\n")
         append("- Посты Telegram-канала — tg_channel; ник не знаешь — web_search «<название> telegram канал» и возьми ник из ссылки t.me.\n")
         append("- ЮMoney: баланс — yoomoney_balance, траты и приходы — yoomoney_history. Не открывай приложение ЮMoney, если есть эти инструменты.\n")
+        append("- Нарисовать картинку, обои, иллюстрацию — image_generate (YandexART), промпт подробный, по-русски. Готовую картинку можно сразу отправить через photos_send.\n")
+        append("- Во вложениях могут быть файлы и фото Алима: их содержимое приходит в сообщении. Переслать — attachment_send.\n")
         append("- Нужна информация из интернета — web_search, потом web_read 1-2 лучших ссылок, и ответь сам своими словами (до 5-6 фраз), назови источник. Браузер открывай, только если Алим об этом просит или поиск дважды не сработал.\n")
         append("- Не говори «я не могу», пока не попробовал подходящий инструмент. Если правда нельзя — скажи коротко, что можешь вместо этого.\n")
         append("- Никогда не пересылай и не зачитывай коды из SMS, пароли, данные банков.\n")
@@ -134,7 +136,14 @@ object Agent {
 
     private suspend fun loop(text: String, base: JSONArray?, smartStart: Boolean) {
         val msgs = base ?: JSONArray().put(msg("system", system()))
-        msgs.put(msg("user", text))
+        val att = Attach.pending.toList(); Attach.pending.clear()
+        val extra = if (att.isEmpty()) "" else {
+            val st = Step("Смотрю вложения: ${att.size}"); steps.add(st)
+            (try { withContext(Dispatchers.IO) { Attach.consume(app, att) {} } }
+            catch (e: CancellationException) { throw e } catch (e: Exception) { "ВЛОЖЕНИЯ: не удалось прочитать (${e.message})" })
+                .also { st.done = true; st.detail = it.lines().drop(1).firstOrNull { l -> l.isNotBlank() }.orEmpty().take(200) }
+        }
+        msgs.put(msg("user", if (extra.isBlank()) text else "$text\n\n$extra"))
         lastMsgs = msgs
         var smart = smartStart
         var final: String? = null

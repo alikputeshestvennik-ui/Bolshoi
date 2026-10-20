@@ -67,11 +67,11 @@ object YaSpeech {
                 for (i in 0 until n) { val s = buf[i].toInt(); sum += s * s; out.write(s and 0xff); out.write((s shr 8) and 0xff) }
                 val rms = sqrt(sum / n)
                 if (floorN < 3) { floor += rms; floorN++ }
-                val thr = maxOf(700.0, floor / maxOf(1, floorN) * 3)
+                val thr = maxOf(500.0, floor / maxOf(1, floorN) * 3)
                 onLevel((rms / 6000.0).toFloat().coerceIn(0f, 1f))
                 total += 100
                 if (rms > thr) { speech = true; silent = 0 } else if (speech) silent += 100
-                if (speech && silent >= 1200) break
+                if (speech && silent >= 1600) break
                 if (!speech && total >= 7000) break
             }
         } finally { runCatching { rec.stop() }; rec.release(); onLevel(0f) }

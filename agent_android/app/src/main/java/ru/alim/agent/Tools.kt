@@ -368,6 +368,30 @@ object Tools {
             Events.byId(ctx, a.optLong("id"))?.let { "${it.source} · ${it.from} · ${it.title}\n${it.text}" } ?: "не найдено"
         },
 
+        Tool("image_generate", "{\"prompt\": \"подробное описание картинки\", \"aspect\": \"1:1|16:9|9:16|4:3|3:4\"} — нарисовать картинку (YandexART), сохранится в Галерею и покажется на экране") t@{ ctx, a ->
+            val prompt = a.optString("prompt").trim()
+            if (prompt.isEmpty()) return@t "нужно описание картинки"
+            val id = YaArt.generate(ctx, prompt, a.optString("aspect", "1:1"))
+            lastPhotos.clear(); lastPhotos += id
+            withContext(Dispatchers.Main) { Agent.photos.clear(); Agent.photos.add(id) }
+            "картинка готова и показана на экране, сохранена в Галерею (альбом «Агент»). Отправить — photos_send с which=1"
+        },
+
+        Tool("attachment_send", "{\"which\": \"all\" | \"1,2\", \"app\": \"telegram|whatsapp|max|any\", \"text\": \"подпись\"} — переслать вложения из последней задачи",
+            confirm = { a -> "Переслать вложения (${a.optString("which", "all")}) в ${a.optString("app", "приложение")}? Там выберешь чат." }) t@{ ctx, a ->
+            val w = a.optString("which", "all").trim().lowercase()
+            val list = if (w == "all" || w.isEmpty()) Attach.sent.toList()
+                else w.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.mapNotNull { Attach.sent.getOrNull(it - 1) }
+            if (list.isEmpty()) return@t "вложений нет"
+            val i = if (list.size == 1) Intent(Intent.ACTION_SEND).setType(list[0].mime).putExtra(Intent.EXTRA_STREAM, list[0].uri)
+                else Intent(Intent.ACTION_SEND_MULTIPLE).setType("*/*").putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(list.map { it.uri }))
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            a.optString("text").takeIf { it.isNotBlank() }?.let { i.putExtra(Intent.EXTRA_TEXT, it) }
+            val pkg = installed(ctx, a.optString("app"))
+            val ok = if (pkg != null) launch(ctx, i.setPackage(pkg)) else launch(ctx, Intent.createChooser(i, "Отправить"))
+            if (ok) "открыл отправку ${list.size} файл(ов) — Алим выберет чат" else "не получилось открыть отправку"
+        },
+
         Tool("escalate", "{\"reason\": \"…\"} — передать задачу сильной модели (только для сложных задач)") { _, _ -> "" },
     )
 
