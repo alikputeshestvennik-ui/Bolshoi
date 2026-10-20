@@ -400,7 +400,7 @@ object Tools {
             if (ok) "открыл отправку ${list.size} файл(ов) — Алим выберет чат" else "не получилось открыть отправку"
         },
 
-        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics gel-kayano мужские\", \"max_price\": 8000, \"seller\": \"Ozon Россия\", \"original\": true} — найти товары. seller — только у этого продавца, original — только с отметкой «Оригинал» (агент сам откроет страницы товаров). Подделки (−90%, «осталось N ед», слишком дёшево для бренда) скрываются; all=true — показать всё") t@{ ctx, a ->
+        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics gel-kayano мужские\", \"max_price\": 8000, \"seller\": \"Ozon Россия\", \"original\": true} — найти товары. seller — только у этого продавца, original=true — ТОЛЬКО если Алим сам сказал «оригинал» (у техники отметки нет). Подделки (−90%, «осталось N ед», слишком дёшево для бренда) скрываются; Алим сказал «пусть не оригинал», «любые», «подешевле» — all=true") t@{ ctx, a ->
             val q = a.optString("query").trim()
             if (q.isEmpty()) return@t "нужен запрос"
             val maxP = a.optInt("max_price", 0).takeIf { it > 0 }
@@ -442,11 +442,21 @@ object Tools {
                                else it
                     item.seller = inf.seller; item.original = inf.original
                     item.takeIf {
-                        (seller.isBlank() || Shop.sellerMatch(seller, inf.seller)) && (!orig || seller.isNotBlank() || inf.original) &&
+                        (seller.isBlank() || Shop.sellerMatch(seller, inf.seller)) &&
                             (maxP == null || Shop.rub(it.price).let { r -> r == 0 || r <= maxP })
                     }
                 }
-                list = clean(oz + if (orig && seller.isBlank()) emptyList() else wbs)
+                val ozOrig = if (orig && seller.isBlank()) oz.filter { it.original } else oz
+                list = if (orig && seller.isBlank() && ozOrig.isEmpty()) {
+                    notes.append("Отметки «Оригинал» нет ни у одного из $checkedN проверенных (у техники и многих вещей её не бывает) — показываю обычные варианты, скажи об этом Алиму.\n")
+                    clean(oz + wbs)
+                } else clean(ozOrig + if (orig && seller.isBlank()) emptyList() else wbs)
+            }
+            // всё отсеялось как подозрительное — лучше показать с пометкой, чем ничего
+            if (list.isEmpty() && found.isNotEmpty() && seller.isBlank()) {
+                list = found.take(6).onEach { if (Shop.suspect(it, q).isNotEmpty()) it.size = "⚠ подделка?" }
+                notes.append("Нормальных вариантов не нашлось — показываю, что есть; помеченные ⚠ похожи на подделки (слишком дёшево или кричащие скидки). Скажи это Алиму.\n")
+                hidden = 0
             }
             lastShop.clear(); lastShop += list.take(8)
             withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(lastShop) }
@@ -454,7 +464,7 @@ object Tools {
             if (lastShop.isEmpty()) out.append(when {
                 seller.isNotBlank() -> "У продавца «$seller» не нашёл (проверил $checkedN карточек Ozon). Попробуй другой запрос (модель, без лишних слов) или shop_open с store и query."
                 orig -> "С отметкой «Оригинал» не нашёл среди $checkedN карточек."
-                else -> "Ничего подходящего."
+                else -> "Ozon/WB ничего не показали. Попробуй запрос короче: бренд + тип вещи (без цвета и деталей)."
             }) else {
                 out.append("Найдено ${lastShop.size}:\n")
                 lastShop.forEachIndexed { i, x ->
@@ -465,7 +475,6 @@ object Tools {
                 }
             }
             if (hidden > 0) out.append("\nСкрыл $hidden подозрительных (кричащие скидки −70…−95%, «осталось N ед», цена ниже реальной для бренда) — скорее всего подделки. Скажи Алиму об этом одной фразой.")
-            if (seller.isBlank() && !orig) out.append("\nПродавца и «Оригинал» на Ozon видно только в карточке: если Алиму важна оригинальность — повтори с original=true или seller.")
             out.append("\nРазмер — shop_check. Открыть товар — shop_open с номером.")
             out.toString()
         },

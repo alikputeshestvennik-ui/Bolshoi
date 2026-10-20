@@ -109,8 +109,16 @@ object Shop {
         SHOUT.find(text)?.let { m -> return "значок «${m.value.trim()}»" }
         val r = rub(it.price)
         val q = query.lowercase()
-        val floor = BRAND_FLOOR.entries.firstOrNull { q.contains(it.key) || text.contains(it.key) }
-        if (floor != null && r in 1 until floor.value) return "слишком дёшево для ${floor.key} ($r ₽)"
+        val floor = BRAND_FLOOR.entries.firstOrNull { q.contains(it.key) || text.contains(it.key) } ?: return ""
+        // порог из таблицы — для обуви и курток; мелкие вещи бренда стоят дешевле
+        val k = when {
+            Regex("носк|кепк|бейсболк|шапк|трус|бель|напульсник|сумк|рюкзак|шнурк|стельк").containsMatchIn(q + " " + text) -> 0.15
+            Regex("футболк|майк|поло|шорт|лонгслив|топ\\b|легинс|лосин").containsMatchIn(q + " " + text) -> 0.3
+            Regex("худи|толстовк|свитшот|брюк|штан|джогер|олимпийк").containsMatchIn(q + " " + text) -> 0.55
+            else -> 1.0
+        }
+        val min = (floor.value * k).toInt()
+        if (r in 1 until min) return "слишком дёшево для ${floor.key} ($r ₽)"
         return ""
     }
 
