@@ -297,17 +297,15 @@ object Tools {
             }.joinToString("\n---\n", "Последние посты @$u (последний внизу):\n")
         },
 
-        Tool("web_search", "{\"query\": \"…\"} — поиск в интернете, вернёт заголовки, ссылки и отрывки") t@{ _, a ->
+        Tool("web_search", "{\"query\": \"…\"} — поиск в интернете, вернёт заголовки, ссылки и отрывки. Потом прочитай лучшую ссылку через web_read") t@{ _, a ->
             val q = a.optString("query").trim()
             if (q.isEmpty()) return@t "пустой запрос"
-            val html = httpGet("https://www.bing.com/search?setlang=ru&cc=RU&q=" + URLEncoder.encode(q, "UTF-8"))
-            val items = Regex("<li class=\"b_algo\"(.*?)</li>", RegexOption.DOT_MATCHES_ALL).findAll(html).mapNotNull { m ->
-                val b = m.groupValues[1]
-                val link = Regex("<h2[^>]*>\\s*<a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).find(b) ?: return@mapNotNull null
-                val snip = Regex("<p[^>]*>(.*?)</p>", RegexOption.DOT_MATCHES_ALL).find(b)?.groupValues?.get(1)?.let { clean(it) }.orEmpty()
-                "${clean(link.groupValues[2])} — ${link.groupValues[1]}\n${snip.take(240)}"
-            }.take(6).toList()
-            if (items.isEmpty()) "поиск ничего не дал" else items.joinToString("\n\n")
+            val errs = ArrayList<String>()
+            for (engine in listOf(::ddgHtml, ::ddgLite, ::bing)) {
+                val r = runCatching { engine(q) }.onFailure { errs += it.message ?: "ошибка" }.getOrNull()
+                if (!r.isNullOrEmpty()) return@t r.take(6).joinToString("\n\n")
+            }
+            "поиск ничего не дал" + if (errs.isNotEmpty()) " (${errs.joinToString("; ").take(160)})" else ""
         },
 
         Tool("web_read", "{\"url\": \"https://…\"} — прочитать текст страницы") t@{ _, a ->
@@ -327,9 +325,56 @@ object Tools {
         Tool("escalate", "{\"reason\": \"…\"} — передать задачу сильной модели (только для сложных задач)") { _, _ -> "" },
     )
 
+    /** DuckDuckGo, HTML-версия: ссылки идут через редирект с параметром uddg. */
+    private fun ddgHtml(q: String): List<String> {
+        val body = okhttp3.FormBody.Builder().add("q", q).add("kl", "ru-ru").build()
+        val html = http.newCall(Request.Builder().url("https://html.duckduckgo.com/html/").post(body)
+            .header("User-Agent", UA).header("Accept-Language", "ru-RU,ru;q=0.9").build()).execute().use {
+            if (!it.isSuccessful) error("ddg ${it.code}"); it.body?.string().orEmpty()
+        }
+        val links = Regex("<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).findAll(html).toList()
+        val snips = Regex("class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).findAll(html).map { clean(it.groupValues[1]) }.toList()
+        return links.mapIndexedNotNull { i, m ->
+            val url = realUrl(m.groupValues[1]) ?: return@mapIndexedNotNull null
+            if (url.contains("duckduckgo.com/y.js")) return@mapIndexedNotNull null // реклама
+            "${clean(m.groupValues[2])} — $url\n${snips.getOrNull(i).orEmpty().take(240)}"
+        }
+    }
+
+    /** DuckDuckGo Lite — ещё проще, на случай если HTML-версия закрыта. */
+    private fun ddgLite(q: String): List<String> {
+        val html = httpGet("https://lite.duckduckgo.com/lite/?kl=ru-ru&q=" + URLEncoder.encode(q, "UTF-8"))
+        val links = Regex("<a[^>]*href=\"([^\"]+)\"[^>]*class=['\"]result-link['\"][^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).findAll(html).toList()
+        val snips = Regex("class=['\"]result-snippet['\"][^>]*>(.*?)</td>", RegexOption.DOT_MATCHES_ALL).findAll(html).map { clean(it.groupValues[1]) }.toList()
+        return links.mapIndexedNotNull { i, m ->
+            val url = realUrl(m.groupValues[1]) ?: return@mapIndexedNotNull null
+            "${clean(m.groupValues[2])} — $url\n${snips.getOrNull(i).orEmpty().take(240)}"
+        }
+    }
+
+    private fun bing(q: String): List<String> {
+        val html = httpGet("https://www.bing.com/search?setlang=ru&cc=RU&q=" + URLEncoder.encode(q, "UTF-8"))
+        return Regex("<li class=\"b_algo\"(.*?)(?=<li class=\"b_algo\"|</ol>)", RegexOption.DOT_MATCHES_ALL).findAll(html).mapNotNull { m ->
+            val b = m.groupValues[1]
+            val link = Regex("<h2[^>]*>\\s*<a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).find(b) ?: return@mapNotNull null
+            val snip = Regex("<p[^>]*>(.*?)</p>", RegexOption.DOT_MATCHES_ALL).find(b)?.groupValues?.get(1)?.let { clean(it) }.orEmpty()
+            "${clean(link.groupValues[2])} — ${link.groupValues[1].replace("&amp;", "&")}\n${snip.take(240)}"
+        }.toList()
+    }
+
+    /** Достаёт настоящий адрес из редиректа DuckDuckGo. */
+    private fun realUrl(href: String): String? {
+        val h = href.replace("&amp;", "&")
+        val u = Regex("[?&]uddg=([^&]+)").find(h)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+            ?: if (h.startsWith("//")) "https:$h" else h
+        return u.takeIf { it.startsWith("http") }
+    }
+
+    private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Mobile Safari/537.36"
+
     private fun httpGet(url: String): String =
         http.newCall(Request.Builder().url(url)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Mobile Safari/537.36")
+            .header("User-Agent", UA)
             .header("Accept-Language", "ru-RU,ru;q=0.9").build()).execute().use { r ->
             if (!r.isSuccessful) error("сайт ответил ${r.code}")
             r.body?.string().orEmpty()
