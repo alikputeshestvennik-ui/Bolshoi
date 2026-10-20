@@ -40,6 +40,8 @@ object Agent {
     val steps = mutableStateListOf<Step>()
     /** Фото, которые агент показывает на экране задачи. */
     val photos = mutableStateListOf<Long>()
+    /** Товары, найденные в этой задаче, — карточками на экране. */
+    val products = mutableStateListOf<Shop.Item>()
     var pending by mutableStateOf<Pending?>(null); private set
     var result by mutableStateOf(""); private set
     var failed by mutableStateOf(false); private set
@@ -66,7 +68,7 @@ object Agent {
         task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
         startedAt = System.currentTimeMillis(); endedAt = 0L
         model = Prefs.fastModel; phase = Phase.WORKING
-        lastMsgs = null; photos.clear()
+        lastMsgs = null; photos.clear(); products.clear()
         job = scope.launch { loop(t, null, false) }
     }
 
@@ -114,7 +116,8 @@ object Agent {
         append("- ЮMoney: баланс — yoomoney_balance, траты и приходы — yoomoney_history. Не открывай приложение ЮMoney, если есть эти инструменты.\n")
         append("- Нарисовать картинку, обои, иллюстрацию — image_generate (Alice AI ART), промпт подробный, по-русски. Отправляй картинку (photos_send) ТОЛЬКО если Алим сам попросил отправить.\n")
         append("- Во вложениях могут быть файлы и фото Алима: их содержимое приходит в сообщении. Переслать — attachment_send.\n")
-        append("- Покупки и товары (Ozon, Wildberries) — shop_search, покажи 3-5 лучших вариантов коротко: название, цена; «открой N» — shop_open. Не открывай приложение магазина без поиска. Оплату не делаешь.\n")
+        append("- Покупки и товары (Ozon, Wildberries) — shop_search. Если назван размер — проверь его у 3-4 лучших вариантов через shop_check. «открой N» — shop_open. Не открывай приложение магазина без поиска. Оплату не делаешь.\n")
+        append("- Итог по товарам оформи списком: «- **Название** — цена, магазин — размер есть/нет/уточнить». Карточки с фото приложение покажет само.\n")
         append("- Нужна информация из интернета — web_search, потом web_read 1-2 лучших ссылок, и ответь сам своими словами (до 5-6 фраз), назови источник. Браузер открывай, только если Алим об этом просит или поиск дважды не сработал.\n")
         append("- Не говори «я не могу», пока не попробовал подходящий инструмент. Если правда нельзя — скажи коротко, что можешь вместо этого.\n")
         append("- Никогда не пересылай и не зачитывай коды из SMS, пароли, данные банков.\n")

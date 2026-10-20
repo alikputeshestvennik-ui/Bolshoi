@@ -409,7 +409,8 @@ object Tools {
                 .onSuccess { val base = lastShop.size; lastShop += it.take(8)
                     out.append("Ozon, найдено ${it.size}:\n").append(it.take(8).mapIndexed { i, x -> "${base + i + 1}. ${x.title} — ${x.price.ifBlank { "цена ?" }} — ${x.url}" }.joinToString("\n")) }
                 .onFailure { out.append("Ozon: ${it.message}\n") }
-            out.append("\nОткрыть товар — shop_open с номером. Размер и наличие точно видны только в карточке.")
+            withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(lastShop.take(8)) }
+            out.append("\nПроверить размер — shop_check. Открыть товар — shop_open с номером.")
             out.toString()
         },
 
@@ -423,6 +424,19 @@ object Tools {
             val pkg = if (url.contains("ozon.ru")) installed(ctx, "ozon") else if (url.contains("wildberries")) installed(ctx, "wb") else null
             val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { pkg?.let { setPackage(it) } }
             if (launch(ctx, i) || launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)))) "открыл${if (pkg != null) " в приложении" else ""}" else "не открылось"
+        },
+
+        Tool("shop_check", "{\"n\": \"1,2,3\", \"size\": \"43\"} — проверить наличие размера у найденных товаров") t@{ ctx, a ->
+            val size = a.optString("size").trim()
+            if (size.isEmpty()) return@t "нужен размер"
+            val ns = a.optString("n", "1,2,3").split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.take(5)
+            val res = ns.mapNotNull { n -> lastShop.getOrNull(n - 1)?.let { n to it } }.map { (n, it) ->
+                val r = runCatching { if (it.store == "WB") Shop.wbSize(it.url, size) else Shop.ozonSize(ctx, it.url, size) }.getOrElse { e -> "не проверил: ${e.message}" }
+                it.size = when { r.contains("ЕСТЬ") -> "$size есть"; r.contains("раскупили") || r.contains("нет в сетке") -> "$size нет"; else -> "" }
+                "$n. ${it.title.take(60)}: $r"
+            }
+            withContext(Dispatchers.Main) { val cp = Agent.products.toList(); Agent.products.clear(); Agent.products.addAll(cp) }
+            if (res.isEmpty()) "сначала shop_search" else res.joinToString("\n")
         },
 
         Tool("web_page", "{\"url\": \"https://…\"} — прочитать сайт, который не открывается через web_read (тяжёлый, на JavaScript)") t@{ ctx, a ->

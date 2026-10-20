@@ -78,7 +78,7 @@ object Shop {
     const val OZON_PKG = "ru.ozon.app.android"
     const val WB_PKG = "com.wildberries.ru"
 
-    class Item(val title: String, val price: String, val url: String)
+    class Item(val title: String, val price: String, val url: String, val img: String = "", val store: String = "", var size: String = "")
 
     private val OZON_JS = """
 (function(){
@@ -87,7 +87,7 @@ object Shop {
     var h=a.href.split('?')[0]; if(seen[h]) return;
     var box=a.closest('[data-index]')||a.parentElement&&a.parentElement.parentElement||a;
     var t=(box.innerText||'').replace(/\s+/g,' ').trim();
-    if(t.length<12) return; seen[h]=1; out.push({u:h,t:t.slice(0,260)});
+    if(t.length<12) return; seen[h]=1; var im=box.querySelector('img'); out.push({u:h,t:t.slice(0,260),i:im?(im.currentSrc||im.src||''):''});
   });
   var b=document.body?document.body.innerText:'';
   return JSON.stringify({items:out.slice(0,20),blocked:/Доступ ограничен|проверяем|captcha|robot/i.test(b.slice(0,800)),text:b.slice(0,600)});
@@ -106,7 +106,7 @@ object Shop {
         return (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val t = o.optString("t")
             val p = Regex("(\\d[\\d\\s  ]*)\\s?₽").find(t)?.value?.replace(Regex("[\\s  ]"), " ").orEmpty()
-            Item(t.replace(Regex("(\\d[\\d\\s  ]*\\s?₽\\s*)+"), "").trim().take(150), p, o.optString("u"))
+            Item(t.replace(Regex("(\\d[\\d\\s  ]*\\s?₽\\s*)+"), "").trim().take(150), p, o.optString("u"), o.optString("i"), "Ozon")
         }
     }
 
@@ -129,10 +129,42 @@ object Shop {
                     ?: p.optJSONArray("sizes")?.optJSONObject(0)?.optJSONObject("price")?.optLong("product")?.takeIf { it > 0 }
                     ?: 0L
                 Item("${p.optString("brand")} ${p.optString("name")}".trim(), if (kop > 0) "${kop / 100} ₽" else "",
-                    "https://www.wildberries.ru/catalog/${p.optLong("id")}/detail.aspx")
+                    "https://www.wildberries.ru/catalog/${p.optLong("id")}/detail.aspx", "", "WB")
             }
         }
         error("Wildberries не ответил")
+    }
+
+    /** WB: остатки по размерам из карточки товара. */
+    fun wbSize(url: String, size: String): String {
+        val id = Regex("/catalog/(\\d+)/").find(url)?.groupValues?.get(1) ?: return "не понял номер товара"
+        for (v in listOf("v4", "v2", "v1")) {
+            val txt = runCatching {
+                http.newCall(Request.Builder().url("https://card.wb.ru/cards/$v/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=$id")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile").build()).execute()
+                    .use { if (it.isSuccessful) it.body?.string().orEmpty() else "" }
+            }.getOrDefault("")
+            val j = runCatching { JSONObject(txt) }.getOrNull() ?: continue
+            val p = (j.optJSONObject("data")?.optJSONArray("products") ?: j.optJSONArray("products"))?.optJSONObject(0) ?: continue
+            val sizes = p.optJSONArray("sizes") ?: continue
+            val all = (0 until sizes.length()).map { sizes.getJSONObject(it) }
+            val names = all.map { s -> s.optString("origName").ifBlank { s.optString("name") } to ((s.optJSONArray("stocks")?.length() ?: 0) > 0) }
+            val hit = names.firstOrNull { it.first.trim().startsWith(size) || it.first.split('-', '/', ' ').any { x -> x.trim() == size } }
+            val avail = names.filter { it.second }.joinToString(", ") { it.first }
+            return when {
+                hit == null -> "размера $size нет в сетке (есть: ${avail.ifBlank { "ничего" }})"
+                hit.second -> "размер $size ЕСТЬ в наличии"
+                else -> "размер $size раскупили (в наличии: ${avail.ifBlank { "ничего" }})"
+            }
+        }
+        return "WB не отдал карточку"
+    }
+
+    /** Ozon: читаем страницу товара в невидимом браузере, берём кусок про размеры. */
+    suspend fun ozonSize(ctx: Context, url: String, size: String): String {
+        val js = "(function(){var b=document.body?document.body.innerText:'';var i=b.search(/Размер|РАЗМЕР|Выберите размер/);return i<0?'':b.slice(i,i+700)})()"
+        val t = WebReader.run(ctx, url, js, { it.length > 60 }, 25_000).replace(Regex("\\s+"), " ").trim()
+        return if (t.length < 20) "Ozon не показал размеры (открой карточку)" else "размеры на странице: ${t.take(400)} (ищи $size)"
     }
 
     fun format(store: String, items: List<Item>, limit: Int = 8): String =
