@@ -20,6 +20,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -123,7 +125,7 @@ class NotifListener : NotificationListenerService() {
         val m = NotifStore.add(app, pkg, from, text, group, action) ?: return
         // SMS ловит свой приёмник; группы — в ленту, но без разбора моделью (их слишком много)
         if (app != "SMS") Events.add(applicationContext, "msg", app, from, if (group) "группа" else "", text, bulk = group)
-        if (Prefs.autoReply && !group && m.canReply && !NotifStore.sensitive(text)) scope.launch { AutoReply.handle(applicationContext, m) }
+        if (Prefs.autoReply && !group && m.canReply && !NotifStore.sensitive(text)) AutoReply.schedule(applicationContext, m)
     }
 }
 
@@ -149,6 +151,23 @@ private fun NotificationListenerService.other(sbn: StatusBarNotification, n: Not
 /** Автоответчик: быстрая модель читает правила Алима и решает — ответить, промолчать или только пересказать. */
 object AutoReply {
     private val lastReply = HashMap<String, Long>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val jobs = HashMap<String, Job>()
+
+    /** Ждём паузу в переписке (~25 с): человек часто пишет несколькими сообщениями подряд. */
+    @Synchronized
+    fun schedule(ctx: Context, m: NotifStore.Msg) {
+        val key = m.pkg + m.from
+        jobs[key]?.cancel()
+        jobs[key] = scope.launch { delay(25_000); handle(ctx, m) }
+    }
+
+    /** Все сообщения от этого человека за последние 15 минут — по порядку. */
+    private fun thread(m: NotifStore.Msg): String {
+        val from = System.currentTimeMillis() - 15 * 60_000L
+        val l = NotifStore.recent().filter { it.pkg == m.pkg && it.from == m.from && it.ts >= from }
+        return (if (l.isEmpty()) listOf(m) else l).joinToString("\n") { "${it.time()} ${NotifStore.safe(it.text)}" }
+    }
 
     private fun inContacts(ctx: Context, name: String): Boolean {
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return false
@@ -187,7 +206,8 @@ object AutoReply {
             append("Ответь ТОЛЬКО JSON: {\"reply\": \"текст ответа или null, если отвечать не нужно\", \"note\": \"пересказ для Алима в 1 фразу\"}")
         }
         val user = "Время: ${SimpleDateFormat("HH:mm, EEEE", Locale("ru")).format(Date(now))}\n" +
-            "Приложение: ${m.app}\nОт: ${m.from} (в контактах: ${if (inContacts(ctx, m.from)) "да" else "нет"})\nСообщение: ${m.text}"
+            "Приложение: ${m.app}\nОт: ${m.from} (в контактах: ${if (known) "да" else "нет"})\n" +
+            "Сообщения подряд (ответь на ВСЕ сразу одним ответом, в пересказе упомяни каждое):\n${thread(m)}"
         val model = Prefs.fastModel
         try {
             val r = Llm.chat(model, JSONArray().put(JSONObject().put("role", "system").put("content", sys))
