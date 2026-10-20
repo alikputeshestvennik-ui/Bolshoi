@@ -120,7 +120,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
         if (!typing) Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            LayerStack(Idle, if (voice.listening) 1600 else 4000, 140.dp, voice.level,
+            Guardian(Idle, if (voice.listening) 3 else 0, 176.dp, voice.level, voice.speaking,
                 Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
             Text(
                 when {
@@ -129,7 +129,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
                 },
                 style = body(20, FontWeight.SemiBold), textAlign = TextAlign.Center,
             )
-            Text(hint ?: if (voice.listening) "Говори, я записываю" else "Нажми на микрофон или на стопку",
+            Text(hint ?: if (voice.listening) "Говори, я записываю" else "Нажми на микрофон или на Стража",
                 style = body(14, color = if (hint != null) Amber else Muted), textAlign = TextAlign.Center)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Погода на завтра", "Последние сообщения", "Сколько потратил?", "Будильник на 7:00").forEach { s ->
@@ -231,7 +231,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
 
     Screen("Задача · ${Agent.short(Agent.model)}", back) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            LayerStack(pal, if (running) 1300 else 2600, 88.dp)
+            Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 96.dp, voice.level, voice.speaking)
             HGap(14)
             Column {
                 Label(when (phase) {
