@@ -211,6 +211,11 @@ object Agent {
         m.contains("sonnet", true) -> "Sonnet"
         m.contains("opus", true) -> "Opus"
         m.contains("yandexgpt", true) -> "YandexGPT"
+        m.contains("aliceai-llm-flash", true) -> "Alice Flash"
+        m.contains("aliceai", true) -> "Alice AI"
+        m.contains("deepseek", true) -> "DeepSeek"
+        m.contains("qwen", true) -> "Qwen"
+        m.contains("gpt-oss", true) -> "gpt-oss"
         else -> m.substringAfterLast('/').take(18)
     }
 }

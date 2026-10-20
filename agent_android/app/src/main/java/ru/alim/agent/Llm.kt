@@ -36,14 +36,14 @@ object Llm {
 
     /** Один ход модели. Неизвестное gptunnel название модели — подбираем верное, запоминаем и повторяем. */
     /** YandexGPT и другие модели Yandex AI Studio: «yandexgpt-5.1/latest» или полный «gpt://каталог/…». */
-    fun isYandex(m: String) = m.startsWith("gpt://") || m.startsWith("yandex", true)
+    fun isYandex(m: String) = m.startsWith("gpt://") || m.startsWith("yc:") || m.startsWith("yandex", true)
 
     private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val k = YaCloud.llmKey
         if (k.isBlank()) error("нет ключа Yandex Cloud (YANDEX_API_KEY)")
         val uri = if (model.startsWith("gpt://")) model else {
             val f = YaCloud.folder; if (f.isBlank()) error("нет ID каталога Yandex Cloud")
-            "gpt://$f/${model.removePrefix("yandex:")}"
+            "gpt://$f/${model.removePrefix("yandex:").removePrefix("yc:")}"
         }
         fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens).put("messages", messages)
             .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }

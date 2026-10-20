@@ -33,6 +33,10 @@ object Prefs {
     var speak: Boolean get() = b("speak", true); set(v) = putB("speak", v)
     var askedPerms: Boolean get() = b("asked", false); set(v) = putB("asked", v)
     var monitorOn: Boolean get() = b("mon", true); set(v) = putB("mon", v)
+    /** Распознавание и озвучка: "android" или "yandex" (SpeechKit). */
+    var sttEngine: String get() = s("stt", "android"); set(v) = put("stt", v)
+    var ttsEngine: String get() = s("tts", "android"); set(v) = put("tts", v)
+    var ttsVoice: String get() = s("voice", "filipp"); set(v) = put("voice", v)
     var interval: Int get() = sp.getInt("int", 30); set(v) = sp.edit().putInt("int", v).apply()
     var digestHour: Int get() = sp.getInt("dh", 21); set(v) = sp.edit().putInt("dh", v).apply()
     var lastDigest: String get() = s("ld", ""); set(v) = put("ld", v)

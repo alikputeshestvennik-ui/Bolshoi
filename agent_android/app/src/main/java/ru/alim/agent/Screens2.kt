@@ -7,6 +7,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -145,6 +146,48 @@ fun DigestScreen(back: () -> Unit) {
             }
         }
     }
+}
+
+// ————————————————— Голос —————————————————
+
+@Composable
+fun VoiceSettings() {
+    val scope = rememberCoroutineScope()
+    var stt by remember { mutableStateOf(Prefs.sttEngine) }
+    var tts by remember { mutableStateOf(Prefs.ttsEngine) }
+    var voice by remember { mutableStateOf(Prefs.ttsVoice) }
+    var res by remember { mutableStateOf<String?>(null) }
+
+    @Composable
+    fun Pick(options: List<Pair<String, String>>, cur: String, set: (String) -> Unit) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (id, label) ->
+                Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (cur == id) Line else Card)
+                    .clickable { set(id) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                    Text(label, style = body(13, FontWeight.SemiBold, if (cur == id) Ink else Muted))
+                }
+            }
+        }
+    }
+
+    Label("Голос", Teal)
+    if (!YaSpeech.ready) Text("Для голоса Яндекса нужен ключ и каталог Yandex Cloud.", style = body(12, color = Amber))
+    Text("Распознавание речи", style = body(13, color = Muted))
+    Pick(listOf("android" to "Телефон (Google/Samsung)", "yandex" to "Яндекс SpeechKit"), stt) { stt = it; Prefs.sttEngine = it }
+    Text("Озвучка ответов", style = body(13, color = Muted))
+    Pick(listOf("android" to "Телефон", "yandex" to "Яндекс SpeechKit"), tts) { tts = it; Prefs.ttsEngine = it }
+    if (tts == "yandex") {
+        Pick(YaSpeech.VOICES, voice) { voice = it; Prefs.ttsVoice = it }
+        BigButton("Проверить голос", {
+            res = "Синтезирую…"
+            scope.launch {
+                res = withContext(Dispatchers.IO) {
+                    runCatching { YaSpeech.play(YaSpeech.synth("Слушаю, Алим. Что делаем?", voice)); null }.getOrElse { it.message ?: "ошибка" }
+                }
+            }
+        }, bg = Card, fg = Ink, border = Line)
+    }
+    res?.let { Text(it, style = body(13, color = Amber)) }
 }
 
 // ————————————————— Мониторинг и почта (часть «Подключений») —————————————————

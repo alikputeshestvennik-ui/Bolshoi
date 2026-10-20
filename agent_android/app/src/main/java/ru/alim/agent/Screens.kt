@@ -516,7 +516,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
             CardBox {
                 Text(if (Llm.key.isNotBlank()) "Ключ GPTUNNEL_KEY в сборке есть" else "Ключа нет — добавь секрет GPTUNNEL_KEY и пересобери",
                     style = body(14, FontWeight.SemiBold, if (Llm.key.isNotBlank()) Teal else Amber))
-                Text("Выбери модель кнопкой или впиши название. Цены — ₽ за 1000 токенов. YandexGPT идёт через Yandex Cloud напрямую, без gptunnel и без VPN.", style = body(12, color = Muted))
+                Text("Выбери модель кнопкой или впиши название. Цены — ₽ за 1000 токенов. Модели Яндекса идут через Yandex Cloud напрямую, без gptunnel и VPN; цена 0 — пока у Яндекса бесплатный доступ, впиши свою, если изменится.", style = body(12, color = Muted))
             }
             ModelEditor("Быстрая (простые команды)", "fast", fast, fastIn, fastOut,
                 { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
@@ -543,6 +543,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 }
             }, bg = Card, fg = Ink, border = Line)
             check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+
+            VoiceSettings()
 
             MonitorSettings()
 
@@ -600,20 +602,27 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
 @Composable
 fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: String,
                 onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit) {
-    // Готовые варианты: Claude через gptunnel или YandexGPT через Yandex AI Studio (ключ из Маршрута)
-    val presets = listOf(
-        Triple(if (slot == "fast") "Claude Haiku" else "Claude Sonnet",
-            if (slot == "fast") "claude-5.5-haiku" else "claude-5.5-sonnet",
-            if (slot == "fast") "0.03" to "0.15" else "0.4" to "2"),
-        Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0.4" to "0.4"),
+    // Готовые варианты: Claude через gptunnel или модели Yandex AI Studio (ключ Yandex Cloud, без VPN)
+    val presets = if (slot == "fast") listOf(
+        Triple("Claude Haiku", "claude-5.5-haiku", "0.03" to "0.15"),
+        Triple("Alice AI Flash", "yc:aliceai-llm-flash", "0" to "0"),
+        Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
+        Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
+        Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
+    ) else listOf(
+        Triple("Claude Sonnet", "claude-5.5-sonnet", "0.4" to "2"),
+        Triple("Alice AI", "yc:aliceai-llm", "0" to "0"),
+        Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
+        Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
+        Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
     )
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             presets.forEach { (label, m, p) ->
-                val on = model.equals(m, true) || (m.startsWith("claude") && model.contains(m.substringAfterLast('-'), true) && !Llm.isYandex(model))
-                Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Line else Bg)
-                    .clickable { onModel(m); onIn(p.first); onOut(p.second) }, contentAlignment = Alignment.Center) {
+                val on = model.equals(m, true) || (m.startsWith("claude") && !Llm.isYandex(model) && model.contains(m.substringAfterLast('-'), true))
+                Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Line else Bg)
+                    .clickable { onModel(m); onIn(p.first); onOut(p.second) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Text(label, style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
                 }
             }

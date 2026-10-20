@@ -11,18 +11,32 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
-/** Голос: системное распознавание речи (сервис, выбранный в телефоне) и озвучка ответов. */
+/**
+ * Голос: распознавание и озвучка. Движок выбирается в «Подключениях»:
+ * Android (системное распознавание и TTS) или Yandex SpeechKit. Яндекс не ответил — откат на Android.
+ */
 class Voice(private val ctx: Context) {
     var listening by mutableStateOf(false); private set
     var partial by mutableStateOf(""); private set
-    /** Громкость голоса 0..1 — стопка слоёв раздвигается в такт. */
+    /** Громкость голоса 0..1 — стопка/маскот реагирует. */
     var level by mutableFloatStateOf(0f); private set
+    var speaking by mutableStateOf(false); private set
 
     private var sr: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var recJob: Job? = null
+    @Volatile private var recCancel = false
+    private var sayJob: Job? = null
 
     init {
         tts = TextToSpeech(ctx.applicationContext) { st ->
@@ -30,11 +44,38 @@ class Voice(private val ctx: Context) {
         }
     }
 
-    fun available() = SpeechRecognizer.isRecognitionAvailable(ctx)
+    private val yaStt get() = Prefs.sttEngine == "yandex" && YaSpeech.ready
+    private val yaTts get() = Prefs.ttsEngine == "yandex" && YaSpeech.ready
+
+    fun available() = yaStt || SpeechRecognizer.isRecognitionAvailable(ctx)
 
     fun listen(onText: (String) -> Unit, onError: (String) -> Unit) {
-        stopListen(); tts?.stop()
-        if (!available()) { onError("На телефоне нет службы распознавания речи"); return }
+        stopListen(); hush()
+        if (yaStt) { listenYandex(onText, onError); return }
+        listenAndroid(onText, onError)
+    }
+
+    private fun listenYandex(onText: (String) -> Unit, onError: (String) -> Unit) {
+        recCancel = false
+        listening = true; partial = ""
+        recJob = scope.launch {
+            try {
+                val pcm = YaSpeech.record(onLevel = { level = it }, cancelled = { recCancel })
+                if (recCancel) return@launch
+                if (pcm.isEmpty()) { onError("Не расслышал, попробуй ещё"); return@launch }
+                partial = "Распознаю…"
+                val text = withContext(Dispatchers.IO) { YaSpeech.recognize(pcm) }
+                if (text.isNotBlank()) onText(text) else onError("Не расслышал, попробуй ещё")
+            } catch (e: Exception) {
+                onError((e.message ?: "ошибка распознавания").take(120))
+            } finally {
+                listening = false; level = 0f; partial = ""
+            }
+        }
+    }
+
+    private fun listenAndroid(onText: (String) -> Unit, onError: (String) -> Unit) {
+        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { onError("На телефоне нет службы распознавания речи"); return }
         val r = SpeechRecognizer.createSpeechRecognizer(ctx); sr = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) { listening = true }
@@ -71,12 +112,33 @@ class Voice(private val ctx: Context) {
     }
 
     fun stopListen() {
+        recCancel = true; recJob?.cancel(); recJob = null
         runCatching { sr?.destroy() }; sr = null
         listening = false; level = 0f
     }
 
-    fun say(text: String) { if (ttsReady) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "agent") }
-    fun hush() { tts?.stop() }
+    fun say(text: String) {
+        hush()
+        if (yaTts) {
+            sayJob = scope.launch {
+                speaking = true
+                try {
+                    withContext(Dispatchers.IO) { YaSpeech.play(YaSpeech.synth(text, Prefs.ttsVoice)) }
+                } catch (e: Exception) {
+                    sayAndroid(text) // Яндекс не ответил — говорим системным голосом
+                } finally { speaking = false }
+            }
+            return
+        }
+        sayAndroid(text)
+    }
 
-    fun release() { stopListen(); tts?.shutdown(); tts = null }
+    private fun sayAndroid(text: String) { if (ttsReady) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "agent") }
+
+    fun hush() {
+        sayJob?.cancel(); sayJob = null
+        YaSpeech.stop(); tts?.stop(); speaking = false
+    }
+
+    fun release() { stopListen(); hush(); tts?.shutdown(); tts = null }
 }
