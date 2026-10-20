@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -82,15 +83,6 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
     var typing by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var hint by remember { mutableStateOf<String?>(null) }
-    var balance by remember { mutableStateOf(Prefs.lastBalance) }
-    val jv = Journal.version.intValue
-    val today = remember(jv) { Journal.since(ctx, Journal.startOfDay()) }
-
-    LaunchedEffect(Unit) {
-        val b = withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }
-        if (b != null) { balance = rub(b); Prefs.lastBalance = balance }
-    }
-
     val listen: () -> Unit = {
         hint = null
         voice.listen(onText = { Agent.start(it) }, onError = { hint = it })
@@ -110,19 +102,12 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Агент", style = TextStyle(fontFamily = Fonts.display, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ink))
             Spacer(Modifier.weight(1f))
-            if (balance.isNotBlank()) {
-                Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Card).clickable { go(Scr.History) }
-                    .padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                    Text("Баланс $balance", style = body(13, FontWeight.SemiBold, Teal))
-                }
-                HGap(8)
-            }
             IconTile(Icons.Filled.Settings, "Подключения", { go(Scr.Settings) })
         }
 
-        if (!typing) Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Guardian(Idle, if (voice.listening) 3 else 0, 250.dp, voice.level, voice.speaking,
+        if (!typing) Column(Modifier.fillMaxWidth().weight(1f).padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)) {
+            Guardian(Idle, if (voice.listening) 3 else 0, 290.dp, voice.level, voice.speaking,
                 Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
             Text(
                 when {
@@ -149,18 +134,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             }
         }
 
-        Row(verticalAlignment = Alignment.Bottom) {
-            Label("Сегодня")
-            Spacer(Modifier.weight(1f))
-            Text("Потрачено: ${rub(today.sumOf { it.cost })}", style = body(13, color = Muted))
-        }
-        Gap(10)
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (today.isEmpty()) item {
-                Text("Пока пусто. Попроси что-нибудь — задачи появятся здесь.", style = body(14, color = Muted))
-            }
-            items(today.reversed()) { r -> TaskRow(r) }
-        }
+        if (typing) Spacer(Modifier.weight(1f))
 
         if (typing) {
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -192,8 +166,8 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 }
 
 @Composable
-fun TaskRow(r: TaskRec) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp),
+fun TaskRow(r: TaskRec, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).clickable(onClickLabel = "Открыть", onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(if (r.ok) Color(0xFF12302C) else Color(0xFF3A1A1A)),
             contentAlignment = Alignment.Center) {
@@ -202,9 +176,11 @@ fun TaskRow(r: TaskRec) {
         }
         HGap(12)
         Column(Modifier.weight(1f)) {
-            Text(r.title, style = body(15, FontWeight.SemiBold), maxLines = 1)
-            Text("${r.steps} шаг. · ${r.model} · ${rub(r.cost)} · ${hm.format(Date(r.ts))}", style = body(13, color = Muted))
+            Text(r.title, style = body(15, FontWeight.SemiBold, if (r.background) Muted else Ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${hm.format(Date(r.ts))} · ${r.model}", style = body(12, color = Muted))
         }
+        HGap(8)
+        Text(rub(r.cost), style = body(14, FontWeight.SemiBold, if (r.cost > 0) Ink else Muted))
     }
 }
 
@@ -235,7 +211,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     }
     val secs = (((if (Agent.endedAt > 0) Agent.endedAt else now) - Agent.startedAt) / 1000).coerceAtLeast(0)
 
-    Screen("Задача · ${Agent.short(Agent.model)}", back) {
+    Screen(Agent.task, back) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 112.dp, voice.level, voice.speaking)
             HGap(14)
@@ -246,7 +222,8 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                     else -> if (Agent.failed) "Не вышло" else "Готово"
                 }, pal.accent)
                 Gap(4)
-                Text("«${Agent.task}»", style = body(18, FontWeight.SemiBold), maxLines = 3)
+                Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+                Text("время", style = body(12, color = Muted))
             }
         }
 
@@ -283,11 +260,6 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             }
         }
 
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp)) {
-            Stat("Шагов", "${Agent.steps.size}", Modifier.weight(1f))
-            Stat("Время", "%d:%02d".format(secs / 60, secs % 60), Modifier.weight(1f))
-            Stat("Стоимость", "≈ ${rub(Agent.cost)}", Modifier.weight(1f))
-        }
         if (Agent.canFollowUp) {
             if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Teal))
             hint?.let { Text(it, style = body(13, color = Amber)) }
@@ -310,7 +282,6 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             }
         }
         if (Agent.busy) BigButton("Остановить", { Agent.stop() }, bg = Color(0xFF251516), fg = Danger, border = Color(0xFF5A2A2A))
-        else BigButton("Готово", back)
     }
 }
 
@@ -325,93 +296,72 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 // ————————————————— История и расходы —————————————————
 
 @Composable
-fun HistoryScreen(back: () -> Unit) {
+fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val ctx = LocalContext.current
-    var period by remember { mutableStateOf(2) } // 0 день, 1 неделя, 2 месяц
-    var balance by remember { mutableStateOf(Prefs.lastBalance) }
-    var balErr by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    val refresh: () -> Unit = {
-        scope.launch {
-            balErr = null
-            val r = withContext(Dispatchers.IO) { runCatching { Llm.balance() } }
-            r.onSuccess { balance = rub(it); Prefs.lastBalance = balance }.onFailure { balErr = it.message }
-        }
-    }
-    LaunchedEffect(Unit) { refresh() }
+    var period by remember { mutableStateOf(0) } // 0 день, 1 неделя, 2 месяц
+    var showBg by remember { mutableStateOf(false) }
     val jv = Journal.version.intValue
     val from = when (period) { 0 -> Journal.startOfDay(); 1 -> Journal.startOfWeek(); else -> Journal.startOfMonth() }
     val recs = remember(jv, period) { Journal.since(ctx, from) }
     val total = recs.sumOf { it.cost }
+    val list = recs.filter { showBg || !it.background }.reversed()
+    val df = SimpleDateFormat("d MMMM", Locale("ru"))
 
     Screen("История", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            CardBox(bg = Color(0xFF12302C)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Баланс GPTunnel", style = body(13, color = Color(0xFFA8DCD3)))
-                        Text(balance.ifBlank { "—" }, style = TextStyle(fontFamily = Fonts.display, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                        balErr?.let { Text(it, style = body(12, color = Amber)) }
-                    }
-                    IconTile(Icons.Filled.Refresh, "Обновить баланс", refresh)
-                }
-            }
-
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(4.dp)) {
-                listOf("День", "Неделя", "Месяц").forEachIndexed { i, s ->
-                    Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp))
-                        .background(if (period == i) Line else Color.Transparent).clickable { period = i },
-                        contentAlignment = Alignment.Center) {
-                        Text(s, style = body(14, FontWeight.SemiBold, if (period == i) Ink else Muted))
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(4.dp)) {
+                    listOf("Сегодня", "Неделя", "Месяц").forEachIndexed { i, t ->
+                        Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp))
+                            .background(if (period == i) Line else Color.Transparent).clickable { period = i },
+                            contentAlignment = Alignment.Center) {
+                            Text(t, style = body(14, FontWeight.SemiBold, if (period == i) Ink else Muted))
+                        }
                     }
                 }
             }
-
-            Column {
-                Text(when (period) { 0 -> "Потрачено сегодня"; 1 -> "Потрачено за 7 дней"; else -> "Потрачено в этом месяце" }, style = body(13, color = Muted))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(rub(total), style = TextStyle(fontFamily = Fonts.display, fontSize = 36.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+            item {
+                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
+                    Text(rub(total), style = TextStyle(fontFamily = Fonts.display, fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Ink))
                     HGap(10)
-                    Text("· ${recs.size} задач", style = body(14, color = Muted), modifier = Modifier.padding(bottom = 6.dp))
+                    Text("потрачено · ${recs.count { !it.background }} запросов", style = body(13, color = Muted), modifier = Modifier.padding(bottom = 6.dp))
                 }
                 if (period == 2) {
                     val limit = Prefs.num(Prefs.monthLimit)
                     if (limit > 0) {
                         val f = (total / limit).toFloat().coerceIn(0f, 1f)
-                        Gap(10)
+                        Gap(8)
                         Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF1B2129))) {
                             Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(if (f > 0.9f) Amber else Teal))
                         }
-                        Gap(6)
-                        Row { Text("Лимит: ${rub(limit)}", style = body(12, color = Muted)); Spacer(Modifier.weight(1f))
-                            Text("осталось ${rub((limit - total).coerceAtLeast(0.0))}", style = body(12, color = Muted)) }
+                        Gap(4)
+                        Text("лимит ${rub(limit)} · осталось ${rub((limit - total).coerceAtLeast(0.0))}", style = body(12, color = Muted))
                     }
                 }
             }
-
-            if (period != 0) DayBars(recs, if (period == 1) 7 else Calendar.getInstance().get(Calendar.DAY_OF_MONTH))
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Label("По моделям")
-                recs.groupBy { it.model }.entries.sortedByDescending { e -> e.value.sumOf { it.cost } }.forEach { (m, l) ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Dot(if (m.contains("Sonnet")) Violet else Teal); HGap(12)
-                        Column(Modifier.weight(1f)) {
-                            Text(m, style = body(15, FontWeight.SemiBold))
-                            Text("${l.size} задач", style = body(12, color = Muted))
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Label("Запросы"); Spacer(Modifier.weight(1f))
+                    Text(if (showBg) "скрыть фоновые" else "показать фоновые", style = body(13, FontWeight.SemiBold, Teal),
+                        modifier = Modifier.clickable { showBg = !showBg }.padding(6.dp))
+                }
+            }
+            if (list.isEmpty()) item { Text("За этот период запросов нет.", style = body(14, color = Muted)) }
+            var lastDay = ""
+            list.forEach { r ->
+                val d = df.format(Date(r.ts))
+                if (period != 0 && d != lastDay) { lastDay = d; item { Text(d, style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.padding(top = 6.dp)) } }
+                item { TaskRow(r) { open(r) } }
+            }
+            if (period != 0 && recs.isNotEmpty()) item { DayBars(recs, if (period == 1) 7 else Calendar.getInstance().get(Calendar.DAY_OF_MONTH)) }
+            if (recs.isNotEmpty()) item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Label("По моделям")
+                    recs.groupBy { it.model }.entries.sortedByDescending { e -> e.value.sumOf { it.cost } }.forEach { (m, l) ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Text("$m · ${l.size}", style = body(14), modifier = Modifier.weight(1f))
+                            Text(rub(l.sumOf { it.cost }), style = body(14, FontWeight.SemiBold))
                         }
-                        Text(rub(l.sumOf { it.cost }), style = body(15, FontWeight.Bold))
-                    }
-                }
-                if (recs.isEmpty()) Text("Задач за этот период нет.", style = body(14, color = Muted))
-            }
-
-            if (recs.isNotEmpty()) Column {
-                Label("Самые дорогие"); Gap(6)
-                recs.sortedByDescending { it.cost }.take(5).forEach { r ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
-                        Text(r.title, style = body(14), modifier = Modifier.weight(1f), maxLines = 1)
-                        Text(rub(r.cost), style = body(14, FontWeight.SemiBold))
                     }
                 }
             }
@@ -523,76 +473,92 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
     var limit by remember { mutableStateOf(Prefs.monthLimit) }
     var speak by remember { mutableStateOf(Prefs.speak) }
     var check by remember { mutableStateOf<String?>(null) }
+    var balance by remember { mutableStateOf(Prefs.lastBalance) }
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(1500); tick++ } }
+    LaunchedEffect(Unit) {
+        val b = withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }
+        if (b != null) { balance = rub(b); Prefs.lastBalance = balance }
+    }
 
     fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
-    Screen("Подключения", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Label("Мозг · GPTunnel", Teal)
-            CardBox {
-                Text(if (Llm.key.isNotBlank()) "Ключ GPTUNNEL_KEY в сборке есть" else "Ключа нет — добавь секрет GPTUNNEL_KEY и пересобери",
-                    style = body(14, FontWeight.SemiBold, if (Llm.key.isNotBlank()) Teal else Amber))
-                Text("Выбери модель кнопкой или впиши название. Цены — ₽ за 1000 токенов. Модели Яндекса идут через Yandex Cloud напрямую, без gptunnel и VPN; цена 0 — пока у Яндекса бесплатный доступ, впиши свою, если изменится.", style = body(12, color = Muted))
-            }
-            ModelEditor("Быстрая (простые команды)", "fast", fast, fastIn, fastOut,
-                { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
-            ModelEditor("Сильная (сложные задачи)", "smart", smart, smartIn, smartOut,
-                { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
-            BigButton("Проверить связь и баланс", {
-                check = "Проверяю…"
-                scope.launch {
-                    check = withContext(Dispatchers.IO) {
-                        val bal = runCatching { "баланс ${rub(Llm.balance())}" }.getOrElse { "баланс: ${it.message}" }
-                        val m = runCatching {
-                            val r = Llm.chat(Prefs.fastModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user")
-                                .put("content", "Ответь JSON {\"ok\": true}")), 50)
-                            "${Prefs.fastModel} отвечает (${rub(r.cost(Prefs.fastModel))})"
-                        }.getOrElse { "модель: ${it.message}" }
-                        "$m\n$bal"
-                    }
-                    // модель могла подобраться автоматически — показать новые названия
-                    fast = Prefs.fastModel; smart = Prefs.smartModel
-                    if (Prefs.smartModel.isNotBlank()) withContext(Dispatchers.IO) {
-                        runCatching { Llm.chat(Prefs.smartModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", "ok")), 5, false) }
-                    }.onSuccess { smart = Prefs.smartModel; check = "$check\n${Prefs.smartModel} отвечает" }
-                        .onFailure { check = "$check\nсильная модель: ${it.message}" }
+    Screen("Настройки", back) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // баланс — сразу на виду
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF12302C)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Баланс GPTunnel", style = body(13, color = Color(0xFFA8DCD3)))
+                    Text(balance.ifBlank { "—" }, style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink))
                 }
-            }, bg = Card, fg = Ink, border = Line)
-            check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
-
-            VoiceSettings()
-
-            MonitorSettings()
-
-            Label("Поиск в интернете")
-            CardBox {
-                Text(if (YaSearch.ready) "Яндекс Поиск: ключ и каталог есть" else "Яндекс Поиск: ${YaSearch.missing()}",
-                    style = body(14, FontWeight.SemiBold, if (YaSearch.ready) Teal else Amber))
-                Text("Запасной — DuckDuckGo, без ключей.", style = body(12, color = Muted))
-                Text(YaCloud.info(), style = body(12, color = Muted), lineHeight = 17.sp)
+                IconTile(Icons.Filled.Refresh, "Обновить баланс", {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }?.let { balance = rub(it); Prefs.lastBalance = balance }
+                    }
+                })
             }
 
-            Label("ЮMoney · только просмотр", Violet)
-            CardBox {
-                val yc = Yoo.connected(ctx) && tick >= 0
-                Text(if (yc) "Подключено: агент видит баланс и историю, платить не может" else "Не подключено",
-                    style = body(14, FontWeight.SemiBold, if (yc) Teal else Muted))
-                Gap(4)
+            Section("Модели", "${Agent.short(fast)} · ${Agent.short(smart)}") {
+                if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
+                Text("Модели Яндекса бесплатны (цена 0) и идут без VPN. Цена — ₽ за 1000 токенов.", style = body(12, color = Muted))
+                ModelEditor("Быстрая — простые команды", "fast", fast, fastIn, fastOut,
+                    { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
+                ModelEditor("Сильная — сложные задачи", "smart", smart, smartIn, smartOut,
+                    { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
+                BigButton("Проверить связь", {
+                    check = "Проверяю…"
+                    scope.launch {
+                        check = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val r = Llm.chat(Prefs.fastModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user")
+                                    .put("content", "Ответь JSON {\"ok\": true}")), 50)
+                                "${Agent.short(Prefs.fastModel)} отвечает (${rub(r.cost(Prefs.fastModel))})"
+                            }.getOrElse { "быстрая: ${it.message}" }
+                        }
+                        fast = Prefs.fastModel; smart = Prefs.smartModel
+                        if (Prefs.smartModel.isNotBlank()) withContext(Dispatchers.IO) {
+                            runCatching { Llm.chat(Prefs.smartModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", "ok")), 5, false) }
+                        }.onSuccess { smart = Prefs.smartModel; check = "$check\n${Agent.short(Prefs.smartModel)} отвечает" }
+                            .onFailure { check = "$check\nсильная: ${it.message}" }
+                    }
+                }, bg = Card, fg = Ink, border = Line)
+                check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+            }
+
+            Section("Голос", (if (Prefs.sttEngine == "yandex") "распознаёт Яндекс" else "распознаёт телефон") + " · " +
+                    (if (Prefs.ttsEngine == "yandex") "озвучка Яндекс" else "озвучка телефон") + if (speak) " · вслух" else "") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Озвучивать ответы", style = body(15, FontWeight.SemiBold), modifier = Modifier.weight(1f))
+                    Toggle(speak) { speak = it; Prefs.speak = it }
+                }
+                VoiceSettings()
+            }
+
+            Section("Мониторинг", if (Prefs.monitorOn && tick >= 0) "раз в ${Prefs.interval} мин · итог в ${Prefs.digestHour}:00" else "выключен",
+                statusColor = if (Prefs.monitorOn) Muted else Amber) { MonitorSettings() }
+
+            val mails = listOf(1, 2).count { Mail.hasPass(ctx, it) && tick >= 0 }
+            Section("Почта Gmail", if (mails > 0) "подключено ящиков: $mails" else "не подключена",
+                statusColor = if (mails > 0) Muted else Amber) { MailSettings() }
+
+            val yc = Yoo.connected(ctx) && tick >= 0
+            Section("ЮMoney", if (yc) "подключено · только просмотр" else "не подключено", Violet) {
+                Text("Агент видит баланс и историю, платить не может.", style = body(12, color = Muted))
                 if (yc) BigButton("Отключить", { Yoo.disconnect(ctx); tick++ }, bg = Card, fg = Ink, border = Line)
                 else BigButton("Подключить ЮMoney", openYoo, bg = Violet, fg = Bg)
             }
 
-            Label("Прочее")
-            Field("Город для погоды", city) { city = it; Prefs.homeCity = it }
-            Field("Лимит расходов в месяц, ₽", limit, KeyboardType.Number) { limit = it; Prefs.monthLimit = it }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Озвучивать ответы", style = body(15, FontWeight.SemiBold), modifier = Modifier.weight(1f))
-                Toggle(speak) { speak = it; Prefs.speak = it }
+            Section("Поиск в интернете", if (YaSearch.ready) "Яндекс Поиск" else "запасной: DuckDuckGo",
+                statusColor = if (YaSearch.ready) Muted else Amber) {
+                if (!YaSearch.ready) Text("Яндекс: ${YaSearch.missing()}", style = body(13, color = Amber))
+                Text(YaCloud.info(), style = body(12, color = Muted), lineHeight = 17.sp)
             }
 
-            Label("Разрешения телефона")
+            Section("Прочее", "${city.ifBlank { "город не задан" }} · лимит ${limit.ifBlank { "—" }} ₽") {
+                Field("Город для погоды", city) { city = it; Prefs.homeCity = it }
+                Field("Лимит расходов в месяц, ₽", limit, KeyboardType.Number) { limit = it; Prefs.monthLimit = it }
+            }
+
             val t = tick // перечитать статусы, когда пользователь вернулся из настроек
             val rows = listOf(
                 "Микрофон" to granted(Manifest.permission.RECORD_AUDIO),
@@ -601,18 +567,22 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 "SMS: отправка" to granted(Manifest.permission.SEND_SMS),
                 "SMS: чтение" to granted(Manifest.permission.READ_SMS),
                 "Фото" to granted(if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE),
-                "Уведомления (мессенджеры)" to (NotifStore.accessGranted(ctx) && t >= 0),
+                "Уведомления" to (NotifStore.accessGranted(ctx) && t >= 0),
             )
-            rows.forEach { (name, ok) ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, style = body(14, FontWeight.SemiBold), modifier = Modifier.weight(1f))
-                    Text(if (ok) "выдано" else "нет", style = body(13, FontWeight.Bold, if (ok) Teal else Amber))
+            val missing = rows.filter { !it.second }.map { it.first }
+            Section("Разрешения", if (missing.isEmpty()) "всё выдано" else "нет: ${missing.joinToString(", ")}",
+                if (missing.isEmpty()) Teal else Amber, if (missing.isEmpty()) Muted else Amber) {
+                rows.forEach { (name, ok) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text(name, style = body(14), modifier = Modifier.weight(1f))
+                        Text(if (ok) "выдано" else "нет", style = body(13, FontWeight.Bold, if (ok) Teal else Amber))
+                    }
                 }
+                BigButton("Выдать разрешения", askPerms)
+                BigButton("Доступ к уведомлениям", {
+                    ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }, bg = Card, fg = Ink, border = Line)
             }
-            BigButton("Выдать разрешения", askPerms)
-            BigButton("Доступ к уведомлениям", {
-                ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }, bg = Card, fg = Ink, border = Line)
             Gap(8)
         }
     }

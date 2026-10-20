@@ -97,6 +97,23 @@ object Agent {
 
     fun close() { if (phase == Phase.DONE) phase = Phase.IDLE }
 
+    /** Открыть прошлую задачу из истории: шаги, ответ, товары. Можно продолжить разговор. */
+    fun showPast(r: TaskRec) {
+        if (busy) return
+        task = r.title; steps.clear(); photos.clear(); products.clear(); pending = null
+        r.log.lines().filter { it.isNotBlank() }.forEach { l ->
+            steps.add(Step(l.substringBefore('\t')).also { it.done = true; it.detail = l.substringAfter('\t', "").replace("⏎", "\n") })
+        }
+        products.addAll(Shop.fromJson(r.items))
+        result = r.result.ifBlank { if (r.background) r.title else "Подробности не сохранились — задача из старой версии." }
+        failed = !r.ok; cost = r.cost; model = r.model
+        startedAt = r.ts; endedAt = r.ts + r.dur
+        lastMsgs = if (r.background) null else JSONArray().put(msg("system", system())).put(msg("user", r.title))
+            .put(msg("assistant", JSONObject().put("step", "итог").put("tool", JSONObject.NULL).put("say", result).put("done", true).toString()))
+        lastEnded = System.currentTimeMillis(); lastSmart = false
+        phase = Phase.DONE
+    }
+
     private fun msg(role: String, text: String) = JSONObject().put("role", role).put("content", text)
 
     private fun system(): String = buildString {
@@ -118,6 +135,7 @@ object Agent {
         append("- Во вложениях могут быть файлы и фото Алима: их содержимое приходит в сообщении. Переслать — attachment_send.\n")
         append("- Покупки и товары (Ozon, Wildberries) — shop_search. Запрос короткий: бренд + модель/тип + пол (размер в запрос не пиши). Если назван размер — проверь его у 3-4 лучших вариантов через shop_check. «открой N» — shop_open. Не открывай приложение магазина без поиска. Оплату не делаешь.\n")
         append("- Назван продавец («у продавца Ozon Россия», «от самого Озона») — shop_search с seller. Важна оригинальность («оригинал», «не подделку») — original=true. На уточнение в продолжении разговора повтори shop_search с новым фильтром, а не открывай поиск в приложении.\n")
+        append("- Размер на Ozon («в сетке») — значит, он есть в размерной сетке, но мог быть распродан: так и скажи «43 в сетке, наличие проверь в карточке». На WB «есть» — точно в наличии.\n")
         append("- Брендовые вещи за 20-40% реальной цены с кричащими скидками −90% — подделки: не советуй их, скажи прямо.\n")
         append("- Итог по товарам оформи списком: «- **Название** — цена, магазин — размер есть/нет/уточнить». Карточки с фото приложение покажет само.\n")
         append("- Нужна информация из интернета — web_search, потом web_read 1-2 лучших ссылок, и ответь сам своими словами (до 5-6 фраз), назови источник. Браузер открывай, только если Алим об этом просит или поиск дважды не сработал.\n")
@@ -153,6 +171,7 @@ object Agent {
         lastMsgs = msgs
         var smart = smartStart
         var final: String? = null
+        val calls = HashMap<String, Int>()
         try {
             var i = 0
             while (i < 14 && final == null) {
@@ -181,6 +200,12 @@ object Agent {
                 }
                 val t = Tools.byName(tool)
                 if (t == null) { msgs.put(msg("user", "Нет инструмента «$tool». Выбери из списка.")); continue }
+                val used = (calls[tool] ?: 0) + 1; calls[tool] = used
+                val cap = if (tool == "shop_search" || tool == "web_search") 2 else 4
+                if (used > cap) {
+                    msgs.put(msg("user", "Ты уже вызывал $tool ${used - 1} раз(а). Больше не повторяй — дай итог Алиму по тому, что уже узнал, и честно скажи, чего не нашёл."))
+                    continue
+                }
 
                 val step = Step(stepText); steps.add(step)
                 var allowed = true
@@ -217,7 +242,11 @@ object Agent {
         endedAt = System.currentTimeMillis()
         lastEnded = endedAt
         phase = Phase.DONE
-        runCatching { Journal.add(app, TaskRec(startedAt, task, steps.size, short(model), cost, ok)) }
+        runCatching {
+            val log = steps.joinToString("\n") { it.text.replace('\n', ' ') + "\t" + it.detail.take(300).replace("\n", "⏎") }
+            Journal.add(app, TaskRec(startedAt, task, steps.size, short(model), cost, ok, endedAt - startedAt, text, log,
+                if (products.isEmpty()) "" else Shop.toJson(products.take(8))))
+        }
         if (ok && Prefs.speak) onSpeak?.invoke(text)
     }
 

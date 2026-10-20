@@ -81,6 +81,19 @@ object Shop {
     class Item(val title: String, val price: String, val url: String, val img: String = "", val store: String = "",
                var size: String = "", var seller: String = "", var original: Boolean = false, val badges: String = "")
 
+    fun toJson(l: List<Item>): String = JSONArray().also { a ->
+        l.forEach { a.put(JSONObject().put("t", it.title).put("p", it.price).put("u", it.url).put("i", it.img).put("s", it.store)
+            .put("z", it.size).put("v", it.seller).put("o", it.original)) }
+    }.toString()
+
+    fun fromJson(s: String): List<Item> = runCatching {
+        val a = JSONArray(s)
+        (0 until a.length()).map { a.getJSONObject(it) }.map {
+            Item(it.optString("t"), it.optString("p"), it.optString("u"), it.optString("i"), it.optString("s"),
+                it.optString("z"), it.optString("v"), it.optBoolean("o"))
+        }
+    }.getOrDefault(emptyList())
+
     /** Цена числом (руб.). */
     fun rub(p: String): Int = p.filter { it.isDigit() }.take(7).toIntOrNull() ?: 0
 
@@ -133,8 +146,11 @@ object Shop {
 
     private val OZON_ITEM_JS = """
 (function(){
+  window.scrollBy(0,1400);
   var b=document.body?document.body.innerText:''; var s=[];
+  if(/Ozon Россия|OZON Россия/i.test(b)) s.push('Ozon Россия');
   document.querySelectorAll('a[href*="/seller/"]').forEach(function(a){var x=(a.innerText||'').replace(/\s+/g,' ').trim(); if(x&&x.length<60&&s.indexOf(x)<0)s.push(x)});
+  var m=b.match(/(?:Продавец|Магазин)\s*\n+\s*([^\n]{2,50})/); if(m&&s.indexOf(m[1].trim())<0) s.push(m[1].trim());
   var i=b.search(/Выберите размер|Размер|РАЗМЕР/);
   var h=document.querySelector('h1'); var pm=b.match(/(\d[\d\s\u2009\u00a0]*)\s?₽/);
   var im=document.querySelector('img[src*="ozone"],img[srcset]');
@@ -149,18 +165,20 @@ object Shop {
     suspend fun ozonInfo(ctx: Context, url: String): OzonInfo? {
         val raw = WebReader.run(ctx, url, OZON_ITEM_JS, { r ->
             runCatching { val j = JSONObject(r); j.optInt("n") > 1500 && (j.optJSONArray("seller")?.length() ?: 0) > 0 }.getOrDefault(false)
-        }, 22_000)
+        }, 16_000)
         val j = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if (j.optInt("n") < 300) return null
         val sel = j.optJSONArray("seller")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
             .filterNot { it.equals("Перейти", true) || it.contains("магазин", true) && it.length < 12 }
-        return OzonInfo(sel.joinToString(" / "), j.optBoolean("orig"), j.optString("sizes"),
+        val own = sel.any { it.contains("Ozon Россия", true) }
+        // товары, которые продаёт сам Ozon, — оригинал по умолчанию, отметку «Оригинал» им не ставят
+        return OzonInfo(sel.joinToString(" / "), j.optBoolean("orig") || own, j.optString("sizes"),
             j.optString("title"), j.optString("price").replace(Regex("[\\s\u2009\u00a0]+"), " "), j.optString("img"))
     }
 
-    suspend fun ozon(ctx: Context, query: String, maxPrice: Int?): List<Item> {
+    suspend fun ozon(ctx: Context, query: String, maxPrice: Int?, page: Int = 1): List<Item> {
         val price = maxPrice?.let { "&currency_price=0.000%3B$it.000" }.orEmpty()
-        val url = "https://www.ozon.ru/search/?text=" + URLEncoder.encode(query, "UTF-8") + "&from_global=true" + price
+        val url = "https://www.ozon.ru/search/?text=" + URLEncoder.encode(query, "UTF-8") + "&from_global=true" + price + if (page > 1) "&page=$page" else ""
         val raw = WebReader.run(ctx, url, OZON_JS, { r ->
             runCatching { JSONObject(r).optJSONArray("items")?.length() ?: 0 }.getOrDefault(0) >= 4
         })
@@ -233,7 +251,7 @@ object Shop {
         val t = info?.sizes.orEmpty()
         if (t.length < 10) return "Ozon не показал размеры (открой карточку)"
         val rx = Regex("(^|[^\\d])${Regex.escape(size)}([^\\d]|$)")
-        return if (rx.containsMatchIn(t)) "размер $size есть в списке на странице (точнее — в карточке): ${t.take(200)}"
+        return if (rx.containsMatchIn(t)) "размер $size есть в размерной сетке (Ozon показывает и распроданные — наличие уточни в карточке): ${t.take(200)}"
         else "размера $size не видно на странице: ${t.take(200)}"
     }
 

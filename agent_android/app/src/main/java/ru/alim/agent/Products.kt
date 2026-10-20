@@ -67,11 +67,11 @@ fun ProductCards(items: List<Shop.Item>) {
                         Text("${i + 1} · ${it.store}", style = body(12, color = Muted))
                         if (it.size.isNotBlank()) {
                             HGap(8)
-                            Text(it.size, style = body(12, FontWeight.SemiBold, if (it.size.contains("есть")) Teal else Amber))
+                            Text(it.size, style = body(12, FontWeight.SemiBold, if (it.size.contains("есть")) Teal else if (it.size.contains("сетке")) Ink else Amber))
                         }
                     }
                     if (it.seller.isNotBlank() || it.original) Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (it.original) { Text("✓ Оригинал", style = body(12, FontWeight.SemiBold, Teal)); HGap(8) }
+                        if (it.original) { Text(if (it.seller.contains("Ozon Россия", true)) "✓ продаёт Ozon" else "✓ Оригинал", style = body(12, FontWeight.SemiBold, Teal)); HGap(8) }
                         if (it.seller.isNotBlank()) Text(it.seller, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }

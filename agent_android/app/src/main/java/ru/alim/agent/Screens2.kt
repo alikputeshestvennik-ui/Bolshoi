@@ -170,7 +170,6 @@ fun VoiceSettings() {
         }
     }
 
-    Label("Голос", Teal)
     if (!YaSpeech.ready) Text("Для голоса Яндекса нужен ключ и каталог Yandex Cloud.", style = body(12, color = Amber))
     Text("Распознавание речи", style = body(13, color = Muted))
     Pick(listOf("android" to "Телефон (Google/Samsung)", "yandex" to "Яндекс SpeechKit"), stt) { stt = it; Prefs.sttEngine = it }
@@ -205,7 +204,6 @@ fun MonitorSettings() {
     var battOk by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
     LaunchedEffect(Unit) { while (true) { delay(2000); battOk = pm.isIgnoringBatteryOptimizations(ctx.packageName) } }
 
-    Label("Фоновый мониторинг", Teal)
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Следить за уведомлениями, SMS и почтой", style = body(15, FontWeight.SemiBold))
@@ -232,8 +230,11 @@ fun MonitorSettings() {
     if (status.isNotBlank()) Text("Последняя проверка: $status", style = body(12, color = Muted), lineHeight = 17.sp)
     BigButton("Проверить сейчас", { Monitor.runNow(ctx) }, bg = Card, fg = Ink, border = Line)
 
-    Label("Почта Gmail", Teal)
-    Text("Нужен пароль приложения: Google-аккаунт → Безопасность → Двухэтапная проверка (включить) → Пароли приложений. 16 букв, вставь как есть.",
+}
+
+@Composable
+fun MailSettings() {
+    Text("Нужен пароль приложения Google: Безопасность → Двухэтапная проверка → Пароли приложений.",
         style = body(12, color = Muted), lineHeight = 17.sp)
     MailAccount(1)
     MailAccount(2)
@@ -247,6 +248,17 @@ private fun MailAccount(n: Int) {
     var pass by remember { mutableStateOf("") }
     var has by remember { mutableStateOf(Mail.hasPass(ctx, n)) }
     var res by remember { mutableStateOf<String?>(null) }
+    var edit by remember { mutableStateOf(!(has && email.isNotBlank())) }
+    if (!edit) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(email, style = body(14, FontWeight.SemiBold), maxLines = 1)
+                Text("подключён", style = body(12, color = Teal))
+            }
+            Text("Изменить", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { edit = true }.padding(6.dp))
+        }
+        return
+    }
     CardBox {
         Text("Ящик $n", style = body(14, FontWeight.SemiBold))
         OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("адрес @gmail.com") }, singleLine = true,

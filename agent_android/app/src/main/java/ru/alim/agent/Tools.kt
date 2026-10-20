@@ -407,7 +407,12 @@ object Tools {
             val orig = a.optBoolean("original", false)
             val found = ArrayList<Shop.Item>(); val notes = StringBuilder()
             if (store != "ozon") runCatching { Shop.wb(q, maxP) }.onSuccess { found += it }.onFailure { notes.append("Wildberries: ${it.message}\n") }
-            if (store != "wb") runCatching { Shop.ozon(ctx, q, maxP) }.onSuccess { found += it }.onFailure { notes.append("Ozon: ${it.message}\n") }
+            if (store != "wb") {
+                val pages = if (seller.isNotBlank() || orig) listOf(1, 2) else listOf(1)
+                val res = coroutineScope { pages.map { pg -> async { runCatching { Shop.ozon(ctx, q, maxP, pg) } } }.map { it.await() } }
+                res.forEach { r -> r.onSuccess { l -> l.forEach { x -> if (found.none { it.url == x.url }) found += x } } }
+                if (res.all { it.isFailure }) notes.append("Ozon: ${res.first().exceptionOrNull()?.message}\n")
+            }
             // нужен конкретный продавец — добираем ссылки на товары через поиск Яндекса (как это делает Алиса)
             if (seller.isNotBlank() && store != "wb" && YaSearch.ready) runCatching { YaSearch.search("site:ozon.ru $q $seller") }.onSuccess { res ->
                 res.forEach { line ->
@@ -423,9 +428,10 @@ object Tools {
             var checkedN = 0
             if (seller.isNotBlank() || orig) {
                 val wbs = list.filter { it.store == "WB" }.filter { seller.isBlank() || Shop.sellerMatch(seller, it.seller) }
-                val ozc = list.filter { it.store == "Ozon" }.take(9)
+                // дорогие сначала: у настоящих продавцов цены выше, чем у подделок
+                val ozc = list.filter { it.store == "Ozon" }.sortedByDescending { Shop.rub(it.price) }.take(12)
                 checkedN = ozc.size
-                val checked = ozc.chunked(3).flatMap { ch ->
+                val checked = ozc.chunked(4).flatMap { ch ->
                     coroutineScope { ch.map { it to async { runCatching { Shop.ozonInfo(ctx, it.url) }.getOrNull() } }.map { (it, d) -> it to d.await() } }
                 }
                 val oz = checked.mapNotNull { (it, inf) ->
@@ -490,7 +496,7 @@ object Tools {
                             val inf = Shop.ozonInfo(ctx, it.url)
                             if (inf != null) { it.seller = inf.seller; it.original = inf.original }
                             val r = if (size.isNotBlank()) Shop.ozonSize(inf, size) else ""
-                            if (size.isNotBlank()) it.size = when { r.contains("есть в списке") -> "$size есть?"; r.contains("не видно") -> "$size нет"; else -> "" }
+                            if (size.isNotBlank()) it.size = when { r.contains("есть в размерной") -> "$size в сетке"; r.contains("не видно") -> "$size нет"; else -> "" }
                             "$n. ${it.title.take(60)}: $r; продавец ${inf?.seller?.ifBlank { "?" } ?: "?"}; ${if (inf?.original == true) "отметка «Оригинал» есть" else "отметки «Оригинал» нет"}"
                         }
                     }.getOrElse { e -> "$n. не проверил: ${e.message}" }

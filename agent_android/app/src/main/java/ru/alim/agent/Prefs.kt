@@ -62,7 +62,11 @@ object Prefs {
 }
 
 /** Одна выполненная задача — для ленты «Сегодня» и экрана расходов. */
-data class TaskRec(val ts: Long, val title: String, val steps: Int, val model: String, val cost: Double, val ok: Boolean)
+data class TaskRec(val ts: Long, val title: String, val steps: Int, val model: String, val cost: Double, val ok: Boolean,
+                   val dur: Long = 0, val result: String = "", val log: String = "", val items: String = "") {
+    /** Фоновые записи (мониторинг, итог дня, автоответ) — не просьбы Алима. */
+    val background: Boolean get() = title.startsWith("Мониторинг") || title.startsWith("Итог дня") || title.startsWith("Автоответ")
+}
 
 object Journal {
     /** Меняется при каждой записи — экраны перечитывают журнал. */
@@ -75,7 +79,8 @@ object Journal {
         val a = runCatching { JSONArray(sp(ctx).getString("t", "[]")) }.getOrElse { JSONArray() }
         return (0 until a.length()).map { a.getJSONObject(it) }.map {
             TaskRec(it.optLong("ts"), it.optString("title"), it.optInt("steps"), it.optString("model"),
-                it.optDouble("cost", 0.0).let { c -> if (c.isNaN()) 0.0 else c }, it.optBoolean("ok", true))
+                it.optDouble("cost", 0.0).let { c -> if (c.isNaN()) 0.0 else c }, it.optBoolean("ok", true),
+                it.optLong("dur"), it.optString("res"), it.optString("log"), it.optString("items"))
         }
     }
 
@@ -83,9 +88,12 @@ object Journal {
     fun add(ctx: Context, r: TaskRec) {
         val list = (all(ctx) + r).takeLast(600)
         val a = JSONArray()
-        list.forEach {
-            a.put(JSONObject().put("ts", it.ts).put("title", it.title).put("steps", it.steps)
-                .put("model", it.model).put("cost", it.cost).put("ok", it.ok))
+        list.forEachIndexed { i, it ->
+            val o = JSONObject().put("ts", it.ts).put("title", it.title).put("steps", it.steps)
+                .put("model", it.model).put("cost", it.cost).put("ok", it.ok).put("dur", it.dur)
+            // подробности (шаги, ответ, товары) храним только у последних 120 записей
+            if (i >= list.size - 120) o.put("res", it.result.take(2500)).put("log", it.log.take(2500)).put("items", it.items.take(4000))
+            a.put(o)
         }
         sp(ctx).edit().putString("t", a.toString()).apply()
         version.intValue = version.intValue + 1
