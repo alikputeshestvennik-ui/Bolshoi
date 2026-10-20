@@ -210,6 +210,7 @@ object Agent {
         m.contains("haiku", true) -> "Haiku"
         m.contains("sonnet", true) -> "Sonnet"
         m.contains("opus", true) -> "Opus"
+        m.contains("yandexgpt", true) -> "YandexGPT"
         else -> m.substringAfterLast('/').take(18)
     }
 }

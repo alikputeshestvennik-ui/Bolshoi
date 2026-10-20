@@ -35,8 +35,33 @@ object Llm {
             .header("Authorization", if (br) "Bearer $key" else key).get().build()).execute().use { it.code to (it.body?.string() ?: "") }
 
     /** Один ход модели. Неизвестное gptunnel название модели — подбираем верное, запоминаем и повторяем. */
+    /** YandexGPT и другие модели Yandex AI Studio: «yandexgpt-5.1/latest» или полный «gpt://каталог/…». */
+    fun isYandex(m: String) = m.startsWith("gpt://") || m.startsWith("yandex", true)
+
+    private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+        val k = YaCloud.llmKey
+        if (k.isBlank()) error("нет ключа Yandex Cloud (YANDEX_API_KEY)")
+        val uri = if (model.startsWith("gpt://")) model else {
+            val f = YaCloud.folder; if (f.isBlank()) error("нет ID каталога Yandex Cloud")
+            "gpt://$f/${model.removePrefix("yandex:")}"
+        }
+        fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens).put("messages", messages)
+            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
+        fun send(b: JSONObject) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/v1/chat/completions")
+            .header("Authorization", "Api-Key $k").post(b.toString().toRequestBody(JSON)).build()).execute()
+            .use { it.code to (it.body?.string() ?: "") }
+        var r = send(body(json))
+        if (r.first == 400 && json) r = send(body(false))
+        if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
+        if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")
+        val j = JSONObject(r.second)
+        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val u = j.optJSONObject("usage") ?: JSONObject()
+        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
+    }
+
     fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply =
-        try {
+        if (isYandex(model)) yandexChat(model, messages, maxTokens, json) else try {
             chatOnce(model, messages, maxTokens, json)
         } catch (e: ModelNotFound) {
             val fixed = findModel(model) ?: error("gptunnel не знает модель «$model», и подобрать название не вышло — впиши его в «Подключениях»")

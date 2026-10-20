@@ -516,11 +516,11 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
             CardBox {
                 Text(if (Llm.key.isNotBlank()) "Ключ GPTUNNEL_KEY в сборке есть" else "Ключа нет — добавь секрет GPTUNNEL_KEY и пересобери",
                     style = body(14, FontWeight.SemiBold, if (Llm.key.isNotBlank()) Teal else Amber))
-                Text("Названия моделей и цены (₽ за 1000 токенов) — со страницы модели на gptunnel.", style = body(12, color = Muted))
+                Text("Выбери модель кнопкой или впиши название. Цены — ₽ за 1000 токенов. YandexGPT идёт через Yandex Cloud напрямую, без gptunnel и без VPN.", style = body(12, color = Muted))
             }
-            ModelEditor("Быстрая (простые команды)", fast, fastIn, fastOut,
+            ModelEditor("Быстрая (простые команды)", "fast", fast, fastIn, fastOut,
                 { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
-            ModelEditor("Сильная (сложные задачи)", smart, smartIn, smartOut,
+            ModelEditor("Сильная (сложные задачи)", "smart", smart, smartIn, smartOut,
                 { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
             BigButton("Проверить связь и баланс", {
                 check = "Проверяю…"
@@ -598,10 +598,26 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
 }
 
 @Composable
-fun ModelEditor(title: String, model: String, pin: String, pout: String,
+fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: String,
                 onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit) {
+    // Готовые варианты: Claude через gptunnel или YandexGPT через Yandex AI Studio (ключ из Маршрута)
+    val presets = listOf(
+        Triple(if (slot == "fast") "Claude Haiku" else "Claude Sonnet",
+            if (slot == "fast") "claude-5.5-haiku" else "claude-5.5-sonnet",
+            if (slot == "fast") "0.03" to "0.15" else "0.4" to "2"),
+        Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0.4" to "0.4"),
+    )
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            presets.forEach { (label, m, p) ->
+                val on = model.equals(m, true) || (m.startsWith("claude") && model.contains(m.substringAfterLast('-'), true) && !Llm.isYandex(model))
+                Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Line else Bg)
+                    .clickable { onModel(m); onIn(p.first); onOut(p.second) }, contentAlignment = Alignment.Center) {
+                    Text(label, style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
+                }
+            }
+        }
         OutlinedTextField(model, onModel, Modifier.fillMaxWidth(), label = { Text("Модель") }, singleLine = true,
             textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

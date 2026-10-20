@@ -12,14 +12,21 @@ import java.util.concurrent.TimeUnit
  * Яндекс Поиск API v2 (Yandex Cloud): POST /v2/web/search, ответ — XML в base64 (rawData).
  * Ключу нужна роль search-api.webSearch.user (область yc.search-api.execute).
  */
+/** Ключи и каталог Yandex Cloud: общие для поиска и YandexGPT. */
+object YaCloud {
+    val searchKey: String get() = BuildConfig.YANDEX_SEARCH_KEY.trim().ifBlank { BuildConfig.YANDEX_API_KEY.trim() }
+    val llmKey: String get() = BuildConfig.YANDEX_API_KEY.trim().ifBlank { BuildConfig.YANDEX_SEARCH_KEY.trim() }
+    val folder: String get() = BuildConfig.YANDEX_FOLDER_ID.trim().ifBlank {
+        Regex("^[a-z]+://([^/]+)/").find(BuildConfig.QWEN_MODEL.trim())?.groupValues?.get(1).orEmpty()
+    }
+}
+
 object YaSearch {
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
-    private val key: String get() = BuildConfig.YANDEX_SEARCH_KEY.trim().ifBlank { BuildConfig.YANDEX_API_KEY.trim() }
-    private val folder: String get() = BuildConfig.YANDEX_FOLDER_ID.trim().ifBlank {
-        Regex("^[a-z]+://([^/]+)/").find(BuildConfig.QWEN_MODEL.trim())?.groupValues?.get(1).orEmpty()
-    }
+    private val key: String get() = YaCloud.searchKey
+    private val folder: String get() = YaCloud.folder
     val ready: Boolean get() = key.isNotBlank() && folder.isNotBlank()
     fun missing(): String = listOfNotNull(
         "нет ключа".takeIf { key.isBlank() }, "нет ID каталога".takeIf { folder.isBlank() },
