@@ -34,6 +34,8 @@
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
         <package android:name="ru.oneme.app" />
+        <package android:name="ru.ozon.app.android" />
+        <package android:name="com.wildberries.ru" />
     </queries>
 
     <application

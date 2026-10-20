@@ -44,6 +44,8 @@ object Tools {
 
     /** Фото из последнего поиска — их можно отправить, не перечисляя. */
     val lastPhotos = ArrayList<Long>()
+    /** Товары из последнего поиска — «открой второй». */
+    val lastShop = ArrayList<Shop.Item>()
     private val ru = Locale("ru")
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).callTimeout(25, TimeUnit.SECONDS).build()
 
@@ -58,6 +60,8 @@ object Tools {
         "telegram" to listOf("org.telegram.messenger", "org.telegram.messenger.web"),
         "whatsapp" to listOf("com.whatsapp", "com.whatsapp.w4b"),
         "max" to listOf("ru.oneme.app"),
+        "ozon" to listOf(Shop.OZON_PKG),
+        "wb" to listOf(Shop.WB_PKG),
     )
     private fun installed(ctx: Context, app: String): String? =
         apps[app.lowercase()]?.firstOrNull { ctx.packageManager.getLaunchIntentForPackage(it) != null }
@@ -390,6 +394,41 @@ object Tools {
             val pkg = installed(ctx, a.optString("app"))
             val ok = if (pkg != null) launch(ctx, i.setPackage(pkg)) else launch(ctx, Intent.createChooser(i, "Отправить"))
             if (ok) "открыл отправку ${list.size} файл(ов) — Алим выберет чат" else "не получилось открыть отправку"
+        },
+
+        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics мужские 43\", \"max_price\": 8000} — найти товары с ценами и ссылками") t@{ ctx, a ->
+            val q = a.optString("query").trim()
+            if (q.isEmpty()) return@t "нужен запрос"
+            val maxP = a.optInt("max_price", 0).takeIf { it > 0 }
+            val store = a.optString("store", "both").lowercase()
+            val out = StringBuilder(); lastShop.clear()
+            if (store != "ozon") runCatching { Shop.wb(q, maxP) }
+                .onSuccess { lastShop += it.take(8); out.append(Shop.format("Wildberries", it)).append("\n\n") }
+                .onFailure { out.append("Wildberries: ${it.message}\n") }
+            if (store != "wb") runCatching { Shop.ozon(ctx, q, maxP) }
+                .onSuccess { val base = lastShop.size; lastShop += it.take(8)
+                    out.append("Ozon, найдено ${it.size}:\n").append(it.take(8).mapIndexed { i, x -> "${base + i + 1}. ${x.title} — ${x.price.ifBlank { "цена ?" }} — ${x.url}" }.joinToString("\n")) }
+                .onFailure { out.append("Ozon: ${it.message}\n") }
+            out.append("\nОткрыть товар — shop_open с номером. Размер и наличие точно видны только в карточке.")
+            out.toString()
+        },
+
+        Tool("shop_open", "{\"n\": 2} или {\"url\": \"…\"} или {\"store\": \"ozon\", \"query\": \"…\"} — открыть товар или поиск в приложении магазина") t@{ ctx, a ->
+            val url = a.optString("url").takeIf { it.startsWith("http") }
+                ?: lastShop.getOrNull(a.optInt("n", 0) - 1)?.url
+                ?: a.optString("query").takeIf { it.isNotBlank() }?.let { q ->
+                    if (a.optString("store").lowercase() == "wb") "https://www.wildberries.ru/catalog/0/search.aspx?search=" + URLEncoder.encode(q, "UTF-8")
+                    else "https://www.ozon.ru/search/?text=" + URLEncoder.encode(q, "UTF-8")
+                } ?: return@t "нужен номер из поиска, ссылка или запрос"
+            val pkg = if (url.contains("ozon.ru")) installed(ctx, "ozon") else if (url.contains("wildberries")) installed(ctx, "wb") else null
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { pkg?.let { setPackage(it) } }
+            if (launch(ctx, i) || launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)))) "открыл${if (pkg != null) " в приложении" else ""}" else "не открылось"
+        },
+
+        Tool("web_page", "{\"url\": \"https://…\"} — прочитать сайт, который не открывается через web_read (тяжёлый, на JavaScript)") t@{ ctx, a ->
+            val url = a.optString("url").trim()
+            if (!url.startsWith("http")) return@t "нужна ссылка"
+            WebReader.text(ctx, url)
         },
 
         Tool("escalate", "{\"reason\": \"…\"} — передать задачу сильной модели (только для сложных задач)") { _, _ -> "" },
