@@ -260,7 +260,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                     HGap(12)
                     Column(Modifier.weight(1f)) {
                         Text(s.text, style = body(15, if (s.done) FontWeight.Normal else FontWeight.SemiBold))
-                        if (s.detail.isNotBlank()) Text(s.detail, style = body(12, color = Muted), maxLines = 2)
+                        if (s.detail.isNotBlank()) Text(s.detail, style = body(12, color = Muted), maxLines = 5)
                     }
                 }
             }
@@ -570,6 +570,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 Text(if (YaSearch.ready) "Яндекс Поиск: ключ и каталог есть" else "Яндекс Поиск: ${YaSearch.missing()}",
                     style = body(14, FontWeight.SemiBold, if (YaSearch.ready) Teal else Amber))
                 Text("Запасной — DuckDuckGo, без ключей.", style = body(12, color = Muted))
+                Text(YaCloud.info(), style = body(12, color = Muted), lineHeight = 17.sp)
             }
 
             Label("ЮMoney · только просмотр", Violet)

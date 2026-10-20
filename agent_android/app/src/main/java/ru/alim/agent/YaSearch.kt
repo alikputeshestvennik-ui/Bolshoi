@@ -16,6 +16,14 @@ import java.util.concurrent.TimeUnit
 object YaCloud {
     val searchKey: String get() = BuildConfig.YANDEX_SEARCH_KEY.trim().ifBlank { BuildConfig.YANDEX_API_KEY.trim() }
     val llmKey: String get() = BuildConfig.YANDEX_API_KEY.trim().ifBlank { BuildConfig.YANDEX_SEARCH_KEY.trim() }
+    /** Новый полноценный ключ — первым, ключ Маршрута — запасным. */
+    val all: List<String> get() = listOf(BuildConfig.YANDEX_SEARCH_KEY.trim(), BuildConfig.YANDEX_API_KEY.trim()).filter { it.isNotBlank() }.distinct()
+    private fun tail(k: String) = if (k.isBlank()) "нет" else "…" + k.takeLast(4)
+    fun info(): String {
+        val src = if (BuildConfig.YANDEX_FOLDER_ID.isNotBlank()) "YANDEX_FOLDER_ID" else "из QWEN_MODEL"
+        return "Ключи: YANDEX_SEARCH_KEY ${tail(BuildConfig.YANDEX_SEARCH_KEY.trim())}, YANDEX_API_KEY ${tail(BuildConfig.YANDEX_API_KEY.trim())}. " +
+            "Каталог: ${folder.take(6).ifBlank { "нет" }}… ($src)"
+    }
     val folder: String get() = BuildConfig.YANDEX_FOLDER_ID.trim().ifBlank {
         Regex("^[a-z]+://([^/]+)/").find(BuildConfig.QWEN_MODEL.trim())?.groupValues?.get(1).orEmpty()
     }

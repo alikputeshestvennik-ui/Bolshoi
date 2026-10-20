@@ -193,7 +193,7 @@ object Agent {
                     withContext(Dispatchers.IO) { t.run(app, args) }
                 } catch (e: CancellationException) { throw e } catch (e: Exception) { "ошибка: ${e.message}" }
                 step.done = true
-                step.detail = res.take(300)
+                step.detail = res.take(500)
                 msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: ${res.take(3000)}"))
             }
             lastSmart = smart

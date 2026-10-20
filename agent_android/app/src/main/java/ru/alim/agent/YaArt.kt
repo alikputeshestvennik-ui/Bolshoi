@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 object YaArt {
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(40, TimeUnit.SECONDS).build()
     private val JSON = "application/json; charset=utf-8".toMediaType()
-    private val keys: List<String> get() = listOf(YaCloud.llmKey, YaCloud.searchKey).filter { it.isNotBlank() }.distinct()
+    private val keys: List<String> get() = YaCloud.all
 
     /** Соотношения сторон, которые понимает агент. */
     private fun ratio(r: String): Pair<String, String> = when (r.trim()) {
@@ -51,7 +51,7 @@ object YaArt {
             if (code !in 200..299) error("YandexART ответил $code: ${txt.take(160)}")
             opId = JSONObject(txt).optString("id"); key = k; break
         }
-        if (opId.isNullOrBlank()) error("YandexART: $lastErr")
+        if (opId.isNullOrBlank()) error("YandexART (каталог ${YaCloud.folder.take(6)}…, ключей ${keys.size}): $lastErr")
         // ждём до ~90 секунд
         repeat(45) {
             Thread.sleep(2000)

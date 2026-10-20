@@ -27,7 +27,7 @@ object YaSpeech {
         .callTimeout(60, TimeUnit.SECONDS).build()
 
     val ready: Boolean get() = YaCloud.llmKey.isNotBlank() && YaCloud.folder.isNotBlank()
-    private val keys: List<String> get() = listOf(YaCloud.llmKey, YaCloud.searchKey).filter { it.isNotBlank() }.distinct()
+    private val keys: List<String> get() = YaCloud.all
 
     val VOICES = listOf("filipp" to "Филипп", "ermil" to "Ермил", "zahar" to "Захар", "madirus" to "Мадирус", "alena" to "Алёна", "jane" to "Джейн")
 

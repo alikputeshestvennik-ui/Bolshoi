@@ -47,11 +47,16 @@ object Llm {
         }
         fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens).put("messages", messages)
             .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
-        fun send(b: JSONObject) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/v1/chat/completions")
-            .header("Authorization", "Api-Key $k").post(b.toString().toRequestBody(JSON)).build()).execute()
+        val keys = (listOf(k) + YaCloud.all).distinct()
+        fun sendWith(key: String, b: JSONObject) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/v1/chat/completions")
+            .header("Authorization", "Api-Key $key").post(b.toString().toRequestBody(JSON)).build()).execute()
             .use { it.code to (it.body?.string() ?: "") }
-        var r = send(body(json))
-        if (r.first == 400 && json) r = send(body(false))
+        var r = Pair(0, "")
+        for (key in keys) {
+            r = sendWith(key, body(json))
+            if (r.first == 400 && json) r = sendWith(key, body(false))
+            if (r.first != 401 && r.first != 403) break
+        }
         if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
         if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
