@@ -152,20 +152,38 @@ object AutoReply {
 
     private fun inContacts(ctx: Context, name: String): Boolean {
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return false
-        return runCatching {
-            ctx.contentResolver.query(ContactsContract.Contacts.CONTENT_URI, arrayOf(ContactsContract.Contacts._ID),
-                "${ContactsContract.Contacts.DISPLAY_NAME} = ?", arrayOf(name), null)?.use { it.count > 0 } ?: false
-        }.getOrDefault(false)
+        // Имя в мессенджере редко совпадает с контактом точно — ищем по любому слову от 3 букв
+        val words = name.split(Regex("[^\\p{L}]+")).filter { it.length >= 3 }.ifEmpty { listOf(name.trim()) }
+        return words.any { w ->
+            runCatching {
+                ctx.contentResolver.query(ContactsContract.Contacts.CONTENT_URI, arrayOf(ContactsContract.Contacts._ID),
+                    "${ContactsContract.Contacts.DISPLAY_NAME} LIKE ?", arrayOf("%$w%"), null)?.use { it.count > 0 } ?: false
+            }.getOrDefault(false)
+        }
+    }
+
+    /** Ответ звучит как секретарь («передам Алиму») — не отправляем. */
+    private fun thirdPerson(reply: String): Boolean {
+        val r = reply.lowercase().replace('ё', 'е')
+        return listOf("алим", "передам", "передать ему", "он занят", "он перезвонит", "он ответит", "я помощник", "ассистент", "бот").any { r.contains(it) }
     }
 
     fun handle(ctx: Context, m: NotifStore.Msg) {
         val key = m.pkg + m.from
+        // Знакомым из контактов не отвечаем никогда (если Алим сам не разрешил) — только уведомление
+        val known = inContacts(ctx, m.from)
+        if (known && !Prefs.replyKnown) {
+            notify(ctx, "${m.from} · ${m.app}", m.text.take(200))
+            return
+        }
         val now = System.currentTimeMillis()
         // Не переписываемся с собеседником сами с собой: не чаще раза в 2 минуты
         if (now - (lastReply[key] ?: 0L) < 120_000L) return
         val sys = buildString {
             append("Ты — автоответчик Алима в мессенджерах. Его правила:\n").append(Prefs.rules).append("\n\n")
-            append("Решай строго по правилам. Пишешь от имени Алима, коротко и по-человечески, без подписи «бот».\n")
+            append("Решай строго по правилам. Если сомневаешься — НЕ отвечай (reply = null).\n")
+            append("Отвечаешь ты КАК САМ АЛИМ: от первого лица, мужской род («понял», «скоро буду», «перезвоню»). ")
+            append("Никогда не говори об Алиме в третьем лице, не пиши «передам», не представляйся помощником или ботом. Коротко, по-человечески.\n")
             append("Ответь ТОЛЬКО JSON: {\"reply\": \"текст ответа или null, если отвечать не нужно\", \"note\": \"пересказ для Алима в 1 фразу\"}")
         }
         val user = "Время: ${SimpleDateFormat("HH:mm, EEEE", Locale("ru")).format(Date(now))}\n" +
@@ -178,7 +196,9 @@ object AutoReply {
             val j = if (a >= 0 && b > a) JSONObject(r.text.substring(a, b + 1)) else JSONObject()
             val reply = j.optString("reply").trim().takeIf { it.isNotEmpty() && it != "null" }
             val note = j.optString("note").trim().ifBlank { m.text.take(120) }
-            if (reply != null) {
+            if (reply != null && thirdPerson(reply)) {
+                notify(ctx, "${m.from} · ${m.app}", "$note (ответ «$reply» не отправил — звучал не от тебя)")
+            } else if (reply != null) {
                 val res = NotifStore.reply(ctx, m.id, reply)
                 lastReply[key] = now
                 notify(ctx, "Ответил: ${m.from}", "«$reply»\n$note ($res)")

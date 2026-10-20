@@ -470,6 +470,14 @@ fun RulesScreen(back: () -> Unit) {
                 }
                 Toggle(on) { on = it; Prefs.autoReply = it }
             }
+            var known by remember { mutableStateOf(Prefs.replyKnown) }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Отвечать и тем, кто в контактах", style = body(15, FontWeight.SemiBold))
+                    Text("Выключено — знакомым агент не отвечает, только сообщает тебе", style = body(12, color = Muted))
+                }
+                Toggle(known) { known = it; Prefs.replyKnown = it }
+            }
             if (!access) CardBox(border = Color(0xFF4A3A16), bg = Color(0xFF1A160C)) {
                 Text("Нужен доступ к уведомлениям — иначе агент не видит сообщения.", style = body(14, color = Color(0xFFE3D3B0)))
                 Gap(4)

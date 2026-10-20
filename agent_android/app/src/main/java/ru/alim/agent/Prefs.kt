@@ -30,6 +30,8 @@ object Prefs {
     var rules: String get() = s("rules", DEFAULT_RULES); set(v) = put("rules", v)
     var lastBalance: String get() = s("bal", ""); set(v) = put("bal", v)
     var autoReply: Boolean get() = b("ar", false); set(v) = putB("ar", v)
+    /** Отвечать ли тем, кто есть в контактах телефона. По умолчанию — нет. */
+    var replyKnown: Boolean get() = b("rk", false); set(v) = putB("rk", v)
     var speak: Boolean get() = b("speak", true); set(v) = putB("speak", v)
     var askedPerms: Boolean get() = b("asked", false); set(v) = putB("asked", v)
     var monitorOn: Boolean get() = b("mon", true); set(v) = putB("mon", v)
