@@ -47,7 +47,7 @@ object YaArt {
             val (code, txt) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/foundationModels/v1/imageGenerationAsync")
                 .header("Authorization", "Api-Key $k").post(body.toString().toRequestBody(JSON)).build()).execute()
                 .use { it.code to (it.body?.string() ?: "") }
-            if (code == 401 || code == 403) { lastErr = "у ключа нет роли ai.imageGeneration.user"; continue }
+            if (code == 401 || code == 403) { lastErr += "ключ …${k.takeLast(4)}: $code ${txt.replace(Regex("\\s+"), " ").take(180)}; "; continue }
             if (code !in 200..299) error("YandexART ответил $code: ${txt.take(160)}")
             opId = JSONObject(txt).optString("id"); key = k; break
         }
