@@ -368,7 +368,7 @@ object Tools {
             Events.byId(ctx, a.optLong("id"))?.let { "${it.source} · ${it.from} · ${it.title}\n${it.text}" } ?: "не найдено"
         },
 
-        Tool("image_generate", "{\"prompt\": \"подробное описание картинки\", \"aspect\": \"1:1|16:9|9:16|4:3|3:4\"} — нарисовать картинку (YandexART), сохранится в Галерею и покажется на экране") t@{ ctx, a ->
+        Tool("image_generate", "{\"prompt\": \"подробное описание картинки\", \"aspect\": \"1:1|16:9|9:16|4:3|3:4\"} — нарисовать картинку (Alice AI ART), сохранится в Галерею и покажется на экране") t@{ ctx, a ->
             val prompt = a.optString("prompt").trim()
             if (prompt.isEmpty()) return@t "нужно описание картинки"
             val id = YaArt.generate(ctx, prompt, a.optString("aspect", "1:1"))

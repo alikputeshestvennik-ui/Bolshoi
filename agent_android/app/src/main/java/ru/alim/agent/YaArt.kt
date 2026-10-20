@@ -32,7 +32,36 @@ object YaArt {
         else -> "1" to "1"
     }
 
+    private fun size(r: String): String = when (ratio(r)) {
+        "16" to "9" -> "1792x1024"
+        "9" to "16" -> "1024x1792"
+        "4" to "3" -> "1280x960"
+        "3" to "4" -> "960x1280"
+        else -> "1024x1024"
+    }
+
+    /** Alice AI ART через Images API (синхронно, ответ — base64 в data[0].b64_json). Старый YandexART — запасной путь. */
     fun generate(ctx: Context, prompt: String, aspect: String): Long {
+        if (YaCloud.folder.isBlank() || keys.isEmpty()) error("нет ключа или каталога Yandex Cloud")
+        val errs = ArrayList<String>()
+        for (sz in listOf(size(aspect), "1024x1024").distinct()) for (k in keys) {
+            val body = JSONObject().put("model", "art://${YaCloud.folder}/aliceai-image-art-3.0").put("prompt", prompt.take(500)).put("size", sz)
+            val (code, txt) = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(120, TimeUnit.SECONDS).build()
+                .newCall(Request.Builder().url("https://ai.api.cloud.yandex.net/v1/images/generations")
+                    .header("Authorization", "Api-Key $k").header("OpenAI-Project", YaCloud.folder)
+                    .post(body.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
+            if (code in 200..299) {
+                val b64 = JSONObject(txt).optJSONArray("data")?.optJSONObject(0)?.optString("b64_json").orEmpty()
+                if (b64.isBlank()) error("Alice AI ART вернула пустую картинку")
+                return save(ctx, Base64.decode(b64, Base64.DEFAULT))
+            }
+            errs += "…${k.takeLast(4)} $sz: $code ${txt.replace(Regex("\\s+"), " ").take(140)}"
+            if (code == 400) break // размер не подошёл — пробуем 1024x1024
+        }
+        return runCatching { generateOld(ctx, prompt, aspect) }.getOrElse { error("Alice AI ART: ${errs.joinToString("; ").take(400)}") }
+    }
+
+    private fun generateOld(ctx: Context, prompt: String, aspect: String): Long {
         if (YaCloud.folder.isBlank() || keys.isEmpty()) error("нет ключа или каталога Yandex Cloud")
         val (wr, hr) = ratio(aspect)
         val body = JSONObject()
@@ -70,8 +99,9 @@ object YaArt {
 
     private fun save(ctx: Context, jpeg: ByteArray): Long {
         val cv = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "agent_${System.currentTimeMillis()}.jpg")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            val png = jpeg.size > 4 && jpeg[0] == 0x89.toByte() && jpeg[1] == 'P'.code.toByte()
+            put(MediaStore.Images.Media.DISPLAY_NAME, "agent_${System.currentTimeMillis()}.${if (png) "png" else "jpg"}")
+            put(MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
             if (Build.VERSION.SDK_INT >= 29) {
                 put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Агент")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
