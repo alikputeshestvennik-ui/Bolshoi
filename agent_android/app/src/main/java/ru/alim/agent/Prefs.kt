@@ -69,6 +69,15 @@ object Prefs {
     var lastMorning: String get() = s("lmorn", ""); set(v) = put("lmorn", v)
     var lastChatty: Long get() = sp.getLong("lchat", 0L); set(v) = sp.edit().putLong("lchat", v).apply()
     var lastSeen: Long get() = sp.getLong("lseen", 0L); set(v) = sp.edit().putLong("lseen", v).apply()
+    // ——— друзья ———
+    var friends: String get() = s("friends", ""); set(v) = put("friends", v)
+    var lastChat: String get() = s("lastchat", "main"); set(v) = put("lastchat", v)
+    fun readAt(fid: String): Long = sp.getLong("read_$fid", 0L)
+    fun setReadAt(fid: String, t: Long) = sp.edit().putLong("read_$fid", t).apply()
+    fun nudgedAt(fid: String): Long = sp.getLong("nudge_$fid", 0L)
+    fun setNudgedAt(fid: String, t: Long) = sp.edit().putLong("nudge_$fid", t).apply()
+    fun evCheck(fid: String): Long = sp.getLong("evc_$fid", 0L)
+    fun setEvCheck(fid: String, t: Long) = sp.edit().putLong("evc_$fid", t).apply()
 
     /** Подборка свежих роликов YouTube по интересам из памяти — вместе с итогом дня. */
     var ytPicks: Boolean get() = b("yt", true); set(v) = putB("yt", v)

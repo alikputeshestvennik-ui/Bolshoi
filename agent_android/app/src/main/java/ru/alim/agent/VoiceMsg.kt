@@ -179,22 +179,22 @@ object VoiceMsg {
 
     // ——— голос Артура ———
     /** Синтез ответа в .wav (SpeechKit, PCM 48 кГц). */
-    fun speakToFile(ctx: Context, text: String): Pair<String, Int>? {
+    fun speakToFile(ctx: Context, text: String, male: Boolean = Prefs.botMale): Pair<String, Int>? {
         val clean = text.replace(Regex("\\*\\*|[#•]|https?://\\S+"), "").replace(Regex("[\\p{So}\\p{Cn}]"), "").trim()
         if (clean.isBlank()) return null
-        val pcm = YaSpeech.synth(clean.take(800), voiceFor())
+        val pcm = YaSpeech.synth(clean.take(800), voiceFor(male))
         if (pcm.isEmpty()) return null
         return saveWav(ctx, pcm, 48000)
     }
 
     /** Голос под пол Артура: выбранный в настройках, если подходит, иначе Филипп / Алёна. */
-    fun voiceFor(): String {
+    fun voiceFor(male: Boolean = Prefs.botMale): String {
         val v = Prefs.ttsVoice
         val female = v in setOf("alena", "jane")
         return when {
-            Prefs.botMale && !female && v.isNotBlank() -> v
-            !Prefs.botMale && female -> v
-            Prefs.botMale -> "filipp"
+            male && !female && v.isNotBlank() -> v
+            !male && female -> v
+            male -> "filipp"
             else -> "alena"
         }
     }

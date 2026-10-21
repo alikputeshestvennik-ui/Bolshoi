@@ -47,6 +47,7 @@ object Proactive {
     suspend fun tick(ctx: Context): String = lock.withLock {
         Prefs.init(ctx); Chat.init(ctx)
         if (!Online.online || Agent.busy) return "—"
+        runCatching { friends(ctx) }
         val c = Calendar.getInstance(); val h = c.get(Calendar.HOUR_OF_DAY)
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.time)
         if (Prefs.initMorning && h >= Prefs.morningHour && h < 12 && Prefs.lastMorning != today && !quiet(h)) {
@@ -64,6 +65,44 @@ object Proactive {
             }
         }
         "—"
+    }
+
+    /**
+     * Остальные друзья сами не болтают. Пишут, только если разговор оборвался и забыт на несколько часов,
+     * или главный нашёл в уведомлениях что-то, связанное с их разговором.
+     */
+    private suspend fun friends(ctx: Context) {
+        if (quiet()) return
+        val now = System.currentTimeMillis()
+        for (f in Friends.list.filter { !it.main }) {
+            val c = Chat.of(f.id)
+            if (c.core.busy) continue
+            val last = c.msgs.lastOrNull { !it.note } ?: continue
+            val model = f.model.ifBlank { Prefs.fastModel }
+            // 1) разговор оборвался — мягко вернуться (один раз)
+            if (now - last.ts in 3 * 3600_000L..36 * 3600_000L && Prefs.nudgedAt(f.id) < last.ts) {
+                Prefs.setNudgedAt(f.id, now)
+                val sys = Persona.describe(f) + "\nВаш разговор оборвался несколько часов назад. Если тема не закрыта — напиши одно короткое " +
+                    "сообщение, чтобы ненавязчиво к ней вернуться (спроси, как вышло, актуально ли ещё). Если Алим попрощался, поблагодарил " +
+                    "и тема закрыта — верни пустой text. Ответь ТОЛЬКО JSON: {\"text\": \"…\"}"
+                val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", c.recentForPrompt(14))), 250)
+                json(r.text).optString("text").trim().takeIf { it.isNotBlank() }?.let { c.botSays(it.take(500)); return }
+                continue
+            }
+            // 2) главный заметил в уведомлениях что-то по теме этого разговора
+            if (now - last.ts < 3 * 86_400_000L) {
+                val since = maxOf(Prefs.evCheck(f.id), now - 6 * 3600_000L)
+                Prefs.setEvCheck(f.id, now)
+                val ev = Events.since(ctx, since).filterNot { it.bulk }.takeLast(30)
+                if (ev.isEmpty()) continue
+                val sys = Persona.describe(f) + "\nНиже новые уведомления с телефона Алима — их заметил ${Friends.main.name}. " +
+                    "Если среди них есть что-то ПРЯМО связанное с темой вашего разговора — напиши Алиму короткое сообщение об этом " +
+                    "(скажи, что ${Friends.main.name} заметил). Если связи нет — пустой text. Ответь ТОЛЬКО JSON: {\"text\": \"…\"}"
+                val user = "Ваш разговор:\n${c.recentForPrompt(10)}\n\nУведомления:\n" + ev.joinToString("\n") { Events.line(it).take(200) }
+                val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 250)
+                json(r.text).optString("text").trim().takeIf { it.isNotBlank() }?.let { c.botSays(it.take(500)); return }
+            }
+        }
     }
 
     private suspend fun morning(ctx: Context) {

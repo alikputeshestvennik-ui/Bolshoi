@@ -35,7 +35,8 @@ import java.util.concurrent.TimeUnit
  */
 object Yoo {
     const val REDIRECT = "https://github.com/alikputeshestvennik-ui/Bolshoi/yoomoney"
-    private const val SCOPE = "account-info operation-history"
+    /** Просмотр + переводы на кошельки ЮMoney. Переводы идут только через карточку с отпечатком пальца. */
+    private const val SCOPE = "account-info operation-history payment-p2p"
     private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
 
     val clientId: String get() = BuildConfig.YOOMONEY_CLIENT_ID.trim()
@@ -70,6 +71,68 @@ object Yoo {
             if (r.code == 401) { disconnect(ctx); error("доступ к ЮMoney отозван — подключи заново") }
             if (!r.isSuccessful) error("ЮMoney ответил ${r.code}")
             JSONObject(r.body?.string().orEmpty())
+        }
+    }
+
+    /** Подготовленный перевод — ждёт подтверждения Алима. */
+    class Prep(val requestId: String, val to: String, val name: String?, val amount: Double, val charge: Double, val comment: String, val ts: Long)
+    @Volatile private var prep: Prep? = null
+
+    private fun normTo(raw: String): Pair<String, String> {
+        val t = raw.trim()
+        if (t.contains('@')) return t to "email"
+        val d = t.filter { it.isDigit() }
+        val phone = when {
+            d.length == 11 && (d.startsWith("8") || d.startsWith("7")) -> "7" + d.drop(1)
+            d.length == 10 -> "7$d"
+            else -> null
+        }
+        return if (phone != null) phone to "phone" else d to "account"
+    }
+
+    private fun fmtPhone(p: String) = if (p.length == 11) "+${p[0]} ${p.substring(1, 4)} ${p.substring(4, 7)}-${p.substring(7, 9)}-${p.substring(9)}" else p
+
+    private fun err(code: String): String = when (code) {
+        "payee_not_found" -> "у этого номера нет кошелька ЮMoney (перевод по СБП в банк через ЮMoney недоступен)"
+        "not_enough_funds" -> "на кошельке не хватает денег"
+        "limit_exceeded" -> "превышен лимит переводов ЮMoney"
+        "account_blocked" -> "кошелёк заблокирован"
+        "insufficient_scope" -> "у приложения нет права переводов — переподключи ЮMoney: ⋮ → Настройки → ЮMoney → Отключить → Подключить"
+        "illegal_param_to" -> "неверный получатель"
+        "illegal_param_amount", "illegal_param_amount_due" -> "неверная сумма"
+        "authorization_reject" -> "ЮMoney отклонил перевод"
+        "ext_action_required" -> "ЮMoney просит подтвердить в своём приложении"
+        else -> "ЮMoney: $code"
+    }
+
+    fun prepare(ctx: Context, to: String, amount: Double, comment: String, name: String?): String {
+        val (id, type) = normTo(to)
+        val sum = String.format(Locale.US, "%.2f", amount)
+        val j = api(ctx, "request-payment", mapOf("pattern_id" to "p2p", "to" to id, "identifier_type" to type,
+            "amount_due" to sum, "comment" to comment.ifBlank { "Перевод" }, "message" to comment.ifBlank { "Перевод" }))
+        if (j.optString("status") != "success") return "не получилось: ${err(j.optString("error", j.optString("status")))}"
+        val charge = j.optDouble("contract_amount", amount)
+        val p = Prep(j.getString("request_id"), id, name, amount, charge, comment, System.currentTimeMillis())
+        prep = p
+        return "подготовил перевод ${rub(amount)} → ${name ?: fmtPhone(id)}, спишется ${rub(charge)}. Теперь вызови yoomoney_send — Алим подтвердит отпечатком."
+    }
+
+    fun pendingText(): String {
+        val p = prep ?: return "Перевода нет"
+        return "Перевести ${rub(p.amount)} на ЮMoney ${p.name?.let { "$it, " } ?: ""}${fmtPhone(p.to)}?\n" +
+            "Спишется ${rub(p.charge)}${if (p.comment.isNotBlank()) ". Комментарий: «${p.comment}»" else ""}\nПодтвердишь отпечатком пальца."
+    }
+
+    fun send(ctx: Context): String {
+        val p = prep ?: return "нечего отправлять — сначала yoomoney_transfer"
+        if (System.currentTimeMillis() - p.ts > 10 * 60_000L) { prep = null; return "подготовка устарела — подготовь заново" }
+        prep = null
+        val j = api(ctx, "process-payment", mapOf("request_id" to p.requestId, "money_source" to "wallet"))
+        return when (j.optString("status")) {
+            "success" -> "перевёл ${rub(p.amount)} → ${p.name ?: fmtPhone(p.to)}. Баланс: ${j.optString("balance", "?")} ₽"
+            "in_progress" -> "перевод в обработке, ЮMoney скоро проведёт"
+            "ext_auth_required" -> "ЮMoney просит подтвердить перевод в своём приложении"
+            else -> "не прошёл: ${err(j.optString("error", j.optString("status")))}"
         }
     }
 

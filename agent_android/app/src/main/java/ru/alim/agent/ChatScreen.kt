@@ -106,19 +106,23 @@ import kotlin.math.roundToInt
 private val hhmm = SimpleDateFormat("HH:mm", Locale("ru"))
 
 @Composable
-fun ChatScreen(go: (Scr) -> Unit) {
+fun ChatScreen(fid: String, go: (Scr) -> Unit) {
+    val chat = remember(fid) { Chat.of(fid) }
+    val core = chat.core
+    val f = chat.friend
+    LaunchedEffect(fid, chat.msgs.size) { chat.markRead(); runCatching { androidx.core.app.NotificationManagerCompat.from(Chat.app).cancel(chat.notifId()) } }
     val ctx = LocalContext.current
     val haze = remember { HazeState() }
     val list = rememberLazyListState()
     var menu by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf<String?>(null) }
-    val msgs = Chat.msgs
+    val msgs = chat.msgs
     val shown = remember(msgs.size, search, msgs.lastOrNull()) {
         val q = search?.trim().orEmpty()
         if (q.isEmpty()) msgs.toList() else msgs.filter { it.text.contains(q, true) }
     }
     // новые сообщения — прокрутка вниз
-    LaunchedEffect(msgs.size, Agent.busy) { if (search == null) list.animateScrollToItem(0) }
+    LaunchedEffect(msgs.size, core.busy) { if (search == null) list.animateScrollToItem(0) }
     var tick by remember { mutableStateOf(0) }
     var composerH by remember { mutableStateOf(220) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
@@ -134,15 +138,15 @@ fun ChatScreen(go: (Scr) -> Unit) {
             LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = top + 80.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Agent.pending?.let { p -> item(key = "confirm") { ConfirmCard(p.text) } }
-                if (Agent.busy && Agent.pending == null) item(key = "typing") { Typing() }
+                core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
+                if (core.busy && core.pending == null) item(key = "typing") { Typing(core) }
                 val rev = shown.asReversed()
                 rev.forEachIndexed { i, m ->
-                    item(key = m.id) { MsgRow(m, showButtons = Prefs.quickButtons && i == 0 && !m.me && !Agent.busy && search == null) }
+                    item(key = m.id) { MsgRow(m, chat = chat, f = f, showButtons = Prefs.quickButtons && i == 0 && !m.me && !core.busy && search == null) }
                     val prev = rev.getOrNull(i + 1)
                     if (prev == null || !sameDay(prev.ts, m.ts)) item(key = "d${m.id}") { DateChip(m.ts) }
                 }
-                if (msgs.isEmpty()) item(key = "hello") { Hello() }
+                if (msgs.isEmpty()) item(key = "hello") { Hello(f) }
             }
         }
 
@@ -168,13 +172,13 @@ fun ChatScreen(go: (Scr) -> Unit) {
             }
             Row(Modifier.height(48.dp).glass(haze, RoundedCornerShape(24.dp)).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icCopy), "Копировать", tint = Ink, modifier = Modifier.size(44.dp).clickable {
-                    ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("text", ChatSel.asText())); ChatSel.ids.clear()
+                    ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("text", ChatSel.asText(chat))); ChatSel.ids.clear()
                 }.padding(10.dp))
                 Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), "Переслать", tint = Ink, modifier = Modifier.size(44.dp).clickable {
-                    shareText(ctx, ChatSel.asText()); ChatSel.ids.clear()
+                    shareText(ctx, ChatSel.asText(chat)); ChatSel.ids.clear()
                 }.padding(10.dp))
                 Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icTrash), "Удалить", tint = Ink, modifier = Modifier.size(44.dp).clickable {
-                    Chat.delete(ChatSel.ids.toList()); ChatSel.ids.clear()
+                    chat.delete(ChatSel.ids.toList()); ChatSel.ids.clear()
                 }.padding(10.dp))
             }
         } else Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -187,14 +191,25 @@ fun ChatScreen(go: (Scr) -> Unit) {
                     Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
                 }
             } else {
+                // назад — к списку чатов (с отметкой, если у других друзей есть новое)
+                val others = Friends.list.filter { it.id != fid }.sumOf { Chat.of(it.id).unread }
+                Box(Modifier.size(48.dp)) {
+                    Box(Modifier.fillMaxSize().glass(haze, CircleShape).clickable(onClickLabel = "Все чаты") { go(Scr.Chats) }, contentAlignment = Alignment.Center) {
+                        Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Все чаты", tint = Ink)
+                    }
+                    if (others > 0) Box(Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
+                        Text(if (others > 9) "9+" else "$others", style = body(10, FontWeight.Bold, OnAccent))
+                    }
+                }
+                HGap(8)
                 Row(Modifier.weight(1f).height(56.dp).glass(haze, RoundedCornerShape(28.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(44.dp, online = Online.online && tick >= 0)
+                    Avatar(44.dp, online = Online.online && tick >= 0, f = f)
                     HGap(10)
                     Column(Modifier.weight(1f)) {
-                        Text(Persona.name, style = body(17, FontWeight.Bold), maxLines = 1)
-                        val st = Online.status()
-                        Text(if (Agent.busy) shortStatus(st) else st, style = body(if (Agent.busy) 12 else 13, color = if (Online.online && !Agent.busy) Teal else Muted),
+                        Text(f.name, style = body(17, FontWeight.Bold), maxLines = 1)
+                        val st = Online.status(core, f)
+                        Text(if (core.busy) shortStatus(st) else st, style = body(if (core.busy) 12 else 13, color = if (Online.online && !core.busy) Teal else Muted),
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -207,7 +222,7 @@ fun ChatScreen(go: (Scr) -> Unit) {
                 DropdownMenu(menu, { menu = false }, Modifier.background(Th.c.card)) {
                     listOf(
                         "История и расходы" to { go(Scr.History) },
-                        "Что ${Persona.name} помнит" to { go(Scr.Memory) },
+                        "Что ${f.name} помнит" to { go(Scr.Memory) },
                         "Сводки дня" to { go(Scr.Digest) },
                         "Сам пишет первым" to { go(Scr.Initiative) },
                         "Отвечать за меня" to { go(Scr.Rules) },
@@ -227,18 +242,18 @@ fun ChatScreen(go: (Scr) -> Unit) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
                 Row(Modifier.weight(1f).height(52.dp).glass(haze, RoundedCornerShape(26.dp))
-                    .clickable(enabled = one) { Chat.replyTo = ChatSel.picked().firstOrNull(); ChatSel.ids.clear() },
+                    .clickable(enabled = one) { chat.replyTo = ChatSel.picked(chat).firstOrNull(); ChatSel.ids.clear() },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                     Text("Ответить", style = body(16, FontWeight.SemiBold, if (one) Ink else Muted)); HGap(8)
                     Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icReply), null, tint = if (one) Ink else Muted, modifier = Modifier.size(22.dp))
                 }
                 Row(Modifier.weight(1f).height(52.dp).glass(haze, RoundedCornerShape(26.dp))
-                    .clickable { shareText(ctx, ChatSel.asText()); ChatSel.ids.clear() },
+                    .clickable { shareText(ctx, ChatSel.asText(chat)); ChatSel.ids.clear() },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                     Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), null, tint = Ink, modifier = Modifier.size(22.dp)); HGap(8)
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
-            } else Composer(haze)
+            } else Composer(haze, chat, f)
         }
 
         // ——— кнопка «вниз»: над микрофоном, того же размера ———
@@ -292,10 +307,10 @@ private fun DateChip(ts: Long) {
 }
 
 @Composable
-private fun Hello() {
+private fun Hello(f: Friend) {
     Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Avatar(84.dp, online = Online.online)
-        Text(Persona.name, style = body(20, FontWeight.Bold))
+        Avatar(84.dp, online = Online.online, f = f)
+        Text(f.name, style = body(20, FontWeight.Bold))
         Text("Напиши или запиши голосовое — найду, напишу, напомню, или просто поболтаем.", style = body(14, color = Muted),
             modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Th.c.inBubble.copy(alpha = 0.8f)).padding(12.dp))
     }
@@ -305,7 +320,7 @@ private fun Hello() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MsgRow(m: Msg, showButtons: Boolean) {
+private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     val ctx = LocalContext.current
     val density = LocalDensity.current
     var dx by remember { mutableFloatStateOf(0f) }
@@ -317,6 +332,13 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
     val meta = if (m.me) Th.c.outMeta else Th.c.meta
     val hasCards = m.items.isNotBlank() || m.files.isNotBlank() || m.photos.isNotBlank()
 
+    if (m.note) {
+        Box(Modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+            Text(md(m.text), style = body(13, color = Ink), lineHeight = 18.sp, modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(12.dp))
+                .background(Th.c.inBubble.copy(alpha = 0.7f)).padding(horizontal = 12.dp, vertical = 6.dp))
+        }
+        return
+    }
     val picked = m.id in ChatSel.ids
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
         .background(if (picked) Teal.copy(alpha = 0.16f) else Color.Transparent)
@@ -330,7 +352,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
             .pointerInput(m.id) {
                 val limit = with(density) { 72.dp.toPx() }
                 detectHorizontalDragGestures(
-                    onDragEnd = { if (dx > limit * 0.8f) Chat.replyTo = m; dx = 0f },
+                    onDragEnd = { if (dx > limit * 0.8f) chat.replyTo = m; dx = 0f },
                     onDragCancel = { dx = 0f },
                 ) { _, d -> dx = (dx + d).coerceIn(0f, limit) }
             }) {
@@ -338,7 +360,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
                 .combinedClickable(onClick = { if (ChatSel.on) ChatSel.toggle(m.id) }, onLongClick = { ChatSel.toggle(m.id) })
                 .padding(horizontal = if (hasCards) 6.dp else 9.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (m.replyText.isNotBlank()) Quote(if (m.replyMe) "Алим" else Persona.name, m.replyText, m.me)
+                if (m.replyText.isNotBlank()) Quote(if (m.replyMe) "Алим" else f.name, m.replyText, m.me)
                 if (m.voice.isNotBlank()) VoiceRow(m, meta)
                 val text = m.text
                 if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(15, color = if (m.failed) Danger else ink), lineHeight = 20.sp,
@@ -360,7 +382,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
             Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 m.buttons.forEach { b ->
                     Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble.copy(alpha = 0.85f))
-                        .border(1.dp, Teal.copy(alpha = 0.5f), RoundedCornerShape(18.dp)).clickable { Chat.send(b) }.padding(horizontal = 14.dp),
+                        .border(1.dp, Teal.copy(alpha = 0.5f), RoundedCornerShape(18.dp)).clickable { chat.send(b) }.padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center) { Text(b, style = body(14, FontWeight.SemiBold, Teal)) }
                 }
             }
@@ -412,7 +434,7 @@ private fun VoiceRow(m: Msg, meta: Color) {
 }
 
 @Composable
-private fun Typing() {
+private fun Typing(core: Agent.Core) {
     var phase by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(350); phase = (phase + 1) % 3 } }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -424,19 +446,23 @@ private fun Typing() {
         LaunchedEffect(Unit) { delay(30_000); long = true }
         if (long) HGap(8)
         if (long) Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(RoundedCornerShape(14.dp))
-            .background(Th.c.inBubble.copy(alpha = 0.8f)).clickable(onClickLabel = "Остановить") { Agent.stop() }.padding(horizontal = 12.dp, vertical = 8.dp))
+            .background(Th.c.inBubble.copy(alpha = 0.8f)).clickable(onClickLabel = "Остановить") { core.stop() }.padding(horizontal = 12.dp, vertical = 8.dp))
     }
 }
 
 @Composable
-private fun ConfirmCard(text: String) {
+private fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
+    val text = p.text
+    val act = LocalContext.current as? android.app.Activity
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Th.c.inBubble).border(1.dp, Amber.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
         .padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Нужно твоё ОК", style = body(12, FontWeight.Bold, Amber))
         Text(text, style = body(16), lineHeight = 22.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BigButton("Да, делай", { Agent.answer(true) }, modifier = Modifier.weight(1f))
-            BigButton("Нет", { Agent.answer(false) }, bg = Th.c.card, fg = Ink, border = Line, modifier = Modifier.weight(1f))
+            BigButton(if (p.secure) "Подтвердить отпечатком" else "Да, делай", {
+                if (p.secure && act != null) Bio.auth(act, "Подтверди перевод") { ok -> core.answer(ok) } else core.answer(true)
+            }, modifier = Modifier.weight(1f))
+            BigButton("Нет", { core.answer(false) }, bg = Th.c.card, fg = Ink, border = Line, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -444,7 +470,7 @@ private fun ConfirmCard(text: String) {
 // ———————————————— ввод и голосовое ————————————————
 
 @Composable
-private fun Composer(haze: HazeState) {
+private fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -469,19 +495,19 @@ private fun Composer(haze: HazeState) {
             val t = VoiceMsg.transcribe(ctx, pcm)
             busyStt = false
             if (t.isBlank()) hint = "Не разобрал голосовое — попробуй ещё раз или напиши"
-            Chat.send(t, path, dur)
+            chat.send(t, path, dur)
         }
     }
 
-    Chat.replyTo?.let { r ->
+    chat.replyTo?.let { r ->
         Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).glass(haze, RoundedCornerShape(18.dp)).padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(3.dp).height(34.dp).background(Teal)); HGap(8)
             Column(Modifier.weight(1f)) {
-                Text("Ответ ${if (r.me) "себе" else Persona.name}", style = body(13, FontWeight.Bold, Teal))
+                Text("Ответ ${if (r.me) "себе" else f.name}", style = body(13, FontWeight.Bold, Teal))
                 Text(r.text.ifBlank { "Голосовое" }, style = body(13, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Icon(Icons.Filled.Close, "Убрать ответ", tint = Muted, modifier = Modifier.size(36.dp).clickable { Chat.replyTo = null }.padding(8.dp))
+            Icon(Icons.Filled.Close, "Убрать ответ", tint = Muted, modifier = Modifier.size(36.dp).clickable { chat.replyTo = null }.padding(8.dp))
         }
     }
     hint?.let { Text(it, style = body(13, color = Amber), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
@@ -523,7 +549,7 @@ private fun Composer(haze: HazeState) {
         }
         Box(Modifier.align(Alignment.BottomEnd).size(46.dp).scale(sc).clip(CircleShape).background(Teal)
             .then(
-                if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { Chat.send(text); text = "" }
+                if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
                 else Modifier.pointerInput(Unit) {
                     val cancelPx = with(density) { 110.dp.toPx() }
@@ -611,10 +637,11 @@ object ChatSel {
     val ids = androidx.compose.runtime.mutableStateListOf<Long>()
     val on: Boolean get() = ids.isNotEmpty()
     fun toggle(id: Long) { if (id in ids) ids.remove(id) else ids.add(id) }
-    fun picked(): List<Msg> = Chat.msgs.filter { it.id in ids }.sortedBy { it.ts }
-    fun asText(): String {
-        val l = picked()
-        return if (l.size == 1) l[0].text else l.joinToString("\n") { "[${hhmm.format(Date(it.ts))}] ${if (it.me) "Алим" else Persona.name}: ${it.text}" }
+    fun picked(chat: ChatStore): List<Msg> = chat.msgs.filter { it.id in ids }.sortedBy { it.ts }
+    fun asText(chat: ChatStore): String {
+        val f = chat.friend
+        val l = picked(chat)
+        return if (l.size == 1) l[0].text else l.joinToString("\n") { "[${hhmm.format(Date(it.ts))}] ${if (it.me) "Алим" else f.name}: ${it.text}" }
     }
 }
 
@@ -631,14 +658,14 @@ private val icTrash by lazy { vec("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M1
 private val icDown by lazy { vec("down", "M6 9l6 6 6-6", 2.2f) }
 
 @Composable
-fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false) {
+fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false, f: Friend = Friends.main) {
     val ver = WallState.version
-    val path = Prefs.botAvatar
+    val path = f.avatar
     val bmp = remember(path, ver) { if (path.isNotBlank()) loadBitmap(path, 400) else null }
     Box(Modifier.size(size)) {
         Box(Modifier.fillMaxSize().clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
             if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else Text(Persona.name.take(1).uppercase(), style = body((size.value * 0.42f).toInt(), FontWeight.Bold, OnAccent))
+            else Text(f.name.take(1).uppercase(), style = body((size.value * 0.42f).toInt(), FontWeight.Bold, OnAccent))
         }
         if (online) Box(Modifier.align(Alignment.BottomEnd).size(size * 0.28f).clip(CircleShape).background(Th.c.card).padding(2.dp)
             .clip(CircleShape).background(Th.c.online))

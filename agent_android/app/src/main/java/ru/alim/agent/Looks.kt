@@ -51,73 +51,12 @@ fun copyImage(ctx: Context, uri: Uri, name: String): String? = runCatching {
 }.getOrNull()
 
 @Composable
-private fun Seg(options: List<Pair<String, String>>, cur: String, set: (String) -> Unit) {
+fun Seg(options: List<Pair<String, String>>, cur: String, set: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Track).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         options.forEach { (id, label) ->
             Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp)).background(if (cur == id) Th.c.card else Th.c.card.copy(alpha = 0f))
                 .clickable { set(id) }, contentAlignment = Alignment.Center) {
                 Text(label, style = body(14, FontWeight.SemiBold, if (cur == id) Ink else Muted))
-            }
-        }
-    }
-}
-
-// ———————————————— Профиль ————————————————
-
-@Composable
-fun ProfileScreen(back: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf(Prefs.botName) }
-    var male by remember { mutableStateOf(Prefs.botMale) }
-    var style by remember { mutableStateOf(Prefs.botStyle) }
-    var gen by remember { mutableStateOf(false) }
-    var prompt by remember { mutableStateOf("") }
-    var msg by remember { mutableStateOf<String?>(null) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) copyImage(ctx, uri, "avatar_${System.currentTimeMillis()}.jpg")?.let { Prefs.botAvatar = it; WallState.version++ }
-    }
-
-    Screen("Профиль", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Avatar(112.dp, online = Online.online)
-                Text(name.ifBlank { "Артур" }, style = body(22, FontWeight.Bold))
-                Text(Online.status(), style = body(13, color = if (Online.online) Teal else Muted))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-                Chip("Буква") { Prefs.botAvatar = ""; WallState.version++ }
-                Chip("Фото из галереи") { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                Chip("Нарисовать") { gen = !gen }
-            }
-            if (gen) CardBox {
-                Field("Каким нарисовать аватар", prompt) { prompt = it }
-                BigButton(if (msg == "…") "Рисую…" else "Нарисовать аватар", {
-                    if (prompt.isBlank() || msg == "…") return@BigButton
-                    msg = "…"
-                    scope.launch {
-                        msg = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val id = YaArt.generate(ctx, "Аватар для чата, портрет по центру, крупно: $prompt", "1:1")
-                                copyImage(ctx, photoUri(id), "avatar_${System.currentTimeMillis()}.jpg")?.let { Prefs.botAvatar = it }
-                                null
-                            }.getOrElse { it.message ?: "не получилось" }
-                        }
-                        WallState.version++
-                    }
-                })
-                msg?.takeIf { it != "…" }?.let { Text(it, style = body(13, color = Amber)) }
-            }
-            CardBox {
-                Field("Имя", name) { name = it; Prefs.botName = it }
-                Text("Пол", style = body(12, color = Muted))
-                Seg(listOf("m" to "Мужской", "f" to "Женский"), if (male) "m" else "f") { male = it == "m"; Prefs.botMale = male }
-                Text("Манера общения", style = body(12, color = Muted))
-                Seg(listOf("buddy" to "Кореш", "secretary" to "Секретарь", "short" to "Коротко"), style) { style = it; Prefs.botStyle = it }
-                val sample = remember(style) { Persona.styleSample() }
-                Text(sample, style = body(15), lineHeight = 21.sp, modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp)).background(Th.c.inBubble).border(1.dp, Line, RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp)).padding(12.dp))
-                Text("так ${name.ifBlank { "Артур" }} будет писать", style = body(12, color = Muted))
             }
         }
     }

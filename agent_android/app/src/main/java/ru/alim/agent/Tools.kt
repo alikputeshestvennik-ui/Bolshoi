@@ -41,8 +41,15 @@ object Tools {
         val name: String,
         val help: String,
         val confirm: ((JSONObject) -> String)? = null,
+        /** Подтверждение отпечатком пальца (переводы денег). */
+        val secure: Boolean = false,
         val run: suspend (Context, JSONObject) -> String,
     )
+
+    /** Что доступно второстепенным друзьям; остальное они просят у главного через ask_main. */
+    val FRIEND_TOOLS = setOf("now", "weather", "web_search", "web_read", "web_page", "tg_channel", "memory_save", "memory_search",
+        "youtube_search", "youtube_open", "shop_search", "shop_check", "shop_open", "maps_route", "maps_search",
+        "file_create", "file_read", "image_generate", "escalate", "ask_main")
 
     /** Фото из последнего поиска — их можно отправить, не перечисляя. */
     val lastPhotos = ArrayList<Long>()
@@ -249,7 +256,7 @@ object Tools {
         Tool("photos_show", "{\"which\": \"all\" | \"1,3\"} — показать найденные фото сеткой на экране задачи") t@{ _, a ->
             val ids = pick(a.optString("which", "all")).take(60)
             if (ids.isEmpty()) return@t "сначала photos_find или photos_last"
-            withContext(Dispatchers.Main) { Agent.photos.clear(); Agent.photos.addAll(ids) }
+            withContext(Dispatchers.Main) { Agent.cur().photos.clear(); Agent.cur().photos.addAll(ids) }
             "показал ${ids.size} фото на экране; нажатие на фото откроет его в Галерее"
         },
 
@@ -381,7 +388,7 @@ object Tools {
             if (prompt.isEmpty()) return@t "нужно описание картинки"
             val id = YaArt.generate(ctx, prompt, a.optString("aspect", "1:1"))
             lastPhotos.clear(); lastPhotos += id
-            withContext(Dispatchers.Main) { Agent.photos.clear(); Agent.photos.add(id) }
+            withContext(Dispatchers.Main) { Agent.cur().photos.clear(); Agent.cur().photos.add(id) }
             "картинка готова и показана на экране, сохранена в Галерею (альбом «Агент»). Отправить — photos_send с which=1"
         },
 
@@ -459,7 +466,7 @@ object Tools {
                 hidden = 0
             }
             lastShop.clear(); lastShop += list.take(8)
-            withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(lastShop) }
+            withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(lastShop) }
             val out = StringBuilder(notes)
             if (lastShop.isEmpty()) out.append(when {
                 seller.isNotBlank() -> "У продавца «$seller» не нашёл (проверил $checkedN карточек Ozon). Попробуй другой запрос (модель, без лишних слов) или shop_open с store и query."
@@ -513,7 +520,7 @@ object Tools {
                     }.getOrElse { e -> "$n. не проверил: ${e.message}" }
                 } }.map { it.await() }
             }
-            withContext(Dispatchers.Main) { val cp = Agent.products.toList(); Agent.products.clear(); Agent.products.addAll(cp) }
+            withContext(Dispatchers.Main) { val cp = Agent.cur().products.toList(); Agent.cur().products.clear(); Agent.cur().products.addAll(cp) }
             res.joinToString("\n")
         },
 
@@ -523,7 +530,7 @@ object Tools {
             val l = YouTube.search(q, a.optString("period"))
             if (l.isEmpty()) return@t "ничего не нашёл"
             lastVideos.clear(); lastVideos += l
-            withContext(Dispatchers.Main) { Agent.products.clear(); Agent.products.addAll(l.map { it.item() }) }
+            withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(l.map { it.item() }) }
             "Нашёл ${l.size}:\n" + YouTube.format(l) + "\nКарточки на экране. Открыть ролик — youtube_open с номером."
         },
 
@@ -568,7 +575,7 @@ object Tools {
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
             val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, Docs.xlsx(a))
                 else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
-            withContext(Dispatchers.Main) { Agent.files.add(0, ref) }
+            withContext(Dispatchers.Main) { Agent.cur().files.add(0, ref) }
             "создал «${ref.name}» в Загрузки/Агент — карточка на экране, нажатием открывается, там же «Отправить»."
         },
 
@@ -617,6 +624,33 @@ object Tools {
                 if (launch(ctx, i)) return@t "открыл «$q» на сайте KION (приложение ссылку не приняло): $link"
             }
             if (openApp()) "поиском «$q» в KION не нашёл — открыл приложение, найди там" else "KION не установлен и «$q» не нашёл"
+        },
+
+        Tool("ask_main", "{\"task\": \"позвони маме и скажи, что задержусь\"} — передать главному просьбу Алима: звонки, сообщения, SMS, фото, переводы, будильники и любые действия в телефоне делает он") t@{ _, a ->
+            val core = Agent.cur()
+            if (core.isMain) return@t "ты и есть главный — делай сам"
+            val task = a.optString("task").trim().ifBlank { return@t "что передать?" }
+            Chat.main.delegate(core.fid, task)
+            "передал ${Friends.main.name}; он сделает и отпишется сюда заметкой"
+        },
+
+        Tool("yoomoney_transfer", "{\"to\": \"+79219990099\", \"amount\": 500, \"comment\": \"за обед\"} — подготовить перевод с кошелька ЮMoney на кошелёк ЮMoney по номеру телефона (СБП в банки не поддерживается). Только если Алим сам в чате написал, кому и сколько. Номер — через contacts_find") t@{ ctx, a ->
+            val core = Agent.cur()
+            if (!core.isMain || core.delegated) return@t "переводы — только по прямой просьбе Алима в чате с ${Friends.main.name}"
+            val amount = a.optDouble("amount", 0.0)
+            if (amount <= 0) return@t "нужна сумма"
+            val whole = amount.toLong().toString()
+            if (!core.task.replace(Regex("[\\s  ]"), "").contains(whole))
+                return@t "сумму $whole Алим в сообщении не называл — спроси у него сумму, сам не придумывай"
+            val to = a.optString("to").trim().ifBlank { return@t "кому? нужен номер телефона" }
+            Yoo.prepare(ctx, to, amount, a.optString("comment"), contactName(ctx, to))
+        },
+
+        Tool("yoomoney_send", "{} — отправить подготовленный перевод (приложение покажет карточку с получателем и суммой и спросит отпечаток пальца)",
+            confirm = { _ -> Yoo.pendingText() }, secure = true) t@{ ctx, _ ->
+            val core = Agent.cur()
+            if (!core.isMain || core.delegated) return@t "нельзя"
+            Yoo.send(ctx)
         },
 
         Tool("web_page", "{\"url\": \"https://…\"} — прочитать сайт, который не открывается через web_read (тяжёлый, на JavaScript)") t@{ ctx, a ->
@@ -701,7 +735,8 @@ object Tools {
     }
 
     fun byName(n: String) = list.firstOrNull { it.name == n }
-    fun describe() = list.joinToString("\n") { "- ${it.name} ${it.help}" }
+    fun describe(only: Set<String>? = null) = list.filter { if (only == null) it.name != "ask_main" else it.name in only }
+        .joinToString("\n") { "- ${it.name} ${it.help}" }
 
     private fun pick(which: String): List<Long> {
         val w = which.trim().lowercase()
