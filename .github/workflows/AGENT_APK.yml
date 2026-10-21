@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           # Ошибки Kotlin — в аннотации, чтобы их было видно без скачивания логов
-          msg=$(grep -E "^e: |error:|What went wrong|Could not|> " "$RUNNER_TEMP/build.log" | head -40 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')
+          msg=$( { grep -E "^e: " "$RUNNER_TEMP/build.log"; grep -E "What went wrong" -A6 "$RUNNER_TEMP/build.log"; } | sed 's#file:///home/runner/work/Bolshoi/Bolshoi/agent_android/app/src/main/java/ru/alim/agent/##' | head -40 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Build errors::${msg}"
 
       - name: Upload signed APK
