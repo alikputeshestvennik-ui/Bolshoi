@@ -1,6 +1,8 @@
 package ru.alim.agent
 
 import android.content.ContentUris
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -107,10 +109,10 @@ object PhotoSearch {
         val model = Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
         val batches = ids.chunked(16)
         val found = java.util.Collections.synchronizedList(ArrayList<Long>())
-        kotlinx.coroutines.coroutineScope {
+        coroutineScope {
             batches.chunked(3).forEach { group ->
                 group.map { batch ->
-                    kotlinx.coroutines.async(Dispatchers.IO) {
+                    async(Dispatchers.IO) {
                         runCatching {
                             val pics = batch.mapNotNull { id -> thumb(ctx, id)?.let { id to it } }
                             if (pics.isEmpty()) return@runCatching
