@@ -171,6 +171,11 @@ object Chat {
         if (i >= 0) { msgs[i] = f(msgs[i]); save() }
     }
     fun clear() = onMain { msgs.clear(); save() }
+    fun delete(ids: Collection<Long>) = onMain {
+        val gone = msgs.filter { it.id in ids }
+        gone.forEach { m -> if (m.voice.isNotBlank()) runCatching { java.io.File(m.voice).delete() } }
+        msgs.removeAll { it.id in ids }; save()
+    }
 
     private fun save() {
         val snap = msgs.takeLast(400)

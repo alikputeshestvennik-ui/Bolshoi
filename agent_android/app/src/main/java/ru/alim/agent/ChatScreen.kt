@@ -123,6 +123,7 @@ fun ChatScreen(go: (Scr) -> Unit) {
     var composerH by remember { mutableStateOf(220) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
+    androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
     Box(Modifier.fillMaxSize().background(Th.c.bg)) {
         // ——— фон и лента (под стеклом) ———
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
@@ -157,7 +158,26 @@ fun ChatScreen(go: (Scr) -> Unit) {
             .background(Brush.verticalGradient(listOf(fadeBottom.copy(alpha = 0f), fadeBottom.copy(alpha = 0.75f), fadeBottom.copy(alpha = 0.95f)))))
 
         // ——— шапка ———
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (ChatSel.on) Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Снять выделение") { ChatSel.ids.clear() }, contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Close, "Снять выделение", tint = Ink)
+            }
+            Box(Modifier.weight(1f).height(48.dp).glass(haze, RoundedCornerShape(24.dp)).padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
+                Text("Выбрано ${ChatSel.ids.size}", style = body(17, FontWeight.SemiBold))
+            }
+            Row(Modifier.height(48.dp).glass(haze, RoundedCornerShape(24.dp)).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icCopy), "Копировать", tint = Ink, modifier = Modifier.size(44.dp).clickable {
+                    ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("text", ChatSel.asText())); ChatSel.ids.clear()
+                }.padding(10.dp))
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), "Переслать", tint = Ink, modifier = Modifier.size(44.dp).clickable {
+                    shareText(ctx, ChatSel.asText()); ChatSel.ids.clear()
+                }.padding(10.dp))
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icTrash), "Удалить", tint = Ink, modifier = Modifier.size(44.dp).clickable {
+                    Chat.delete(ChatSel.ids.toList()); ChatSel.ids.clear()
+                }.padding(10.dp))
+            }
+        } else Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (search != null) {
                 Row(Modifier.weight(1f).height(52.dp).glass(haze, RoundedCornerShape(26.dp)).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Search, null, tint = Muted, modifier = Modifier.size(20.dp)); HGap(10)
@@ -204,13 +224,47 @@ fun ChatScreen(go: (Scr) -> Unit) {
         // ——— ввод ———
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
-            Composer(haze)
+            if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val one = ChatSel.ids.size == 1
+                Row(Modifier.weight(1f).height(52.dp).glass(haze, RoundedCornerShape(26.dp))
+                    .clickable(enabled = one) { Chat.replyTo = ChatSel.picked().firstOrNull(); ChatSel.ids.clear() },
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Text("Ответить", style = body(16, FontWeight.SemiBold, if (one) Ink else Muted)); HGap(8)
+                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icReply), null, tint = if (one) Ink else Muted, modifier = Modifier.size(22.dp))
+                }
+                Row(Modifier.weight(1f).height(52.dp).glass(haze, RoundedCornerShape(26.dp))
+                    .clickable { shareText(ctx, ChatSel.asText()); ChatSel.ids.clear() },
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), null, tint = Ink, modifier = Modifier.size(22.dp)); HGap(8)
+                    Text("Переслать", style = body(16, FontWeight.SemiBold))
+                }
+            } else Composer(haze)
+        }
+
+        // ——— кнопка «вниз»: над микрофоном, того же размера ———
+        val farFromBottom by remember { androidx.compose.runtime.derivedStateOf { list.firstVisibleItemIndex > 1 } }
+        if (farFromBottom && !ChatSel.on) {
+            val scope = rememberCoroutineScope()
+            val lift = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
+                with(LocalDensity.current) { composerH.toDp() } + 18.dp
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = lift).size(46.dp).glass(haze, CircleShape)
+                .clickable(onClickLabel = "Вниз") { scope.launch { list.animateScrollToItem(0) } }, contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icDown), "Вниз", tint = Ink, modifier = Modifier.size(24.dp))
+            }
         }
     }
 }
 
 private fun Modifier.glass(h: HazeState, shape: androidx.compose.ui.graphics.Shape): Modifier =
     this.clip(shape).hazeChild(h, shape).background(Th.c.glass.copy(alpha = if (Th.c.dark) 0.35f else 0.30f)).border(1.dp, Th.c.glassLine, shape)
+
+fun shareText(ctx: android.content.Context, text: String) {
+    runCatching {
+        ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND)
+            .setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), "Переслать")
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
 
 /** Шаг модели в шапке — коротко: первые 3 слова. */
 private fun shortStatus(s: String): String {
@@ -263,7 +317,15 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
     val meta = if (m.me) Th.c.outMeta else Th.c.meta
     val hasCards = m.items.isNotBlank() || m.files.isNotBlank() || m.photos.isNotBlank()
 
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (m.me) Alignment.End else Alignment.Start) {
+    val picked = m.id in ChatSel.ids
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+        .background(if (picked) Teal.copy(alpha = 0.16f) else Color.Transparent)
+        .combinedClickable(enabled = ChatSel.on, onClick = { ChatSel.toggle(m.id) })) {
+    if (ChatSel.on) Box(Modifier.align(Alignment.CenterStart).padding(start = 6.dp).size(22.dp).clip(CircleShape)
+        .background(if (picked) Teal else Color.Transparent).border(2.dp, if (picked) Teal else Muted, CircleShape),
+        contentAlignment = Alignment.Center) { if (picked) Text("✓", style = body(13, FontWeight.Bold, OnAccent)) }
+    Column(Modifier.fillMaxWidth().padding(start = if (ChatSel.on) 34.dp else 0.dp),
+        horizontalAlignment = if (m.me) Alignment.End else Alignment.Start) {
         Box(Modifier.offset { IntOffset(anim.roundToInt(), 0) }
             .pointerInput(m.id) {
                 val limit = with(density) { 72.dp.toPx() }
@@ -273,7 +335,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
                 ) { _, d -> dx = (dx + d).coerceIn(0f, limit) }
             }) {
             Column(Modifier.widthIn(max = if (hasCards) 320.dp else 285.dp).clip(shape).background(bg)
-                .combinedClickable(onClick = {}, onLongClick = { menu = true })
+                .combinedClickable(onClick = { if (ChatSel.on) ChatSel.toggle(m.id) }, onLongClick = { ChatSel.toggle(m.id) })
                 .padding(horizontal = if (hasCards) 6.dp else 9.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (m.replyText.isNotBlank()) Quote(if (m.replyMe) "Алим" else Persona.name, m.replyText, m.me)
@@ -293,13 +355,6 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
                     if (m.me) { HGap(4); Text(when (m.status) { "pending" -> "◷"; "sent" -> "✓"; else -> "✓✓" }, style = body(11, color = meta)) }
                 }
             }
-            DropdownMenu(menu, { menu = false }, Modifier.background(Th.c.card)) {
-                DropdownMenuItem(text = { Text("Ответить", style = body(15)) }, onClick = { menu = false; Chat.replyTo = m })
-                if (m.text.isNotBlank()) DropdownMenuItem(text = { Text("Копировать", style = body(15)) }, onClick = {
-                    menu = false
-                    ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("text", m.text))
-                })
-            }
         }
         if (showButtons && m.buttons.isNotEmpty()) {
             Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -310,6 +365,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
                 }
             }
         }
+    }
     }
 }
 
@@ -549,6 +605,30 @@ fun Wallpaper() {
 }
 
 object WallState { var version by mutableStateOf(0) }
+
+/** Выделенные сообщения (долгое нажатие) — как в Telegram: копировать, переслать, удалить, ответить. */
+object ChatSel {
+    val ids = androidx.compose.runtime.mutableStateListOf<Long>()
+    val on: Boolean get() = ids.isNotEmpty()
+    fun toggle(id: Long) { if (id in ids) ids.remove(id) else ids.add(id) }
+    fun picked(): List<Msg> = Chat.msgs.filter { it.id in ids }.sortedBy { it.ts }
+    fun asText(): String {
+        val l = picked()
+        return if (l.size == 1) l[0].text else l.joinToString("\n") { "[${hhmm.format(Date(it.ts))}] ${if (it.me) "Алим" else Persona.name}: ${it.text}" }
+    }
+}
+
+private fun vec(name: String, path: String, w: Float = 1.9f) =
+    androidx.compose.ui.graphics.vector.ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+        addPath(androidx.compose.ui.graphics.vector.addPathNodes(path), stroke = SolidColor(Color.Black), strokeLineWidth = w,
+            strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
+    }.build()
+
+private val icCopy by lazy { vec("copy", "M9 9h10v12H9zM5 15V3h10") }
+private val icReply by lazy { vec("reply", "M10 6L4 12l6 6M4 12h10a6 6 0 0 1 6 6v1") }
+private val icForward by lazy { vec("fwd", "M14 6l6 6-6 6M20 12H10a6 6 0 0 0-6 6v1") }
+private val icTrash by lazy { vec("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6") }
+private val icDown by lazy { vec("down", "M6 9l6 6 6-6", 2.2f) }
 
 @Composable
 fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false) {
