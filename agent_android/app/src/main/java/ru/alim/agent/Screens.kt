@@ -169,7 +169,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 fun TaskRow(r: TaskRec, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).clickable(onClickLabel = "Открыть", onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(if (r.ok) Color(0xFF12302C) else Color(0xFF3A1A1A)),
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(if (r.ok) AccentSoft else DangerBg),
             contentAlignment = Alignment.Center) {
             if (r.ok) Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(18.dp))
             else Text("!", style = body(16, FontWeight.Bold, Danger))
@@ -231,7 +231,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(Agent.steps) { s ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF12302C)), contentAlignment = Alignment.Center) {
+                    if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(AccentSoft), contentAlignment = Alignment.Center) {
                         Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(14.dp))
                     } else Box(Modifier.size(26.dp).border(2.dp, Violet, RoundedCornerShape(13.dp)))
                     HGap(12)
@@ -243,7 +243,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             }
             Agent.pending?.let { p ->
                 item {
-                    CardBox(border = Color(0xFF4A3A16), bg = Color(0xFF1A160C)) {
+                    CardBox(border = WarnLine, bg = WarnBg) {
                         Text(p.text, style = body(16, FontWeight.SemiBold), lineHeight = 22.sp)
                         Gap(6)
                         BigButton("Да, делай", { Agent.answer(true) })
@@ -255,8 +255,8 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             if (Agent.products.isNotEmpty()) item { ProductCards(Agent.products.toList()) }
             if (Agent.files.isNotEmpty()) item { FileCards(Agent.files.toList()) }
             if (phase == Agent.Phase.DONE) item {
-                CardBox(bg = if (Agent.failed) Color(0xFF251516) else Color(0xFF12302C)) {
-                    Text(md(Agent.result), style = body(16, color = if (Agent.failed) Danger else Color(0xFFD8FFF8)), lineHeight = 22.sp)
+                CardBox(bg = if (Agent.failed) DangerBg else AccentSoft) {
+                    Text(md(Agent.result), style = body(16, color = if (Agent.failed) Danger else Ink), lineHeight = 22.sp)
                 }
             }
         }
@@ -282,7 +282,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                     }, contentAlignment = Alignment.Center) { MicIcon(Bg, 26.dp) }
             }
         }
-        if (Agent.busy) BigButton("Остановить", { Agent.stop() }, bg = Color(0xFF251516), fg = Danger, border = Color(0xFF5A2A2A))
+        if (Agent.busy) BigButton("Остановить", { Agent.stop() }, bg = DangerBg, fg = Danger, border = DangerLine)
     }
 }
 
@@ -332,7 +332,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
                     if (limit > 0) {
                         val f = (total / limit).toFloat().coerceIn(0f, 1f)
                         Gap(8)
-                        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF1B2129))) {
+                        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Track)) {
                             Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(if (f > 0.9f) Amber else Teal))
                         }
                         Gap(4)
@@ -389,7 +389,7 @@ fun DayBars(recs: List<TaskRec>, days: Int) {
             sums.forEachIndexed { i, v ->
                 val f = (v / max).toFloat().coerceIn(0.03f, 1f)
                 Box(Modifier.weight(1f).fillMaxHeight(f).clip(RoundedCornerShape(3.dp))
-                    .background(if (i == days - 1) Teal else if (v == sums.max() && v > 0) Violet else Color(0xFF1B7F86)))
+                    .background(if (i == days - 1) Teal else if (v == sums.max() && v > 0) Violet else Teal.copy(alpha = 0.45f)))
             }
         }
         Row {
@@ -414,11 +414,11 @@ fun RulesScreen(back: () -> Unit) {
 
     Screen("Автоответчик", back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF12302C)).padding(16.dp),
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(AccentSoft).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Отвечать без меня", style = body(16, FontWeight.Bold))
-                    Text("Telegram, WhatsApp, MAX, SMS — через уведомления", style = body(13, color = Color(0xFFA8DCD3)))
+                    Text("Telegram, WhatsApp, MAX, SMS — через уведомления", style = body(13, color = AccentSoftInk))
                 }
                 Toggle(on) { on = it; Prefs.autoReply = it }
             }
@@ -430,8 +430,8 @@ fun RulesScreen(back: () -> Unit) {
                 }
                 Toggle(known) { known = it; Prefs.replyKnown = it }
             }
-            if (!access) CardBox(border = Color(0xFF4A3A16), bg = Color(0xFF1A160C)) {
-                Text("Нужен доступ к уведомлениям — иначе агент не видит сообщения.", style = body(14, color = Color(0xFFE3D3B0)))
+            if (!access) CardBox(border = WarnLine, bg = WarnBg) {
+                Text("Нужен доступ к уведомлениям — иначе агент не видит сообщения.", style = body(14, color = WarnInk))
                 Gap(4)
                 BigButton("Открыть настройки", {
                     ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -442,9 +442,9 @@ fun RulesScreen(back: () -> Unit) {
                 textStyle = body(14), shape = RoundedCornerShape(16.dp), colors = fieldColors())
             Text("Агент читает каждое входящее, решает по этим правилам и присылает тебе уведомление, что ответил. Группы не трогает.",
                 style = body(13, color = Muted), lineHeight = 18.sp)
-            CardBox(border = Color(0xFF4A3A16), bg = Color(0xFF1A160C)) {
+            CardBox(border = WarnLine, bg = WarnBg) {
                 Text("Коды из SMS, пароли и сообщения про деньги агент не видит и не отвечает на них. Это не отключается.",
-                    style = body(13, color = Color(0xFFE3D3B0)), lineHeight = 18.sp)
+                    style = body(13, color = WarnInk), lineHeight = 18.sp)
             }
             Label("Последние входящие")
             if (recent.isEmpty()) Text(if (access) "Пока ничего не пришло." else "Появятся после доступа к уведомлениям.", style = body(14, color = Muted))
@@ -487,9 +487,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
     Screen("Настройки", back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // баланс — сразу на виду
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF12302C)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AccentSoft).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Баланс GPTunnel", style = body(13, color = Color(0xFFA8DCD3)))
+                    Text("Баланс GPTunnel", style = body(13, color = AccentSoftInk))
                     Text(balance.ifBlank { "—" }, style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink))
                 }
                 IconTile(Icons.Filled.Refresh, "Обновить баланс", {

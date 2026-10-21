@@ -35,15 +35,16 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 // Цвета из макетов
-val Bg = Color(0xFF0E1116)
-val Card = Color(0xFF151A21)
-val Line = Color(0xFF262C36)
-val Ink = Color(0xFFE8EAED)
-val Muted = Color(0xFF9AA3AE)
-val Teal = Color(0xFF3DD9C1)
-val Violet = Color(0xFF8B7CFF)
-val Amber = Color(0xFFF5B83D)
-val Danger = Color(0xFFFF8A80)
+// Цвета берутся из текущей темы (Мята, Песок, Небо — светлые, Ночь — тёмная), см. Theme.kt
+val Bg: Color get() = Th.c.bg
+val Card: Color get() = Th.c.card
+val Line: Color get() = Th.c.line
+val Ink: Color get() = Th.c.ink
+val Muted: Color get() = Th.c.muted
+val Teal: Color get() = Th.c.accent
+val Violet: Color get() = Th.c.violet
+val Amber: Color get() = Th.c.amber
+val Danger: Color get() = Th.c.danger
 
 /** Четыре слоя стопки снизу вверх и цвет сканера — одна палитра на состояние. */
 class Palette(val layers: List<Color>, val accent: Color)

@@ -65,7 +65,12 @@ object Llm {
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
 
+    /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
     fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply =
+        try { chatRaw(model, messages, maxTokens, json).also { Online.ok() } }
+        catch (e: java.io.IOException) { Online.fail(); throw e }
+
+    private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply =
         if (isYandex(model)) yandexChat(model, messages, maxTokens, json) else try {
             chatOnce(model, messages, maxTokens, json)
         } catch (e: ModelNotFound) {

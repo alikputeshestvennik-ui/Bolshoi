@@ -121,16 +121,16 @@ fun DigestScreen(back: () -> Unit) {
             Label("Важное сегодня", Amber)
             if (urgent.isEmpty()) Text("Ничего срочного.", style = body(14, color = Muted))
             urgent.forEach { e ->
-                CardBox(border = Color(0xFF4A3A16), bg = Color(0xFF1A160C)) {
+                CardBox(border = WarnLine, bg = WarnBg) {
                     Text(e.note.ifBlank { e.title.ifBlank { e.text.take(80) } }, style = body(15, FontWeight.SemiBold))
                     Text("${e.source} · ${e.from} · ${SimpleDateFormat("HH:mm", Locale("ru")).format(Date(e.ts))}", style = body(12, color = Muted))
                 }
             }
             Label("Итог дня")
             digests.firstOrNull()?.let { d ->
-                CardBox(bg = Color(0xFF12302C)) {
-                    Text(dm.format(Date(d.ts)), style = body(12, color = Color(0xFFA8DCD3)))
-                    Text(d.text, style = body(15, color = Color(0xFFD8FFF8)), lineHeight = 21.sp)
+                CardBox(bg = AccentSoft) {
+                    Text(dm.format(Date(d.ts)), style = body(12, color = AccentSoftInk))
+                    Text(d.text, style = body(15, color = Ink), lineHeight = 21.sp)
                 }
             } ?: Text("Итог собирается сам вечером, в ${Prefs.digestHour}:00. Можно собрать сейчас.", style = body(14, color = Muted))
             BigButton(if (busy) "Собираю…" else "Собрать итог сейчас", { if (!busy) { busy = true; Monitor.runNow(ctx, digest = true) } },

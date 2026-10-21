@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Task, History, Rules, Settings, YooMoney, Memory, Digest }
+enum class Scr { Home, Task, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
@@ -76,18 +77,28 @@ fun App(voice: Voice) {
             Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
         }
     }
-    LaunchedEffect(phase) {
-        if ((phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM) && scr != Scr.Task) { taskBack = Scr.Home; scr = Scr.Task }
-    }
+
     BackHandler(enabled = scr != Scr.Home) {
         if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home
     }
-    MaterialTheme(colorScheme = darkColorScheme(primary = Teal, onPrimary = Bg, background = Bg, surface = Card, onSurface = Ink)) {
+    val act = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    androidx.compose.runtime.SideEffect {
+        act?.window?.let { w ->
+            w.statusBarColor = Th.c.bg.toArgb(); w.navigationBarColor = Th.c.bg.toArgb()
+            androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).apply {
+                isAppearanceLightStatusBars = !Th.c.dark; isAppearanceLightNavigationBars = !Th.c.dark
+            }
+        }
+    }
+    MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
         Box(Modifier.fillMaxSize().background(Bg)) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             when (scr) {
-                Scr.Home -> HomeScreen(voice, go)
+                Scr.Home -> ChatScreen(go)
+                Scr.Profile -> ProfileScreen(home)
+                Scr.Look -> LookScreen(home)
+                Scr.Initiative -> InitiativeScreen(home)
                 Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen(home)
@@ -175,7 +186,7 @@ fun Toggle(checked: Boolean, onChange: (Boolean) -> Unit) =
 fun Chip(text: String, onClick: () -> Unit) {
     Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(18.dp))
         .clickable(onClick = onClick).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = body(13, FontWeight.Medium, Color(0xFFC7CDD4)))
+        Text(text, style = body(13, FontWeight.Medium, ChipInk))
     }
 }
 

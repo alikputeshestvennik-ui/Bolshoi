@@ -92,8 +92,14 @@ object Monitor {
         facts.forEach { Memory.add(ctx, it, "авто") }
         Events.mark(ctx, batch.map { it.id }.toSet(), urgent)
         val byId = batch.associateBy { it.id }
-        if (urgent.size > 3) notify(ctx, 7000, "Важное: ${urgent.size}", urgent.values.joinToString("\n"))
-        else urgent.forEach { (id, say) -> notify(ctx, (id % 100000).toInt() + 7001, byId[id]?.from?.ifBlank { null } ?: "Важное", say) }
+        if (urgent.isNotEmpty() && Prefs.initImportant) {
+            // важное — сообщением Артура в переписку (и уведомлением, если приложение закрыто)
+            Chat.init(ctx)
+            val lines = urgent.map { (id, say) -> (byId[id]?.from?.ifBlank { null }?.let { "**$it** — " } ?: "") + say }
+            val who = urgent.keys.mapNotNull { byId[it]?.from?.takeIf { f -> f.isNotBlank() } }.distinct()
+            Chat.botSays(if (lines.size == 1) "Алим, глянь: ${lines[0]}" else "Алим, важное:\n" + lines.joinToString("\n") { "- $it" },
+                buttons = who.take(2).map { "Ответить: $it" })
+        }
         Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Мониторинг: ${batch.size} новых, важных ${urgent.size}", 1, Agent.short(model), r.cost(model), true))
         return "разобрано ${batch.size}, важных ${urgent.size}${if (facts.isNotEmpty()) ", фактов ${facts.size}" else ""}"
     }
@@ -124,7 +130,8 @@ object Monitor {
         val text = "Свежее на YouTube по твоим интересам (${queries.joinToString(", ")}):\n" + picks.joinToString("\n") { "- **${it.title}** — ${it.channel}" }
         Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Подборка YouTube: ${queries.joinToString(", ")}", 1, Agent.short(model), r.cost(model), true,
             0, text, "подбираю ролики по интересам\t${queries.joinToString(" · ")}", Shop.toJson(picks.map { it.item() })))
-        notify(ctx, 6998, "YouTube: ${picks.size} новых по интересам", picks.joinToString("\n") { it.title }, open = "yt")
+        Chat.init(ctx)
+        Chat.botSays("Глянь, что свежего по твоим темам (${queries.joinToString(", ")}):", items = Shop.toJson(picks.map { it.item() }))
         return "подборка: ${picks.size}"
     }
 
@@ -157,7 +164,8 @@ object Monitor {
         Digests.add(ctx, text)
         j.optJSONArray("facts")?.let { a -> (0 until minOf(3, a.length())).forEach { Memory.add(ctx, a.optString(it), "авто") } }
         Prefs.lastDigest = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-        notify(ctx, 6999, "Итог дня", text, open = "digest")
+        Chat.init(ctx)
+        Chat.botSays("Итог дня, коротко:\n$text")
         Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Итог дня", 1, Agent.short(model), r.cost(model), true, 0, text))
         runCatching { ytPicks(ctx) }
         return "итог готов"
@@ -187,6 +195,7 @@ class MonitorWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         log += Monitor.pullMail(ctx)
         log += runCatching { Monitor.triage(ctx) }.getOrElse { "разбор: ${it.message?.take(120)}" }
         if (forceDigest || Monitor.digestDue()) log += runCatching { Monitor.digest(ctx) }.getOrElse { "итог: ${it.message?.take(120)}" }
+        log += runCatching { Proactive.tick(ctx) }.getOrElse { "сам: ${it.message?.take(80)}" }
         Prefs.monitorStatus = SimpleDateFormat("d MMM HH:mm", Locale("ru")).format(Date()) + " — " + log.joinToString(" · ")
         Result.success()
     }

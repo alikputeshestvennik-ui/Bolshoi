@@ -17,14 +17,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
+        Th.load()
         Agent.app = applicationContext
+        Chat.init(this)
+        Online.init(this)
         Fonts.load(assets)
         voice = Voice(this)
         Agent.onSpeak = { voice.say(it) }
         Nav.open = intent?.getStringExtra("open").orEmpty()
         Monitor.schedule(this)
+        ArturService.start(this)
         setContent { App(voice) }
     }
+
+    override fun onResume() { super.onResume(); AppState.foreground = true
+        runCatching { androidx.core.app.NotificationManagerCompat.from(this).cancel(7777) } }
+    override fun onPause() { AppState.foreground = false; super.onPause() }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

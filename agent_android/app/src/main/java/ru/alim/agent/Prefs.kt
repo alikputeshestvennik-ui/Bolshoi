@@ -43,6 +43,30 @@ object Prefs {
     var digestHour: Int get() = sp.getInt("dh", 21); set(v) = sp.edit().putInt("dh", v).apply()
     var lastDigest: String get() = s("ld", ""); set(v) = put("ld", v)
     var monitorStatus: String get() = s("ms", ""); set(v) = put("ms", v)
+    // ——— Оформление и характер ———
+    var theme: String get() = s("theme", "mint"); set(v) = put("theme", v)
+    /** Подложка: "pattern" — узор темы, "photo" — картинка из файла wallpaper.jpg. */
+    var wallpaper: String get() = s("wall", "pattern"); set(v) = put("wall", v)
+    var wallDim: Int get() = sp.getInt("wdim", 25); set(v) = sp.edit().putInt("wdim", v).apply()
+    var botName: String get() = s("bname", "Артур").ifBlank { "Артур" }; set(v) = put("bname", v.trim())
+    var botMale: Boolean get() = b("bmale", true); set(v) = putB("bmale", v)
+    /** Манера: "buddy" — кореш, "secretary" — секретарь, "short" — коротко. */
+    var botStyle: String get() = s("bstyle", "buddy"); set(v) = put("bstyle", v)
+    /** Аватар: "" — буква, иначе путь к файлу картинки. */
+    var botAvatar: String get() = s("bava", ""); set(v) = put("bava", v)
+    // ——— Инициатива ———
+    var initMorning: Boolean get() = b("imorn", true); set(v) = putB("imorn", v)
+    var morningHour: Int get() = sp.getInt("mhour", 8); set(v) = sp.edit().putInt("mhour", v).apply()
+    var initImportant: Boolean get() = b("iimp", true); set(v) = putB("iimp", v)
+    /** «Просто поболтать»: 0 никогда, 1 редко, 2 иногда, 3 часто. */
+    var chatty: Int get() = sp.getInt("chatty", 2); set(v) = sp.edit().putInt("chatty", v).apply()
+    var voiceReplies: Boolean get() = b("vrep", true); set(v) = putB("vrep", v)
+    var quietFrom: Int get() = sp.getInt("qfrom", 23); set(v) = sp.edit().putInt("qfrom", v).apply()
+    var quietTo: Int get() = sp.getInt("qto", 8); set(v) = sp.edit().putInt("qto", v).apply()
+    var lastMorning: String get() = s("lmorn", ""); set(v) = put("lmorn", v)
+    var lastChatty: Long get() = sp.getLong("lchat", 0L); set(v) = sp.edit().putLong("lchat", v).apply()
+    var lastSeen: Long get() = sp.getLong("lseen", 0L); set(v) = sp.edit().putLong("lseen", v).apply()
+
     /** Подборка свежих роликов YouTube по интересам из памяти — вместе с итогом дня. */
     var ytPicks: Boolean get() = b("yt", true); set(v) = putB("yt", v)
     var ytSeen: String get() = s("yts", ""); set(v) = put("yts", v)

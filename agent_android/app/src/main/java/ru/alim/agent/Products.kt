@@ -54,7 +54,7 @@ fun ProductCards(items: List<Shop.Item>) {
                 runCatching { ctx.startActivity(Intent(intent).apply { pkg?.let { p -> setPackage(p) } }) }
                     .onFailure { runCatching { ctx.startActivity(intent) } }
             }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1E242C)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(Track), contentAlignment = Alignment.Center) {
                     if (it.img.startsWith("http")) NetImage(it.img)
                     else Text("${i + 1}", style = body(18, FontWeight.Bold, Muted))
                 }

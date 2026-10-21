@@ -55,6 +55,12 @@ object Agent {
     lateinit var app: Context
     var onSpeak: ((String) -> Unit)? = null
 
+    /** Итог задачи — уходит в переписку сообщением Артура. */
+    class Done(val ok: Boolean, val text: String, val buttons: List<String>, val products: List<Shop.Item>,
+               val files: List<Docs.FileRef>, val photos: List<Long>, val steps: List<String>, val secs: Long)
+    var onFinish: ((Done) -> Unit)? = null
+    private var lastButtons: List<String> = emptyList()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
     /** Переписка последней задачи — чтобы ответить агенту на его вопрос и продолжить. */
@@ -67,7 +73,7 @@ object Agent {
     fun start(text: String) {
         val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
         if (t.isEmpty() || busy) return
-        task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
+        task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList()
         startedAt = System.currentTimeMillis(); endedAt = 0L
         model = Prefs.fastModel; phase = Phase.WORKING
         lastMsgs = null; photos.clear(); products.clear(); files.clear()
@@ -80,7 +86,8 @@ object Agent {
         if (t.isEmpty() || busy) return
         val base = lastMsgs
         if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
-        task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null
+        task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList()
+        photos.clear(); products.clear(); files.clear()
         startedAt = System.currentTimeMillis(); endedAt = 0L
         model = if (lastSmart) Prefs.smartModel else Prefs.fastModel; phase = Phase.WORKING
         job = scope.launch { loop(t, base, lastSmart) }
@@ -119,9 +126,11 @@ object Agent {
     private fun msg(role: String, text: String) = JSONObject().put("role", role).put("content", text)
 
     private fun system(): String = buildString {
-        append("Ты — голосовой агент Алима в его Android-телефоне. Выполняешь просьбы: найти, позвонить, написать, ответить, показать.\n")
+        append(Persona.describe()).append("\n")
+        append("Ты умеешь действовать в телефоне: найти, позвонить, написать, ответить, показать, купить-подобрать. Просто поболтать с Алимом — тоже нормально: тогда без инструментов, живой ответ.\n")
         append("Отвечай ТОЛЬКО одним JSON-объектом без markdown:\n")
-        append("{\"step\": \"что делаешь, 2-5 слов\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"реплика Алиму\", \"done\": false}\n")
+        append("{\"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"buttons\": [\"до 3 коротких ответов-кнопок для Алима, если уместно\"], \"done\": false}\n")
+        append("- buttons — 0-3 коротких варианта, которые Алим, скорее всего, захочет нажать («Открыть первую», «Дешевле», «Ответить маме»). Не обязательно.\n")
         append("Правила:\n")
         append("- Не больше одного инструмента за ответ. Результат придёт следующим сообщением.\n")
         append("- Задача выполнена или делать нечего — \"tool\": null, \"done\": true и короткий итог в \"say\" (1-2 фразы, по-русски, просто).\n")
@@ -152,6 +161,8 @@ object Agent {
         append("- Для простого (одно-два действия) хватает тебя. Если задача сложная (несколько приложений, покупки, длинная цепочка, тонкий текст) — первым шагом вызови escalate.\n")
         append("Сейчас: ").append(SimpleDateFormat("EEEE, d MMMM yyyy, HH:mm", Locale("ru")).format(Date()))
         append(". Город по умолчанию: ").append(Prefs.homeCity).append(".\n")
+        append("НЕДАВНЯЯ ПЕРЕПИСКА (контекст, последняя реплика Алима придёт отдельно):\n")
+        append(Chat.recentForPrompt(12).ifBlank { "(пока пусто)" }).append("\n")
         append("ПАМЯТЬ — что ты знаешь об Алиме (номер в скобках — id записи):\n")
         append(Memory.forPrompt(app, 40).ifBlank { "(пока пусто)" }).append("\n")
         append("- Алим просит запомнить — memory_save. Узнал в разговоре что-то устойчивое и полезное (кто есть кто, привычки, планы) — тоже memory_save, коротко. Догадки проверяй, прежде чем на них опираться.\n")
@@ -194,7 +205,12 @@ object Agent {
                 if (j == null) { final = r.text.trim().take(500).ifBlank { "Готово." }; break }
                 val tool = j.optString("tool").trim().takeIf { it.isNotEmpty() && it != "null" }
                 val say = j.optString("say").trim()
-                if (tool == null) { final = say.ifBlank { "Готово." }; break }
+                if (tool == null) {
+                    final = say.ifBlank { "Готово." }
+                    lastButtons = j.optJSONArray("buttons")?.let { a -> (0 until minOf(3, a.length())).map { a.optString(it).trim() } }
+                        .orEmpty().filter { it.isNotBlank() && it.length <= 40 }
+                    break
+                }
                 val args = j.optJSONObject("args") ?: JSONObject()
                 val stepText = j.optString("step").trim().ifBlank { tool }
 
@@ -255,7 +271,10 @@ object Agent {
             Journal.add(app, TaskRec(startedAt, task, steps.size, short(model), cost, ok, endedAt - startedAt, text, log,
                 if (products.isEmpty()) "" else Shop.toJson(products.take(8))))
         }
-        if (ok && Prefs.speak) onSpeak?.invoke(text)
+        val cb = onFinish
+        if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
+            steps.map { it.text }, (endedAt - startedAt) / 1000))
+        else if (ok && Prefs.speak) onSpeak?.invoke(text)
     }
 
     fun short(m: String): String = when {

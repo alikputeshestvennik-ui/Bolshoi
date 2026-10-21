@@ -63,6 +63,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // фоновые проверки по расписанию
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // размытие фона под прозрачными плашками чата
+    implementation("dev.chrisbanes.haze:haze:0.7.3")
     // пароли почты — зашифрованно
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Gmail по IMAP
