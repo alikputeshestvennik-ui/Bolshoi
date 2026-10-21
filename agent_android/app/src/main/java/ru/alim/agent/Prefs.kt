@@ -61,6 +61,8 @@ object Prefs {
     var initImportant: Boolean get() = b("iimp", true); set(v) = putB("iimp", v)
     /** «Просто поболтать»: 0 никогда, 1 редко, 2 иногда, 3 часто. */
     var chatty: Int get() = sp.getInt("chatty", 2); set(v) = sp.edit().putInt("chatty", v).apply()
+    /** Кнопки быстрых ответов под сообщениями Артура. По умолчанию скрыты. */
+    var quickButtons: Boolean get() = b("qbtn", false); set(v) = putB("qbtn", v)
     var voiceReplies: Boolean get() = b("vrep", true); set(v) = putB("vrep", v)
     var quietFrom: Int get() = sp.getInt("qfrom", 23); set(v) = sp.edit().putInt("qfrom", v).apply()
     var quietTo: Int get() = sp.getInt("qto", 8); set(v) = sp.edit().putInt("qto", v).apply()

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -72,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -112,6 +114,7 @@ fun ChatScreen(go: (Scr) -> Unit) {
     // новые сообщения — прокрутка вниз
     LaunchedEffect(msgs.size, Agent.busy) { if (search == null) list.animateScrollToItem(0) }
     var tick by remember { mutableStateOf(0) }
+    var composerH by remember { mutableStateOf(220) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     Box(Modifier.fillMaxSize().background(Th.c.bg)) {
@@ -119,13 +122,13 @@ fun ChatScreen(go: (Scr) -> Unit) {
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
             Wallpaper()
             LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 84.dp, bottom = if (Chat.replyTo != null) 140.dp else 90.dp),
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 84.dp, bottom = with(LocalDensity.current) { composerH.toDp() } + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Agent.pending?.let { p -> item(key = "confirm") { ConfirmCard(p.text) } }
                 if (Agent.busy && Agent.pending == null) item(key = "typing") { Typing() }
                 val rev = shown.asReversed()
                 rev.forEachIndexed { i, m ->
-                    item(key = m.id) { MsgRow(m, showButtons = i == 0 && !m.me && !Agent.busy && search == null) }
+                    item(key = m.id) { MsgRow(m, showButtons = Prefs.quickButtons && i == 0 && !m.me && !Agent.busy && search == null) }
                     val prev = rev.getOrNull(i + 1)
                     if (prev == null || !sameDay(prev.ts, m.ts)) item(key = "d${m.id}") { DateChip(m.ts) }
                 }
@@ -178,7 +181,8 @@ fun ChatScreen(go: (Scr) -> Unit) {
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp)
+            .onSizeChanged { composerH = it.height }) {
             Composer(haze)
         }
     }
@@ -333,8 +337,10 @@ private fun Typing() {
             horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             repeat(3) { i -> Box(Modifier.size(8.dp).clip(CircleShape).background(Muted.copy(alpha = if (i == phase) 1f else 0.35f))) }
         }
-        HGap(8)
-        Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(RoundedCornerShape(14.dp))
+        var long by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { delay(30_000); long = true }
+        if (long) HGap(8)
+        if (long) Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(RoundedCornerShape(14.dp))
             .background(Th.c.inBubble.copy(alpha = 0.8f)).clickable(onClickLabel = "Остановить") { Agent.stop() }.padding(horizontal = 12.dp, vertical = 8.dp))
     }
 }
@@ -400,9 +406,10 @@ private fun Composer(haze: HazeState) {
     AttachChips()
     Spacer(Modifier.height(4.dp))
 
-    Box(Modifier.fillMaxWidth().height(56.dp)) {
-        // поле
-        Row(Modifier.fillMaxWidth().padding(end = 64.dp).height(56.dp).glass(haze, RoundedCornerShape(28.dp)).padding(horizontal = 16.dp),
+    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+        // поле — растёт вместе с текстом (до 6 строк)
+        Row(Modifier.fillMaxWidth().padding(end = 64.dp).heightIn(min = 56.dp).glass(haze, RoundedCornerShape(28.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
                 var blink by remember { mutableStateOf(true) }
@@ -413,7 +420,7 @@ private fun Composer(haze: HazeState) {
                 if (locked) Text("Отмена", style = body(15, FontWeight.Bold, Teal), modifier = Modifier.clickable { finishVoice(true) }.padding(6.dp))
                 else Text("‹ Влево — отмена", style = body(15, color = Muted), modifier = Modifier.offset { IntOffset(dragX.roundToInt() / 2, 0) })
             } else {
-                BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f), textStyle = body(17), cursorBrush = SolidColor(Teal), maxLines = 5,
+                BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f), textStyle = body(17), cursorBrush = SolidColor(Teal), maxLines = 6,
                     decorationBox = { inner -> if (text.isEmpty()) Text("Сообщение", style = body(17, color = Muted)); inner() })
                 HGap(8)
                 Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(26.dp).clickable { attach() })
@@ -431,7 +438,7 @@ private fun Composer(haze: HazeState) {
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.CenterEnd).size(56.dp).scale(sc).clip(CircleShape).background(Teal)
+        Box(Modifier.align(Alignment.BottomEnd).size(56.dp).scale(sc).clip(CircleShape).background(Teal)
             .then(
                 if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { Chat.send(text); text = "" }
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }

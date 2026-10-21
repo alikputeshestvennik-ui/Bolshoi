@@ -52,10 +52,15 @@ object Llm {
             .header("Authorization", "Api-Key $key").post(b.toString().toRequestBody(JSON)).build()).execute()
             .use { it.code to (it.body?.string() ?: "") }
         var r = Pair(0, "")
-        for (key in keys) {
-            r = sendWith(key, body(json))
-            if (r.first == 400 && json) r = sendWith(key, body(false))
-            if (r.first != 401 && r.first != 403) break
+        for (attempt in 0 until 3) {
+            for (key in keys) {
+                r = sendWith(key, body(json))
+                if (r.first == 400 && json) r = sendWith(key, body(false))
+                if (r.first != 401 && r.first != 403) break
+            }
+            // у Яндекса бывают разовые 500/503/429 — пробуем ещё раз через паузу
+            if (r.first !in setOf(429, 500, 502, 503, 504)) break
+            Thread.sleep(1200L * (attempt + 1))
         }
         if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
         if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")

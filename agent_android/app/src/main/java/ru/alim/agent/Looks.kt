@@ -192,6 +192,16 @@ fun LookScreen(back: () -> Unit) {
                 })
                 msg?.takeIf { it.isNotBlank() && it != "…" }?.let { Text(it, style = body(13, color = Amber)) }
             }
+            var qb by remember { mutableStateOf(Prefs.quickButtons) }
+            CardBox {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Подсказки-кнопки", style = body(15, FontWeight.SemiBold))
+                        Text("варианты ответа под сообщениями: «Дешевле», «Открыть первую»…", style = body(12, color = Muted))
+                    }
+                    Toggle(qb) { qb = it; Prefs.quickButtons = it }
+                }
+            }
             if (wall == "photo") CardBox {
                 Row { Text("Приглушить фото", style = body(14), modifier = Modifier.weight(1f)); Text("$dim%", style = body(14, color = Muted)) }
                 Slider(dim.toFloat(), { dim = it.toInt(); Prefs.wallDim = dim; WallState.version++ }, valueRange = 0f..70f,

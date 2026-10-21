@@ -129,8 +129,10 @@ object Agent {
         append(Persona.describe()).append("\n")
         append("Ты умеешь действовать в телефоне: найти, позвонить, написать, ответить, показать, купить-подобрать. Просто поболтать с Алимом — тоже нормально: тогда без инструментов, живой ответ.\n")
         append("Отвечай ТОЛЬКО одним JSON-объектом без markdown:\n")
-        append("{\"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"buttons\": [\"до 3 коротких ответов-кнопок для Алима, если уместно\"], \"done\": false}\n")
-        append("- buttons — 0-3 коротких варианта, которые Алим, скорее всего, захочет нажать («Открыть первую», «Дешевле», «Ответить маме»). Не обязательно.\n")
+        if (Prefs.quickButtons) {
+            append("{\"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"buttons\": [\"до 3 коротких ответов-кнопок для Алима, если уместно\"], \"done\": false}\n")
+            append("- buttons — 0-3 коротких варианта, которые Алим, скорее всего, захочет нажать («Открыть первую», «Дешевле», «Ответить маме»). Не обязательно.\n")
+        } else append("{\"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"done\": false}\n")
         append("Правила:\n")
         append("- Не больше одного инструмента за ответ. Результат придёт следующим сообщением.\n")
         append("- Задача выполнена или делать нечего — \"tool\": null, \"done\": true и короткий итог в \"say\" (1-2 фразы, по-русски, просто).\n")
@@ -256,7 +258,7 @@ object Agent {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            finish(false, "Ошибка: ${e.message ?: e.javaClass.simpleName}")
+            finish(false, friendly(e))
         }
     }
 
@@ -275,6 +277,17 @@ object Agent {
         if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
             steps.map { it.text }, (endedAt - startedAt) / 1000))
         else if (ok && Prefs.speak) onSpeak?.invoke(text)
+    }
+
+    /** Ошибка — человеческими словами, без JSON от сервера. */
+    private fun friendly(e: Exception): String {
+        val m = e.message.orEmpty()
+        return when {
+            e is java.io.IOException || m.contains("timeout", true) -> "Связь пропала на полпути — напиши ещё раз, как появится интернет."
+            Regex("\\b(500|502|503|504|429)\\b").containsMatchIn(m) -> "Сервер моделей сейчас подвис, это не у тебя. Повтори через минутку — должно пройти."
+            m.contains("доступ", true) || m.contains("ключ", true) -> "Не пускает к модели: $m"
+            else -> "Что-то пошло не так: ${m.take(120)}. Попробуй ещё раз."
+        }
     }
 
     fun short(m: String): String = when {
