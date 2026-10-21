@@ -570,13 +570,13 @@ object Tools {
             if (ok) "открыл поиск «$q» в Яндекс Картах" else "Карты не открылись"
         },
 
-        Tool("file_create", "{\"type\": \"docx\", \"name\": \"Список дел\", \"text\": \"# Заголовок\\n## Раздел\\n- пункт\\n**жирный**\\n| Колонка | Колонка |\\n| a | b |\"} или {\"type\": \"xlsx\", \"name\": \"Бюджет\", \"sheets\": [{\"name\": \"Октябрь\", \"rows\": [[\"Статья\", \"Сумма\"], [\"Еда\", 15000], [\"Итого\", \"=SUM(B2:B2)\"]]}]} — создать документ Word или таблицу Excel (формулы через =). Сохраняется в Загрузки/Агент, карточка на экране") t@{ ctx, a ->
+        Tool("file_create", "{\"type\": \"docx\", \"name\": \"Список дел\", \"text\": \"# Заголовок\\n## Раздел\\n- пункт\\n**жирный**\\n| Колонка | Колонка |\\n| a | b |\"} или {\"type\": \"xlsx\", \"name\": \"Бюджет\", \"sheets\": [{\"name\": \"Октябрь\", \"rows\": [[\"Статья\", \"Сумма\"], [\"Еда\", 15000], [\"Итого\", \"=SUM(B2:B2)\"]]}]} — создать документ Word или таблицу Excel (формулы через =). Сохраняется в Загрузки/Свои, карточка на экране") t@{ ctx, a ->
             val type = a.optString("type").lowercase().ifBlank { if (a.has("sheets") || a.has("rows")) "xlsx" else "docx" }
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
             val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, Docs.xlsx(a))
                 else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
             withContext(Dispatchers.Main) { Agent.cur().files.add(0, ref) }
-            "создал «${ref.name}» в Загрузки/Агент — карточка на экране, нажатием открывается, там же «Отправить»."
+            "создал «${ref.name}» в Загрузки/Свои — карточка на экране, нажатием открывается, там же «Отправить»."
         },
 
         Tool("file_read", "{\"n\": 1, \"from\": \"attachment\" | \"made\"} — прочитать .docx/.xlsx (из вложений Алима или из файлов, сделанных агентом), чтобы ответить по ним или поправить") t@{ ctx, a ->

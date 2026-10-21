@@ -172,13 +172,13 @@ object Docs {
             val cv = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Агент")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Свои")
             }
             val u = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: error("не удалось создать файл")
             ctx.contentResolver.openOutputStream(u)?.use { it.write(bytes) } ?: error("не удалось записать файл")
             u
         } else {
-            val dir = File(ctx.getExternalFilesDir(null), "Агент").apply { mkdirs() }
+            val dir = File(ctx.getExternalFilesDir(null), "Свои").apply { mkdirs() }
             val f = File(dir, name); f.writeBytes(bytes)
             Uri.fromFile(f)
         }

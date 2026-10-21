@@ -97,7 +97,7 @@ fun FileCards(files: List<Docs.FileRef>) {
                 HGap(12)
                 Column(Modifier.weight(1f)) {
                     Text(f.name, style = body(14, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("Загрузки/Агент · нажми, чтобы открыть", style = body(12, color = Muted))
+                    Text("Загрузки/Свои · нажми, чтобы открыть", style = body(12, color = Muted))
                 }
                 Text("Отправить", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clickable {
                     runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)

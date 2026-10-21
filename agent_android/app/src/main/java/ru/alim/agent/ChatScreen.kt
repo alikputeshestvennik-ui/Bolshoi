@@ -52,6 +52,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
@@ -195,7 +196,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 val others = Friends.list.filter { it.id != fid }.sumOf { Chat.of(it.id).unread }
                 Box(Modifier.size(48.dp)) {
                     Box(Modifier.fillMaxSize().glass(haze, CircleShape).clickable(onClickLabel = "Все чаты") { go(Scr.Chats) }, contentAlignment = Alignment.Center) {
-                        Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Все чаты", tint = Ink)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Все чаты", tint = Ink)
                     }
                     if (others > 0) Box(Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
                         Text(if (others > 9) "9+" else "$others", style = body(10, FontWeight.Bold, OnAccent))
