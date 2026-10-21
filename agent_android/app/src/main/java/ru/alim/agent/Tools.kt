@@ -144,6 +144,17 @@ object Tools {
                 "Отправить — photos_send с \"which\": \"all\" или номерами по порядку, например \"1,3,5\"."
         },
 
+        Tool("photos_search", "{\"query\": \"я в чёрной футболке\", \"days\": 365, \"screenshots\": false} — найти фото ПО СОДЕРЖИМОМУ (что на них изображено): смотрит последние ~150 снимков. По дате — photos_find") t@{ ctx, a ->
+            val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
+            if (!has(ctx, perm)) return@t "нет разрешения на фото"
+            val q = a.optString("query").trim().ifBlank { return@t "что искать на фото?" }
+            val (ids, seen) = PhotoSearch.find(ctx, q, a.optInt("days", 365).coerceIn(1, 3650), a.optInt("max", 150).coerceIn(16, 300), a.optBoolean("screenshots", false))
+            lastPhotos.clear(); lastPhotos += ids
+            withContext(Dispatchers.Main) { Agent.cur().photos.clear(); Agent.cur().photos.addAll(ids.take(30)) }
+            if (ids.isEmpty()) "среди $seen последних фото «$q» не нашёл — можно поискать глубже (days побольше) или со скриншотами"
+            else "нашёл ${ids.size} фото «$q» среди $seen последних — показал сеткой. Отправить — photos_send."
+        },
+
         Tool("photos_send", "{\"which\": \"all\" | \"1,3\", \"app\": \"telegram|whatsapp|max|any\", \"text\": \"подпись\"} — отправить найденные фото (откроется выбор чата)",
             confirm = { a -> "Отправить ${pick(a.optString("which", "all")).size} фото в ${a.optString("app", "любое приложение")}? Там выберешь чат." }) t@{ ctx, a ->
             val ids = pick(a.optString("which", "all"))

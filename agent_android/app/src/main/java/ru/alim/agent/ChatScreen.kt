@@ -334,9 +334,16 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     val hasCards = m.items.isNotBlank() || m.files.isNotBlank() || m.photos.isNotBlank()
 
     if (m.note) {
-        Box(Modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(md(m.text), style = body(13, color = Ink), lineHeight = 18.sp, modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(12.dp))
                 .background(Th.c.inBubble.copy(alpha = 0.7f)).padding(horizontal = 12.dp, vertical = 6.dp))
+            val cards = m.photos.isNotBlank() || m.items.isNotBlank() || m.files.isNotBlank()
+            if (cards) Column(Modifier.widthIn(max = 330.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble).padding(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
+                if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
+                if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
+            }
         }
         return
     }

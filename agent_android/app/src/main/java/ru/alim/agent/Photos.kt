@@ -73,3 +73,63 @@ private fun Thumb(id: Long, modifier: Modifier) {
         bmp?.let { Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
     }
 }
+
+/**
+ * Поиск фото по содержимому: «где я в чёрной футболке», «фото кота», «скрин чека».
+ * Берём последние снимки галереи, уменьшаем до превью и пачками показываем модели с распознаванием картинок.
+ */
+object PhotoSearch {
+    private fun thumb(ctx: android.content.Context, id: Long): String? = runCatching {
+        val uri = photoUri(id)
+        val bmp: Bitmap = if (Build.VERSION.SDK_INT >= 29) ctx.contentResolver.loadThumbnail(uri, Size(320, 320), null)
+        else {
+            val o = BitmapFactory.Options().apply { inSampleSize = 8 }
+            ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o) } ?: return null
+        }
+        val out = java.io.ByteArrayOutputStream(); bmp.compress(Bitmap.CompressFormat.JPEG, 70, out)
+        "data:image/jpeg;base64," + android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+    }.getOrNull()
+
+    /** Возвращает id подходящих фото (от новых к старым) и сколько просмотрено. */
+    suspend fun find(ctx: android.content.Context, query: String, days: Int, max: Int, screenshots: Boolean): Pair<List<Long>, Int> {
+        val since = System.currentTimeMillis() - days * 86_400_000L
+        val ids = ArrayList<Long>()
+        ctx.contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME, MediaStore.Images.Media.DATE_TAKEN),
+            "${MediaStore.Images.Media.DATE_TAKEN} >= ?", arrayOf(since.toString()), "${MediaStore.Images.Media.DATE_TAKEN} DESC")?.use { c ->
+            while (c.moveToNext() && ids.size < max) {
+                val bucket = c.getString(1).orEmpty()
+                if (!screenshots && bucket.contains("screenshot", true)) continue
+                ids += c.getLong(0)
+            }
+        }
+        if (ids.isEmpty()) return emptyList<Long>() to 0
+        val model = Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
+        val batches = ids.chunked(16)
+        val found = java.util.Collections.synchronizedList(ArrayList<Long>())
+        kotlinx.coroutines.coroutineScope {
+            batches.chunked(3).forEach { group ->
+                group.map { batch ->
+                    kotlinx.coroutines.async(Dispatchers.IO) {
+                        runCatching {
+                            val pics = batch.mapNotNull { id -> thumb(ctx, id)?.let { id to it } }
+                            if (pics.isEmpty()) return@runCatching
+                            val content = org.json.JSONArray().put(org.json.JSONObject().put("type", "text").put("text",
+                                "Перед тобой ${pics.size} фото, по порядку с номерами 1..${pics.size}. Ищем: «$query». " +
+                                    "Верни ТОЛЬКО JSON {\"match\": [номера]} — фото, на которых это действительно есть. Нет таких — {\"match\": []}."))
+                            pics.forEachIndexed { i, (_, url) ->
+                                content.put(org.json.JSONObject().put("type", "text").put("text", "Фото ${i + 1}:"))
+                                content.put(org.json.JSONObject().put("type", "image_url").put("image_url", org.json.JSONObject().put("url", url)))
+                            }
+                            val r = Llm.chat(model, org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", content)), 200)
+                            val t = r.text; val a = t.indexOf('{'); val b = t.lastIndexOf('}')
+                            val arr = org.json.JSONObject(t.substring(a, b + 1)).optJSONArray("match") ?: return@runCatching
+                            for (k in 0 until arr.length()) pics.getOrNull(arr.optInt(k) - 1)?.let { found += it.first }
+                        }
+                    }
+                }.forEach { it.await() }
+            }
+        }
+        return ids.filter { it in found } to ids.size
+    }
+}

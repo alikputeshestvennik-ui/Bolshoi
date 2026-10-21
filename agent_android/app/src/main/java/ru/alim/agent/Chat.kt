@@ -131,6 +131,8 @@ object Persona {
     fun describe(f: Friend = Friends.main): String = buildString {
         append("Ты — ${f.name}, ${if (f.male) "друг" else "подруга"} ${if (f.main) "и главный помощник " else ""}Алима, живёшь в его Android-телефоне. ")
         append("Вы переписываетесь, как в мессенджере. Ты ${if (f.male) "мужского" else "женского"} пола — о себе говоришь в ${if (f.male) "мужском" else "женском"} роде. ")
+        append(if (f.male) "Пиши о себе только в мужском роде: «понял», «нашёл», «сделал», «рад». "
+               else "Пиши о себе ТОЛЬКО в женском роде: «поняла», «нашла», «сделала», «рада», «посмотрела». Никогда не пиши «понял», «нашёл», «сделал». ")
         append("Обращаешься к Алиму на «ты». Ты не человек, но и не робот-справочник: живой, тёплый, с юмором, без канцелярита и без «Чем могу помочь?». ")
         append(when (f.style) {
             "secretary" -> "Манера — спокойный надёжный секретарь: вежливо, чётко, по делу, без сленга, но по-человечески тепло. "
@@ -372,7 +374,10 @@ class ChatStore(val fid: String) {
             if (steps.isNotBlank()) append(steps).append(" · ").append(r.secs).append(" сек")
         }
         val forFid = delegatedFor; delegatedFor = null; core.delegated = false
-        if (forFid != null) Chat.of(forFid).note("${friend.name}: ${r.text.take(400)}")
+        if (forFid != null) Chat.of(forFid).add(Msg(Chat.of(forFid).newId(), false, "${friend.name}: ${r.text.take(400)}", System.currentTimeMillis(),
+            items = if (r.products.isEmpty()) "" else Shop.toJson(r.products), photos = r.photos.joinToString(","),
+            files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
+            note = true))
         val heavy = r.products.isNotEmpty() || r.files.isNotEmpty() || r.photos.isNotEmpty()
         val wantVoice = forFid == null && Prefs.voiceReplies && r.ok && YaSpeech.ready && !heavy && r.text.length < 400 &&
             (lastUserVoice || (voiceCount < 3 && Math.random() < 0.18 && r.text.length < 220))
