@@ -154,7 +154,8 @@ fun ChatScreen(go: (Scr) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(Persona.name, style = body(17, FontWeight.Bold), maxLines = 1)
                         val st = Online.status()
-                        Text(st, style = body(13, color = if (Agent.busy) Th.c.violet else if (Online.online) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (Agent.busy) shortStatus(st) else st, style = body(if (Agent.busy) 12 else 13, color = if (Online.online && !Agent.busy) Teal else Muted),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -190,6 +191,12 @@ fun ChatScreen(go: (Scr) -> Unit) {
 
 private fun Modifier.glass(h: HazeState, shape: androidx.compose.ui.graphics.Shape): Modifier =
     this.clip(shape).hazeChild(h, shape).background(Th.c.glass.copy(alpha = if (Th.c.dark) 0.35f else 0.30f)).border(1.dp, Th.c.glassLine, shape)
+
+/** Шаг модели в шапке — коротко: первые 3 слова. */
+private fun shortStatus(s: String): String {
+    val w = s.trimEnd('…', '.').split(' ').filter { it.isNotBlank() }
+    return if (w.size <= 3) s else w.take(3).joinToString(" ") + "…"
+}
 
 private fun sameDay(a: Long, b: Long): Boolean {
     val x = Calendar.getInstance().apply { timeInMillis = a }; val y = Calendar.getInstance().apply { timeInMillis = b }
@@ -230,7 +237,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
     var dx by remember { mutableFloatStateOf(0f) }
     val anim by animateFloatAsState(dx, label = "swipe")
     var menu by remember { mutableStateOf(false) }
-    val shape = if (m.me) RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)
+    val shape = if (m.me) RoundedCornerShape(18.dp, 18.dp, 5.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 5.dp)
     val bg = if (m.me) Th.c.outBubble else Th.c.inBubble
     val ink = if (m.me) Th.c.outInk else Th.c.ink
     val meta = if (m.me) Th.c.outMeta else Th.c.meta
@@ -245,14 +252,14 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
                     onDragCancel = { dx = 0f },
                 ) { _, d -> dx = (dx + d).coerceIn(0f, limit) }
             }) {
-            Column(Modifier.widthIn(max = if (hasCards) 330.dp else 300.dp).clip(shape).background(bg)
+            Column(Modifier.widthIn(max = if (hasCards) 320.dp else 285.dp).clip(shape).background(bg)
                 .combinedClickable(onClick = {}, onLongClick = { menu = true })
-                .padding(horizontal = if (hasCards) 6.dp else 10.dp, vertical = 7.dp),
+                .padding(horizontal = if (hasCards) 6.dp else 9.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (m.replyText.isNotBlank()) Quote(if (m.replyMe) "Алим" else Persona.name, m.replyText, m.me)
                 if (m.voice.isNotBlank()) VoiceRow(m, meta)
                 val text = m.text
-                if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(16, color = if (m.failed) Danger else ink), lineHeight = 22.sp,
+                if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(15, color = if (m.failed) Danger else ink), lineHeight = 20.sp,
                     modifier = Modifier.padding(horizontal = if (hasCards) 4.dp else 2.dp))
                 if (m.voice.isNotBlank() && m.me && text.isNotBlank())
                     Text(text, style = body(13, color = meta), modifier = Modifier.padding(horizontal = 2.dp))
@@ -262,8 +269,8 @@ private fun MsgRow(m: Msg, showButtons: Boolean) {
                 if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
                 Row(Modifier.align(Alignment.End).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (m.meta.isNotBlank()) { Text(m.meta, style = body(11, color = meta), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp)); HGap(8) }
-                    Text(hhmm.format(Date(m.ts)), style = body(12, color = meta))
-                    if (m.me) { HGap(4); Text(when (m.status) { "pending" -> "◷"; "sent" -> "✓"; else -> "✓✓" }, style = body(12, color = meta)) }
+                    Text(hhmm.format(Date(m.ts)), style = body(11, color = meta))
+                    if (m.me) { HGap(4); Text(when (m.status) { "pending" -> "◷"; "sent" -> "✓"; else -> "✓✓" }, style = body(11, color = meta)) }
                 }
             }
             DropdownMenu(menu, { menu = false }, Modifier.background(Th.c.card)) {
@@ -304,7 +311,7 @@ private fun VoiceRow(m: Msg, meta: Color) {
     val playing = VoiceMsg.playing == m.voice
     val acc = if (m.me) Th.c.outMeta else Teal
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(2.dp)) {
-        Box(Modifier.size(42.dp).clip(CircleShape).background(acc).clickable(onClickLabel = if (playing) "Пауза" else "Слушать") { VoiceMsg.toggle(m.voice) },
+        Box(Modifier.size(38.dp).clip(CircleShape).background(acc).clickable(onClickLabel = if (playing) "Пауза" else "Слушать") { VoiceMsg.toggle(m.voice) },
             contentAlignment = Alignment.Center) {
             if (playing) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(Modifier.size(4.dp, 14.dp).background(Th.c.inBubble)); Box(Modifier.size(4.dp, 14.dp).background(Th.c.inBubble))
@@ -312,7 +319,7 @@ private fun VoiceRow(m: Msg, meta: Color) {
         }
         HGap(10)
         Column {
-            Canvas(Modifier.width(150.dp).height(28.dp)) {
+            Canvas(Modifier.width(140.dp).height(26.dp)) {
                 val n = wave.size; val w = size.width / n
                 wave.forEachIndexed { i, v ->
                     val h = size.height * v
@@ -406,24 +413,24 @@ private fun Composer(haze: HazeState) {
     AttachChips()
     Spacer(Modifier.height(4.dp))
 
-    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
         // поле — растёт вместе с текстом (до 6 строк)
-        Row(Modifier.fillMaxWidth().padding(end = 64.dp).heightIn(min = 56.dp).glass(haze, RoundedCornerShape(28.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        Row(Modifier.fillMaxWidth().padding(end = 54.dp).heightIn(min = 46.dp).glass(haze, RoundedCornerShape(23.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
                 var blink by remember { mutableStateOf(true) }
                 LaunchedEffect(Unit) { while (true) { delay(500); blink = !blink } }
                 Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF5A5F).copy(alpha = if (blink) 1f else 0.3f))); HGap(10)
                 val e = VoiceMsg.elapsed
-                Text("%d:%02d,%d".format(e / 60000, e / 1000 % 60, e / 100 % 10), style = body(17, FontWeight.SemiBold)); HGap(14)
+                Text("%d:%02d,%d".format(e / 60000, e / 1000 % 60, e / 100 % 10), style = body(16, FontWeight.SemiBold)); HGap(14)
                 if (locked) Text("Отмена", style = body(15, FontWeight.Bold, Teal), modifier = Modifier.clickable { finishVoice(true) }.padding(6.dp))
                 else Text("‹ Влево — отмена", style = body(15, color = Muted), modifier = Modifier.offset { IntOffset(dragX.roundToInt() / 2, 0) })
             } else {
-                BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f), textStyle = body(17), cursorBrush = SolidColor(Teal), maxLines = 6,
-                    decorationBox = { inner -> if (text.isEmpty()) Text("Сообщение", style = body(17, color = Muted)); inner() })
+                BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f), textStyle = body(16), cursorBrush = SolidColor(Teal), maxLines = 6,
+                    decorationBox = { inner -> if (text.isEmpty()) Text("Сообщение", style = body(16, color = Muted)); inner() })
                 HGap(8)
-                Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(26.dp).clickable { attach() })
+                Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(24.dp).clickable { attach() })
             }
         }
         // кнопка: отправить / микрофон
@@ -432,13 +439,13 @@ private fun Composer(haze: HazeState) {
         val sc by animateFloatAsState(if (big) 1.7f else 1f, label = "mic")
         if (rec && !locked) {
             // замок над кнопкой
-            Column(Modifier.align(Alignment.BottomEnd).offset(y = (-120).dp).padding(end = 4.dp).width(48.dp).height(84.dp)
+            Column(Modifier.align(Alignment.BottomEnd).offset(y = (-110).dp).width(46.dp).height(84.dp)
                 .glass(haze, RoundedCornerShape(24.dp)), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
                 Icon(Icons.Filled.Lock, "Запись без рук", tint = Ink, modifier = Modifier.size(20.dp).offset { IntOffset(0, (dragY / 3).roundToInt()) })
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.BottomEnd).size(56.dp).scale(sc).clip(CircleShape).background(Teal)
+        Box(Modifier.align(Alignment.BottomEnd).size(46.dp).scale(sc).clip(CircleShape).background(Teal)
             .then(
                 if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { Chat.send(text); text = "" }
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
@@ -472,8 +479,8 @@ private fun Composer(haze: HazeState) {
                     }
                 }
             ), contentAlignment = Alignment.Center) {
-            if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(24.dp))
-            else MicIcon(OnAccent, 26.dp)
+            if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+            else MicIcon(OnAccent, 22.dp)
         }
     }
 }
