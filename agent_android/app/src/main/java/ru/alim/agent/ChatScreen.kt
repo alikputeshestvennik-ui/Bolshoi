@@ -125,8 +125,7 @@ fun ChatScreen(go: (Scr) -> Unit) {
                 if (Agent.busy && Agent.pending == null) item(key = "typing") { Typing() }
                 val rev = shown.asReversed()
                 rev.forEachIndexed { i, m ->
-                    val lastBot = !m.me && rev.take(i).none { !it.me }
-                    item(key = m.id) { MsgRow(m, showButtons = lastBot && !Agent.busy) }
+                    item(key = m.id) { MsgRow(m, showButtons = i == 0 && !m.me && !Agent.busy && search == null) }
                     val prev = rev.getOrNull(i + 1)
                     if (prev == null || !sameDay(prev.ts, m.ts)) item(key = "d${m.id}") { DateChip(m.ts) }
                 }
@@ -329,9 +328,14 @@ private fun VoiceRow(m: Msg, meta: Color) {
 private fun Typing() {
     var phase by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(350); phase = (phase + 1) % 3 } }
-    Row(Modifier.clip(RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)).background(Th.c.inBubble).padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        repeat(3) { i -> Box(Modifier.size(8.dp).clip(CircleShape).background(Muted.copy(alpha = if (i == phase) 1f else 0.35f))) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.clip(RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)).background(Th.c.inBubble).padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            repeat(3) { i -> Box(Modifier.size(8.dp).clip(CircleShape).background(Muted.copy(alpha = if (i == phase) 1f else 0.35f))) }
+        }
+        HGap(8)
+        Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(RoundedCornerShape(14.dp))
+            .background(Th.c.inBubble.copy(alpha = 0.8f)).clickable(onClickLabel = "Остановить") { Agent.stop() }.padding(horizontal = 12.dp, vertical = 8.dp))
     }
 }
 

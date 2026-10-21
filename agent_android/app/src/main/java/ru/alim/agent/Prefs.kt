@@ -32,7 +32,8 @@ object Prefs {
     var autoReply: Boolean get() = b("ar", false); set(v) = putB("ar", v)
     /** Отвечать ли тем, кто есть в контактах телефона. По умолчанию — нет. */
     var replyKnown: Boolean get() = b("rk", false); set(v) = putB("rk", v)
-    var speak: Boolean get() = b("speak", true); set(v) = putB("speak", v)
+    /** Зачитывать текстовые ответы вслух (голосовые Артура — отдельно). В переписке по умолчанию выключено. */
+    var speak: Boolean get() = b("speak_chat", false); set(v) = putB("speak_chat", v)
     var askedPerms: Boolean get() = b("asked", false); set(v) = putB("asked", v)
     var monitorOn: Boolean get() = b("mon", true); set(v) = putB("mon", v)
     /** Распознавание и озвучка: "android" или "yandex" (SpeechKit). */
