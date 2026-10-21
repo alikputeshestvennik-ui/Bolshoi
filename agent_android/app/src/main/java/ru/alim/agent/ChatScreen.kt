@@ -22,6 +22,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -121,8 +127,11 @@ fun ChatScreen(go: (Scr) -> Unit) {
         // ——— фон и лента (под стеклом) ———
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
             Wallpaper()
-            LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 84.dp, bottom = with(LocalDensity.current) { composerH.toDp() } + 18.dp),
+            // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
+            val bars = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
+            val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = top + 80.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Agent.pending?.let { p -> item(key = "confirm") { ConfirmCard(p.text) } }
                 if (Agent.busy && Agent.pending == null) item(key = "typing") { Typing() }

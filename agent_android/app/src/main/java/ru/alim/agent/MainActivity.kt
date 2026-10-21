@@ -16,6 +16,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // во весь экран: приложение рисует и под шторкой, и под нижней полосой
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         Prefs.init(this)
         Th.load()
         Agent.app = applicationContext

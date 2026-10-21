@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -84,14 +86,16 @@ fun App(voice: Voice) {
     val act = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     androidx.compose.runtime.SideEffect {
         act?.window?.let { w ->
-            w.statusBarColor = Th.c.bg.toArgb(); w.navigationBarColor = Th.c.bg.toArgb()
+            // во весь экран: шторка и нижняя полоса прозрачные, цвет значков — под тему
+            w.statusBarColor = android.graphics.Color.TRANSPARENT; w.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (android.os.Build.VERSION.SDK_INT >= 29) { w.isNavigationBarContrastEnforced = false; w.isStatusBarContrastEnforced = false }
             androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).apply {
                 isAppearanceLightStatusBars = !Th.c.dark; isAppearanceLightNavigationBars = !Th.c.dark
             }
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg)) {
+        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home) Modifier else Modifier.systemBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             when (scr) {
