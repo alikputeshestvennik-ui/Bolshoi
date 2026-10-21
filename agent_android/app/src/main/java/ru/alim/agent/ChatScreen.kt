@@ -145,6 +145,17 @@ fun ChatScreen(go: (Scr) -> Unit) {
             }
         }
 
+        // ——— затемнение сверху и снизу: лента плавно уходит в фон под плашками ———
+        val fade = Th.c.wall.first()
+        val fadeBottom = Th.c.wall.last()
+        val topH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 96.dp
+        val botH = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
+            with(LocalDensity.current) { composerH.toDp() } + 34.dp
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topH)
+            .background(Brush.verticalGradient(listOf(fade.copy(alpha = 0.95f), fade.copy(alpha = 0.75f), fade.copy(alpha = 0f)))))
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(botH)
+            .background(Brush.verticalGradient(listOf(fadeBottom.copy(alpha = 0f), fadeBottom.copy(alpha = 0.75f), fadeBottom.copy(alpha = 0.95f)))))
+
         // ——— шапка ———
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (search != null) {
