@@ -155,8 +155,8 @@ object Tools {
             else "нашёл ${ids.size} фото «$q» среди $seen последних — показал сеткой. Отправить — photos_send."
         },
 
-        Tool("photos_send", "{\"which\": \"all\" | \"1,3\", \"app\": \"telegram|whatsapp|max|any\", \"text\": \"подпись\"} — отправить найденные фото (откроется выбор чата)",
-            confirm = { a -> "Отправить ${pick(a.optString("which", "all")).size} фото в ${a.optString("app", "любое приложение")}? Там выберешь чат." }) t@{ ctx, a ->
+        Tool("photos_send", "{\"which\": \"all\" | \"1,3\", \"app\": \"telegram|whatsapp|max|any\", \"to\": \"Егор\", \"text\": \"подпись\"} — отправить найденные фото. С \"to\" (кому) — сам выберу чат в приложении и перед отправкой спрошу «ОК»; без \"to\" — откроется выбор чата для Алима",
+            confirm = { a -> if (a.optString("to").isNotBlank() && HandsAgent.serviceOn) "" else "Отправить ${pick(a.optString("which", "all")).size} фото в ${a.optString("app", "любое приложение")}? Там выберешь чат." }) t@{ ctx, a ->
             val ids = pick(a.optString("which", "all"))
             if (ids.isEmpty()) return@t "сначала photos_find"
             val uris = ArrayList<Uri>(ids.map { ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, it) })
@@ -166,6 +166,16 @@ object Tools {
             a.optString("text").takeIf { it.isNotBlank() }?.let { i.putExtra(Intent.EXTRA_TEXT, it) }
             val pkg = installed(ctx, a.optString("app"))
             val ok = if (pkg != null) launch(ctx, i.setPackage(pkg)) else launch(ctx, Intent.createChooser(i, "Отправить фото"))
+            val to = a.optString("to").trim()
+            if (ok && to.isNotBlank() && pkg != null && HandsAgent.serviceOn && !HandsAgent.active) {
+                // файл уже прикреплён — рукам остаётся выбрать чат и нажать «отправить» (с подтверждением Алима)
+                val core = Agent.cur()
+                withContext(Dispatchers.Main) {
+                    HandsAgent.start(ctx, core.fid, "В приложении ${a.optString("app")} уже открыта отправка ${ids.size} фото (файлы прикреплены, ничего в галерее не выбирай). " +
+                        "Найди чат «$to», открой его и нажми «отправить». commit_text: «Отправить $to в ${a.optString("app")}: ${ids.size} фото».")
+                }
+                return@t "открыл отправку ${ids.size} фото в ${a.optString("app")}, беру телефон и выбираю чат «$to» — перед отправкой Алим подтвердит"
+            }
             if (ok) "открыл отправку ${ids.size} фото${if (pkg != null) " в ${a.optString("app")}" else ""} — Алим выберет чат" else "не получилось открыть отправку"
         },
 
@@ -248,17 +258,23 @@ object Tools {
             "сегодня ${d.size} задач на ${rub(d.sumOf { it.cost })}, за месяц ${m.size} на ${rub(m.sumOf { it.cost })}, лимит ${Prefs.monthLimit} ₽"
         },
 
-        Tool("photos_last", "{\"count\": 1} — самые свежие фото, первое — последнее снятое") t@{ ctx, a ->
+        Tool("photos_last", "{\"count\": 1, \"kind\": \"any|screenshot|camera\"} — самые свежие фото, первое — последнее. «Последний скриншот» — kind screenshot, «последнее фото с камеры» — camera") t@{ ctx, a ->
             val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
             if (!has(ctx, perm)) return@t "нет разрешения на фото"
             val n = a.optInt("count", 1).coerceIn(1, 30)
             lastPhotos.clear()
             val times = ArrayList<String>()
             val hm = SimpleDateFormat("d MMM HH:mm", ru)
+            val kind = a.optString("kind", "any").lowercase()
             ctx.contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED), null, null,
+                arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED, MediaStore.Images.Media.BUCKET_DISPLAY_NAME), null, null,
                 "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { c ->
-                while (c.moveToNext() && lastPhotos.size < n) { lastPhotos += c.getLong(0); times += hm.format(Date(c.getLong(1) * 1000)) }
+                while (c.moveToNext() && lastPhotos.size < n) {
+                    val shot = c.getString(2).orEmpty().let { it.contains("screenshot", true) || it.contains("снимки экрана", true) }
+                    if (kind == "screenshot" && !shot) continue
+                    if (kind == "camera" && shot) continue
+                    lastPhotos += c.getLong(0); times += hm.format(Date(c.getLong(1) * 1000))
+                }
             }
             if (lastPhotos.isEmpty()) "фото нет" else "готово ${lastPhotos.size} фото (от новых к старым): ${times.joinToString(", ")}. " +
                 "Отправить — photos_send с \"which\": \"all\" или \"1\"."

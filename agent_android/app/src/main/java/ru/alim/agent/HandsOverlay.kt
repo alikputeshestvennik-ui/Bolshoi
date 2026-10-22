@@ -23,6 +23,7 @@ class HandsOverlay(private val ctx: Context) {
     private val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val main = Handler(Looper.getMainLooper())
     private var root: FrameLayout? = null
+    private var confirmRoot: FrameLayout? = null
     private var stepView: TextView? = null
     private var pauseBtn: TextView? = null
     private var eyeBtn: TextView? = null
@@ -96,7 +97,6 @@ class HandsOverlay(private val ctx: Context) {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            addView(confirmBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
         }
         val frame = FrameLayout(ctx).apply { setPadding(dp(10), 0, dp(10), 0); addView(col) }
         root = frame
@@ -108,6 +108,15 @@ class HandsOverlay(private val ctx: Context) {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP; y = dp(40) }
         runCatching { wm.addView(frame, lp) }
+        // карточка подтверждения — отдельным окном внизу, чтобы было видно, ЧТО отправляется
+        val cf = FrameLayout(ctx).apply { setPadding(dp(10), 0, dp(10), 0); addView(confirmBox) }
+        confirmRoot = cf
+        val lp2 = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.BOTTOM; y = dp(28) }
+        runCatching { wm.addView(cf, lp2) }
         update()
     }
 
@@ -120,7 +129,11 @@ class HandsOverlay(private val ctx: Context) {
         val confirming = HandsAgent.state == HandsAgent.St.CONFIRM && HandsAgent.confirmText.isNotBlank()
         confirmText?.text = HandsAgent.confirmText
         confirmBox?.visibility = if (confirming) View.VISIBLE else View.GONE
+        confirmRoot?.visibility = if (confirming) View.VISIBLE else View.GONE
     }
 
-    fun hide() { root?.let { runCatching { wm.removeView(it) } }; root = null }
+    fun hide() {
+        root?.let { runCatching { wm.removeView(it) } }; root = null
+        confirmRoot?.let { runCatching { wm.removeView(it) } }; confirmRoot = null
+    }
 }

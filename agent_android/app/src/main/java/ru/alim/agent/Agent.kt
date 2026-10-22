@@ -189,6 +189,7 @@ object Agent {
             append("- Попросили действие (позвонить, написать, отправить) — делай сразу. Не спрашивай «отправить?»: подтверждение покажет приложение кнопкой.\n")
             append("- Попросили показать или открыть фото — после поиска вызови photos_show (сетка на экране, нажатие открывает в Галерее). Одно фото сразу в Галерее — photos_open.\n")
             append("- Найти фото по тому, ЧТО на нём (вещь, человек, место, «где я в…») — photos_search. По дате — photos_find.\n")
+            append("- Отправить фото или скриншот человеку в мессенджер: photos_last (kind screenshot для скриншота) или photos_find/photos_search → photos_send с app и to (кому). Не бери телефон в руки ради выбора фото в галерее.\n")
             append("- «Последнее фото» — photos_last. SMS — sms_read. Уведомления мессенджеров — messages_recent.\n")
             append("- Тариф, баланс, остатки мобильной связи — ussd с кодом оператора (МТС: тариф *111*59#, баланс *100#), если код знаешь.\n")
             append("- Посты Telegram-канала — tg_channel; ник не знаешь — web_search «<название> telegram канал» и возьми ник из ссылки t.me.\n")
@@ -290,9 +291,9 @@ object Agent {
 
                     val step = Step(stepText); steps.add(step)
                     var allowed = true
-                    t.confirm?.let { c ->
+                    t.confirm?.let { c -> c(args) }?.takeIf { it.isNotBlank() }?.let { ctext ->
                         val d = CompletableDeferred<Boolean>()
-                        pending = Pending(c(args), d, t.secure); phase = Phase.CONFIRM
+                        pending = Pending(ctext, d, t.secure); phase = Phase.CONFIRM
                         allowed = d.await()
                         pending = null; phase = Phase.WORKING
                     }
