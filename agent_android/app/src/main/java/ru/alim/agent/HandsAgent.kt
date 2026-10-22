@@ -124,7 +124,8 @@ object HandsAgent {
             history.put(JSONObject().put("role", "user").put("content", "[шаг $i: $screen]".take(1200)))
             history.put(JSONObject().put("role", "assistant").put("content", r.text.take(600)))
 
-            val j = parse(r.text) ?: run { say(r.text.trim().take(300).ifBlank { "Не понял экран." }); break }
+            val j = parse(r.text)
+            if (j == null) { say(r.text.trim().take(300).ifBlank { "Не понял экран." }); break }
             val action = j.optString("action").trim().lowercase()
             val target = j.optInt("target", -1)
             val text = j.optString("text")
