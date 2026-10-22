@@ -88,6 +88,7 @@ object HandsAgent {
         val sys = system()
         val history = JSONArray()
         var lastAsk = ""
+        var wantLook = false
         say("📱 Беру телефон: $task")
         delay(600)
         var i = 0
@@ -99,18 +100,25 @@ object HandsAgent {
             overlay?.update()
             delay(350)
             val screen = h.observe()
-            val shot = if (eyes || i == 1) withContext(Dispatchers.IO) { h.screenshot() } else null
+            // глаза через Live (безлимит) — только когда нужно: Алим включил 👁, первый шаг, или модель попросила «look»
+            val vision = if (eyes || i == 1 || wantLook) {
+                wantLook = false
+                step = "Присматриваюсь"; overlay?.update()
+                val shot = withContext(Dispatchers.IO) { h.screenshot() }
+                if (shot != null) withContext(Dispatchers.IO) {
+                    runCatching { GEyes.describe(shot, "Коротко опиши, что сейчас на экране: какое это приложение/раздел, что видно (кнопки, поля, списки, важный текст), что можно нажать.") }.getOrNull()
+                } else null
+            } else null
 
-            val userContent = JSONArray()
-                .put(JSONObject().put("type", "text").put("text",
-                    "Задача: $task\nШаг ${i}.\n$screen\n\nЧто делаешь дальше? Ответь ТОЛЬКО JSON."))
-            if (shot != null) userContent.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", shot)))
-
+            val userText = buildString {
+                append("Задача: ").append(task).append("\nШаг ").append(i).append(".\n").append(screen)
+                if (!vision.isNullOrBlank()) append("\n\nГЛАЗА (что видно на экране глазами): ").append(vision.take(1200))
+                append("\n\nЧто делаешь дальше? Ответь ТОЛЬКО JSON.")
+            }
             val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", sys))
-            // короткая память о прошлых шагах
             val hist = (0 until history.length()).toList().takeLast(8)
             for (k in hist) msgs.put(history.getJSONObject(k))
-            msgs.put(JSONObject().put("role", "user").put("content", userContent))
+            msgs.put(JSONObject().put("role", "user").put("content", userText))
 
             val r = withContext(Dispatchers.IO) { Llm.chat(model(), msgs, 500) }
             history.put(JSONObject().put("role", "user").put("content", "[шаг $i: $screen]".take(1200)))
@@ -122,6 +130,7 @@ object HandsAgent {
             val text = j.optString("text")
             val sayMsg = j.optString("say").trim()
             step = j.optString("step").trim().ifBlank { action }
+            if (j.optBoolean("look")) wantLook = true
             overlay?.update()
 
             if (sayMsg.isNotBlank() && sayMsg != lastAsk) { say(sayMsg); lastAsk = sayMsg }
@@ -195,10 +204,11 @@ object HandsAgent {
         val f = Friends.get(fid)
         append("Ты — ${f.name}, и сейчас ты управляешь телефоном Алима вместо него, чтобы выполнить его задачу. ")
         append("Ты видишь экран как список пронумерованных элементов и текст на нём; можешь нажимать, вводить текст, листать, открывать приложения, жать «назад»/«домой».\n")
+        append("Если по списку элементов непонятно, что на экране (карта, фото, картинка, необычный экран) — поставь \"look\":true, и на следующем шаге придёт раздел ГЛАЗА с описанием картинки.\n")
         append("Отвечай ТОЛЬКО одним JSON без markdown:\n")
         append("{\"step\":\"что делаю, 2-4 слова (видно Алиму)\",\"action\":\"tap|type|scroll|open|back|home|wait|ask|done\",")
         append("\"target\":номер элемента,\"text\":\"что ввести\",\"app\":\"название приложения\",\"dir\":\"down|up\",")
-        append("\"commit\":false,\"commit_text\":\"что подтвердить\",\"say\":\"короткое сообщение Алиму или пусто\"}\n")
+        append("\"commit\":false,\"commit_text\":\"что подтвердить\",\"look\":false,\"say\":\"короткое сообщение Алиму или пусто\"}\n")
         append("Действия:\n")
         append("- tap: нажать элемент target. type: ввести text в поле target. scroll: листать dir. open: открыть приложение app. back/home: назад/домой. wait: подождать загрузку.\n")
         append("- ask: не можешь продолжить без Алима (нужен пароль, выбор, данные) — опиши в say и остановись.\n")

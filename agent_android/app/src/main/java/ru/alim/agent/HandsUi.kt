@@ -83,10 +83,10 @@ fun HandsScreen(back: () -> Unit) {
             }
 
             Section("Модель для рук", Agent.short(hands)) {
-                Text("Нужна зоркая модель (видит экран). Gemini 3.8 — бесплатно (нужен VPN), запасной — Claude Haiku.", style = body(12, color = Muted))
+                Text("Руки думают по структуре экрана — хватает лёгкой модели (бесплатно). Глаза подключаются через Live по требованию, без лимита. Запасной — Claude.", style = body(12, color = Muted))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("google:gemini-3.8-flash" to "Gemini 3.8 · free", "google:gemini-3.5-flash-lite" to "Gemini Lite · free",
-                        "claude-5.5-sonnet" to "Claude Sonnet", "claude-5.5-haiku" to "Claude Haiku").forEach { (id, label) ->
+                    listOf("google:gemini-3.1-flash-lite" to "Gemini 3.1 Lite · free", "google:gemini-3.5-flash-lite" to "Gemini 3.5 Lite · free",
+                        "claude-5.5-haiku" to "Claude Haiku", "claude-5.5-sonnet" to "Claude Sonnet").forEach { (id, label) ->
                         Chip2(label, hands == id) { hands = id; Prefs.handsModel = id }
                     }
                 }

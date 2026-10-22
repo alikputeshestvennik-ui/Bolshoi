@@ -146,7 +146,7 @@ class Hands : AccessibilityService() {
         return true
     }
 
-    /** Снимок экрана → base64 JPEG (сжатый). Доступно с Android 11. */
+    /** Снимок экрана → «сырой» base64 JPEG (без префикса). Доступно с Android 11. */
     suspend fun screenshot(): String? {
         if (Build.VERSION.SDK_INT < 30) return null
         val done = CompletableDeferred<Bitmap?>()
@@ -170,7 +170,7 @@ class Hands : AccessibilityService() {
         }
         val out = ByteArrayOutputStream()
         scaled.compress(Bitmap.CompressFormat.JPEG, 70, out)
-        return "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
     companion object {
