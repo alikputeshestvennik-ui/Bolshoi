@@ -108,7 +108,7 @@ fun CallScreen(fid: String, back: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             val secs = if (Call.startedAt > 0) ((now - Call.startedAt) / 1000).coerceAtLeast(0) else 0
             val status = when (Call.state) {
-                Call.St.CONNECTING, Call.St.IDLE -> "соединяю…"
+                Call.St.CONNECTING, Call.St.IDLE -> "вызов…"
                 Call.St.LIVE -> when {
                     Call.doing.isNotBlank() -> Call.doing
                     else -> "%d:%02d".format(secs / 60, secs % 60)
@@ -117,10 +117,6 @@ fun CallScreen(fid: String, back: () -> Unit) {
             }
             Text(status, style = body(16, color = Color.White.copy(alpha = 0.75f)), textAlign = TextAlign.Center, maxLines = 3)
             Spacer(Modifier.height(26.dp))
-            // субтитры — последняя реплика
-            if (Call.caption.isNotBlank() && Call.state == Call.St.LIVE)
-                Text(Call.caption, style = body(15, color = Color.White.copy(alpha = 0.6f)), textAlign = TextAlign.Center, maxLines = 3,
-                    modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.weight(1f))
             core.pending?.let { p -> ConfirmCard(p, core); Spacer(Modifier.height(16.dp)) }
             Row(Modifier.fillMaxWidth().padding(bottom = 40.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {

@@ -83,6 +83,13 @@ object Call {
     private var modelIdx = 0
     private var lastAudioAt = 0L
     private var app: Context? = null
+    private var prox: android.os.PowerManager.WakeLock? = null
+    /** Друг договаривает фразу, которую Алим оборвал «стой» — её звук выкидываем. */
+    @Volatile private var dropping = false
+    @Volatile private var ringing = false
+    private var dialAt = 0L
+    private var ringMin = 3000L
+    private val STOP = Regex("(^|[^а-яё])(сто[йп]|погоди|подожди|перебью|перебиваю|секунд(у|очку)|хватит|замолчи|тихо|послушай|слушай,|минутку)", RegexOption.IGNORE_CASE)
     /** Расшифровка разговора — для итога в чате. */
     private val log = StringBuilder()
     private var curIn = StringBuilder()
@@ -96,9 +103,17 @@ object Call {
         fid = friendId; error = ""; muted = false; doing = ""; caption = ""; talking = false; level = 0f
         log.clear(); curIn.clear(); curOut.clear()
         if (!ready) { error = "Нет ключа Google (секрет GOOGLE_API)"; state = St.ENDED; return }
-        state = St.CONNECTING; modelIdx = 0
+        state = St.CONNECTING; modelIdx = 0; startedAt = 0L; dropping = false
+        dialAt = System.currentTimeMillis(); ringMin = (1800..5500).random().toLong()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        // как у телефона: у уха экран гаснет
+        runCatching {
+            val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+            if (pm.isWakeLockLevelSupported(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK))
+                prox = pm.newWakeLock(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "svoi:call").apply { acquire(3 * 3600_000L) }
+        }
         audioOn(ctx)
+        ring()
         connect()
     }
 
@@ -113,7 +128,8 @@ object Call {
         scope?.cancel(); scope = null
         talking = false; level = 0f; micLevel = 0f; doing = ""
         flushLine()
-        if (wasLive) summarize(fid, dur, log.toString())
+        prox?.let { runCatching { it.release(android.os.PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY) } }; prox = null
+        if (wasLive) { val c = Chat.of(fid); c.note("📞 Звонок · " + if (dur < 60) "$dur сек" else "%d:%02d".format(dur / 60, dur % 60)) }
     }
 
     /** Экран звонка закрыт — всё сброшено. */
@@ -168,14 +184,18 @@ object Call {
         val chat = Chat.of(fid)
         val sys = buildString {
             append(Persona.describe(f))
-            append("\n\nСЕЙЧАС ВЫ С АЛИМОМ РАЗГОВАРИВАЕТЕ ГОЛОСОМ ПО ТЕЛЕФОНУ (звонок в приложении «Свои»). ")
-            append("Говори по-русски, живо и естественно, как друг по телефону: коротко, 1-3 фразы, без списков, ссылок, эмодзи и markdown. ")
-            append("Не читай вслух длинные перечни — назови главное. Если Алим перебил — замолчи и слушай. ")
+            append("\n\nСЕЙЧАС АЛИМ ТЕБЕ ПОЗВОНИЛ — вы говорите ПО ТЕЛЕФОНУ, это обычный телефонный звонок, а не переписка. ")
+            append("Веди себя как живой человек на том конце трубки: начинаешь с «Алло?», говоришь по-русски, естественно, коротко (1-3 фразы), " +
+                "с живыми телефонными словечками («ага», «слушай», «да-да», «угу»), без списков, ссылок, эмодзи. ")
+            append("Если Алим говорит «алло», «ты тут?», «слышишь меня?» — отвечай как по телефону: «Да-да, слышу тебя», «Алло, тут я». ")
+            append("Если в трубке слышно что-то непонятное, обрывки чужого разговора, телевизор или фоновый шум — это не тебе: не отвечай на это, просто жди Алима. ")
+            append("Если не расслышал — переспроси, как по телефону: «Алло, плохо слышно, повтори?». ")
+            append("Не читай вслух длинные перечни — назови главное. ")
             append("Когда нужно что-то СДЕЛАТЬ или УЗНАТЬ (поиск, погода, Ozon, сообщения, фото, маршрут, YouTube, файлы, напоминание и т.п.) — " +
                 "сначала скажи коротко «сейчас гляну», затем вызови функцию task с понятной просьбой. Результат перескажи коротко своими словами; " +
                 "карточки и фото Алим увидит в вашем чате после звонка. Не выдумывай результат, не вызвав task. ")
             append("Переводы денег по звонку не делай — скажи, что переведёшь, когда Алим напишет сумму в чате. ")
-            append("Когда Алим прощается — попрощайся одной фразой и вызови hang_up.\n")
+            append("Когда Алим прощается («давай», «пока», «на связи», «всё, давай») — попрощайся одной короткой фразой («Давай, на связи!») и вызови hang_up.\n")
             append("Сейчас: ${SimpleDateFormat("EEEE, d MMMM, HH:mm", Locale("ru")).format(Date())}.\n")
             append("Что ты знаешь об Алиме:\n${runCatching { Memory.forPrompt(ctx, 30) }.getOrDefault("")}\n")
             append("Последняя переписка в чате:\n${chat.recentForPrompt(20).ifBlank { "(пусто)" }}")
@@ -194,6 +214,9 @@ object Call {
                 .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", voiceFor(f))))))
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", sys))))
             .put("tools", tools)
+            .put("realtimeInputConfig", JSONObject()
+                .put("activityHandling", "NO_INTERRUPTION")
+                .put("automaticActivityDetection", JSONObject().put("startOfSpeechSensitivity", "START_SENSITIVITY_LOW").put("prefixPaddingMs", 200)))
             .put("inputAudioTranscription", JSONObject())
             .put("outputAudioTranscription", JSONObject())
             .put("contextWindowCompression", JSONObject().put("slidingWindow", JSONObject())))
@@ -204,10 +227,14 @@ object Call {
         if (o.has("setupComplete")) {
             setupDone = true
             scope?.launch(Dispatchers.Main) {
+                // пусть погудит, как настоящий звонок, потом «снимает трубку»
+                val wait = dialAt + ringMin - System.currentTimeMillis()
+                if (wait > 0) delay(wait)
+                if (state != St.CONNECTING) return@launch
+                ringing = false; delay(250)
                 state = St.LIVE; startedAt = System.currentTimeMillis()
                 startMic()
-                // друг начинает разговор сам, как при ответе на звонок
-                send(JSONObject().put("realtimeInput", JSONObject().put("text", "(Алим позвонил тебе. Ответь на звонок коротко, по-дружески.)")))
+                send(JSONObject().put("realtimeInput", JSONObject().put("text", "(Звонит Алим. Ты сняла/снял трубку — скажи только «Алло?» (можно «Алло, да?») и жди, что он скажет.)")))
             }
             return
         }
@@ -216,6 +243,8 @@ object Call {
             sc.optJSONObject("inputTranscription")?.optString("text")?.takeIf { it.isNotBlank() }?.let { t ->
                 if (curOut.isNotEmpty()) flushOut()
                 curIn.append(t); caption = curIn.toString().takeLast(160)
+                // перебить можно только явным «стой», «погоди», «перебью»… — остальные голоса вокруг не мешают
+                if ((talking || curOut.isNotEmpty()) && !dropping && STOP.containsMatchIn(curIn)) { dropping = true; clearPlayback() }
             }
             sc.optJSONObject("outputTranscription")?.optString("text")?.takeIf { it.isNotBlank() }?.let { t ->
                 if (curIn.isNotEmpty()) flushIn()
@@ -224,11 +253,11 @@ object Call {
             sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
                 for (i in 0 until parts.length()) {
                     val d = parts.optJSONObject(i)?.optJSONObject("inlineData") ?: continue
-                    if (!d.optString("mimeType").startsWith("audio")) continue
+                    if (!d.optString("mimeType").startsWith("audio") || dropping) continue
                     runCatching { Base64.decode(d.optString("data"), Base64.DEFAULT) }.getOrNull()?.let { play.trySend(it) }
                 }
             }
-            if (sc.optBoolean("turnComplete")) { flushOut() }
+            if (sc.optBoolean("turnComplete")) { flushOut(); dropping = false }
         }
         o.optJSONObject("toolCall")?.optJSONArray("functionCalls")?.let { calls ->
             for (i in 0 until calls.length()) {
@@ -291,7 +320,7 @@ object Call {
     private fun audioOn(ctx: Context) {
         val am = ctx.getSystemService(AudioManager::class.java)
         runCatching { am.mode = AudioManager.MODE_IN_COMMUNICATION }
-        speaker = true; route()
+        speaker = false; route()
         val min = AudioTrack.getMinBufferSize(OUT_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         track = runCatching {
             AudioTrack.Builder()
@@ -320,6 +349,31 @@ object Call {
                 if (talking && System.currentTimeMillis() - lastAudioAt > 600) { talking = false; level = 0f }
             }
         }
+    }
+
+    /** Длинные гудки (425 Гц: 1 с звук, 4 с тишина), пока друг не снял трубку. */
+    private fun ring() {
+        ringing = true
+        val t = track ?: return
+        val chunk = OUT_RATE / 10
+        scope?.launch {
+            var ms = 0
+            while (ringing && isActive) {
+                val on = ms % 5000 < 1000
+                val b = tone(chunk, if (on) 0.18 else 0.0, ms * OUT_RATE / 1000)
+                t.write(b, 0, b.size)
+                ms += 100
+            }
+        }
+    }
+
+    private fun tone(n: Int, amp: Double, from: Int): ByteArray {
+        val b = ByteArray(n * 2)
+        for (i in 0 until n) {
+            val v = (Math.sin(2 * Math.PI * 425 * (from + i) / OUT_RATE) * amp * 32767).toInt()
+            b[2 * i] = (v and 0xff).toByte(); b[2 * i + 1] = (v shr 8 and 0xff).toByte()
+        }
+        return b
     }
 
     private fun clearPlayback() {
@@ -368,8 +422,20 @@ object Call {
         micJob?.cancel(); micJob = null
         rec?.let { runCatching { it.stop() }; it.release() }; rec = null
         aec?.release(); aec = null; ns?.release(); ns = null
+        ringing = false
         play.close()
-        track?.let { runCatching { it.stop() }; it.release() }; track = null
+        // короткие гудки «пи-пи-пи» — трубку положили
+        track?.let { t ->
+            Thread {
+                runCatching {
+                    t.pause(); t.flush(); t.play()
+                    repeat(3) { val on = tone(OUT_RATE * 35 / 100, 0.16, 0); t.write(on, 0, on.size); val off = tone(OUT_RATE * 35 / 100, 0.0, 0); t.write(off, 0, off.size) }
+                    Thread.sleep(400)
+                }
+                runCatching { t.stop() }; t.release()
+            }.start()
+        }
+        track = null
         app?.getSystemService(AudioManager::class.java)?.let { am ->
             runCatching { if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice() else @Suppress("DEPRECATION") { am.isSpeakerphoneOn = false } }
             runCatching { am.mode = AudioManager.MODE_NORMAL }
@@ -380,24 +446,5 @@ object Call {
         var s = 0.0; var i = 0; var n = 0
         while (i + 1 < b.size) { val v = ((b[i + 1].toInt() shl 8) or (b[i].toInt() and 0xff)).toShort() / 32768.0; s += v * v; i += 8; n++ }
         return if (n == 0) 0f else Math.sqrt(s / n).toFloat()
-    }
-
-    // ——— после звонка: отметка в чате ———
-
-    private fun summarize(fid: String, secs: Long, transcript: String) {
-        val chat = Chat.of(fid)
-        val len = if (secs < 60) "$secs сек" else "${secs / 60} мин"
-        CoroutineScope(Dispatchers.IO).launch {
-            var sum = ""
-            if (transcript.length > 40) runCatching {
-                val r = Llm.chat(Prefs.fastModel, JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", "Перескажи телефонный разговор одной-двумя короткими фразами: о чём говорили и о чём договорились. Без вступлений."))
-                    .put(JSONObject().put("role", "user").put("content", transcript.takeLast(6000))), 200)
-                sum = r.text.trim().take(400)
-            }
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                chat.note("📞 Звонок · $len" + if (sum.isNotBlank()) "\n$sum" else "")
-            }
-        }
     }
 }
