@@ -38,7 +38,13 @@ object Prefs {
     var monitorOn: Boolean get() = b("mon", true); set(v) = putB("mon", v)
     /** Распознавание и озвучка: "android" или "yandex" (SpeechKit). */
     var sttEngine: String get() = s("stt", "android"); set(v) = put("stt", v)
-    var ttsEngine: String get() = s("tts", "android"); set(v) = put("tts", v)
+    /** Озвучка: google (Gemini, голос как в звонке) · yandex · android. */
+    var ttsEngine: String get() = s("tts2", "google"); set(v) = put("tts2", v)
+    /** Голос Google для главного друга («» — по полу автоматически). */
+    var gVoice: String get() = s("gvoice", ""); set(v) = put("gvoice", v)
+    /** Фоновая модель: уведомления, сводки, сам пишет, поиск фото. Пусто — как «Чат». */
+    var bgModel: String get() = s("bgm", "google:gemini-3.5-flash-lite"); set(v) = put("bgm", v.trim())
+    val bg: String get() = bgModel.ifBlank { fastModel }
     var ttsVoice: String get() = s("voice", "filipp"); set(v) = put("voice", v)
     var interval: Int get() = sp.getInt("int", 30); set(v) = sp.edit().putInt("int", v).apply()
     var digestHour: Int get() = sp.getInt("dh", 21); set(v) = sp.edit().putInt("dh", v).apply()
@@ -86,6 +92,7 @@ object Prefs {
     fun num(t: String) = t.replace(',', '.').trim().toDoubleOrNull() ?: 0.0
     /** Цена вызова в рублях по токенам. */
     fun price(model: String, inTok: Int, outTok: Int): Double {
+        if (Llm.isGoogle(model)) return 0.0
         val smart = model == smartModel && model != fastModel
         val pin = num(if (smart) smartIn else fastIn)
         val pout = num(if (smart) smartOut else fastOut)

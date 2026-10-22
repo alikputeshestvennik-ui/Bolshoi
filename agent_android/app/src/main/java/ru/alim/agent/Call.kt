@@ -171,12 +171,15 @@ object Call {
 
     private fun send(o: JSONObject) { ws?.send(o.toString()) }
 
-    private fun voiceFor(f: Friend): String {
-        val male = listOf("Puck", "Orus", "Charon", "Fenrir")
-        val female = listOf("Aoede", "Leda", "Kore", "Zephyr")
-        val l = if (f.male) male else female
+    val MALE = listOf("Puck", "Orus", "Charon", "Fenrir")
+    val FEMALE = listOf("Aoede", "Leda", "Kore", "Zephyr")
+    /** Голос друга — один и тот же в звонке и в голосовых. */
+    fun voiceFor(f: Friend): String {
+        val l = if (f.male) MALE else FEMALE
+        if (f.main && Prefs.gVoice in l) return Prefs.gVoice
         return if (f.main) l[0] else l[(f.id.hashCode() and 0x7fffffff) % l.size]
     }
+    val LIVE_MODEL get() = MODELS[0]
 
     private fun setup(): JSONObject {
         val f = Friends.get(fid)

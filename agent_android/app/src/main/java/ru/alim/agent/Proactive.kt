@@ -78,7 +78,7 @@ object Proactive {
             val c = Chat.of(f.id)
             if (c.core.busy) continue
             val last = c.msgs.lastOrNull { !it.note } ?: continue
-            val model = f.model.ifBlank { Prefs.fastModel }
+            val model = f.model.ifBlank { Prefs.bg }
             // 1) разговор оборвался — мягко вернуться (один раз)
             if (now - last.ts in 3 * 3600_000L..36 * 3600_000L && Prefs.nudgedAt(f.id) < last.ts) {
                 Prefs.setNudgedAt(f.id, now)
@@ -114,12 +114,12 @@ object Proactive {
             "2-5 коротких фраз, можно маленький список «кто писал». Ответь ТОЛЬКО JSON: {\"text\": \"…\", \"buttons\": [\"до 2 кнопок, например «Ответить маме»\"]}"
         val user = "Дата: ${SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Date())}\nПогода: $weather\nСобытия за ночь:\n${ev.ifBlank { "(ничего)" }}\n" +
             "Память об Алиме:\n${Memory.forPrompt(ctx, 25)}"
-        val r = Llm.chat(Prefs.fastModel, JSONArray().put(msg("system", sys)).put(msg("user", user)), 600)
+        val r = Llm.chat(Prefs.bg, JSONArray().put(msg("system", sys)).put(msg("user", user)), 600)
         val j = json(r.text)
         val text = j.optString("text").ifBlank { r.text.trim() }.take(1200)
         val btn = j.optJSONArray("buttons")?.let { a -> (0 until minOf(2, a.length())).map { a.optString(it) } }.orEmpty().filter { it.isNotBlank() }
         Chat.botSays(text, btn)
-        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Доброе утро", 1, Agent.short(Prefs.fastModel), r.cost(Prefs.fastModel), true, 0, text))
+        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Доброе утро", 1, Agent.short(Prefs.bg), r.cost(Prefs.bg), true, 0, text))
     }
 
     private suspend fun chat(ctx: Context) {
@@ -129,15 +129,15 @@ object Proactive {
             "Ответь ТОЛЬКО JSON: {\"text\": \"…\", \"youtube\": \"поисковый запрос для ролика или пусто\", \"voice\": true|false}"
         val user = "Сейчас: ${SimpleDateFormat("EEEE, HH:mm", Locale("ru")).format(Date())}\nНедавняя переписка:\n${Chat.recentForPrompt(12).ifBlank { "(пусто)" }}\n" +
             "Память об Алиме:\n${Memory.forPrompt(ctx, 30)}"
-        val r = Llm.chat(Prefs.fastModel, JSONArray().put(msg("system", sys)).put(msg("user", user)), 300)
+        val r = Llm.chat(Prefs.bg, JSONArray().put(msg("system", sys)).put(msg("user", user)), 300)
         val j = json(r.text)
         val text = j.optString("text").ifBlank { return }.take(500)
         val q = j.optString("youtube").trim()
         val items = if (q.isNotBlank()) runCatching { YouTube.search(q, "month", 5).shuffled().take(1) }.getOrDefault(emptyList()) else emptyList()
-        val voice = if (items.isEmpty() && Prefs.voiceReplies && j.optBoolean("voice") && YaSpeech.ready)
+        val voice = if (items.isEmpty() && Prefs.voiceReplies && j.optBoolean("voice") && VoiceMsg.canSpeak)
             runCatching { VoiceMsg.speakToFile(ctx, text) }.getOrNull() else null
         Chat.botSays(text, items = if (items.isEmpty()) "" else Shop.toJson(items.map { it.item() }), voice = voice)
-        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Написал сам: ${text.take(40)}", 1, Agent.short(Prefs.fastModel), r.cost(Prefs.fastModel), true, 0, text))
+        Journal.add(ctx, TaskRec(System.currentTimeMillis(), "Написал сам: ${text.take(40)}", 1, Agent.short(Prefs.bg), r.cost(Prefs.bg), true, 0, text))
     }
 }
 

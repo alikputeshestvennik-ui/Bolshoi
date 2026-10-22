@@ -116,16 +116,14 @@ object VoiceMsg {
 
     // ——— распознавание ———
     suspend fun transcribe(ctx: Context, pcm: ByteArray): String {
-        if (Prefs.sttEngine != "yandex" && Build.VERSION.SDK_INT >= 33) {
-            val t = runCatching { androidFromAudio(ctx, pcm) }.getOrNull()
-            if (!t.isNullOrBlank()) return t
-        }
-        if (YaSpeech.ready) {
-            val t = runCatching { withContext(Dispatchers.IO) { yandexLong(pcm) } }.getOrNull()
-            if (!t.isNullOrBlank()) return t
-        }
-        if (Build.VERSION.SDK_INT >= 33 && Prefs.sttEngine == "yandex") {
-            val t = runCatching { androidFromAudio(ctx, pcm) }.getOrNull()
+        // сначала выбранный способ, потом остальные по очереди
+        val order = (listOf(Prefs.sttEngine) + listOf("android", "google", "yandex")).distinct()
+        for (e in order) {
+            val t = when (e) {
+                "android" -> if (Build.VERSION.SDK_INT >= 33) runCatching { androidFromAudio(ctx, pcm) }.getOrNull() else null
+                "google" -> if (GVoice.ready) runCatching { withContext(Dispatchers.IO) { GVoice.recognize(pcm, RATE) } }.getOrNull() else null
+                else -> if (YaSpeech.ready) runCatching { withContext(Dispatchers.IO) { yandexLong(pcm) } }.getOrNull() else null
+            }
             if (!t.isNullOrBlank()) return t
         }
         return ""
@@ -179,13 +177,22 @@ object VoiceMsg {
 
     // ——— голос Артура ———
     /** Синтез ответа в .wav (SpeechKit, PCM 48 кГц). */
-    fun speakToFile(ctx: Context, text: String, male: Boolean = Prefs.botMale): Pair<String, Int>? {
+    fun speakToFile(ctx: Context, text: String, f: Friend = Friends.main): Pair<String, Int>? {
         val clean = text.replace(Regex("\\*\\*|[#•]|https?://\\S+"), "").replace(Regex("[\\p{So}\\p{Cn}]"), "").trim()
         if (clean.isBlank()) return null
-        val pcm = YaSpeech.synth(clean.take(800), voiceFor(male))
+        // Google (голос как в звонке) — если выбран; не вышло — Яндекс
+        if (Prefs.ttsEngine == "google" && GVoice.ready) {
+            val g = runCatching { GVoice.synth(clean.take(800), Call.voiceFor(f)) }.getOrDefault(ByteArray(0))
+            if (g.size > GVoice.RATE) return saveWav(ctx, g, GVoice.RATE)
+        }
+        if (!YaSpeech.ready) return null
+        val pcm = YaSpeech.synth(clean.take(800), voiceFor(f.male))
         if (pcm.isEmpty()) return null
         return saveWav(ctx, pcm, 48000)
     }
+
+    /** Есть чем записать голосовое. */
+    val canSpeak: Boolean get() = YaSpeech.ready || (Prefs.ttsEngine == "google" && GVoice.ready)
 
     /** Голос под пол Артура: выбранный в настройках, если подходит, иначе Филипп / Алёна. */
     fun voiceFor(male: Boolean = Prefs.botMale): String {

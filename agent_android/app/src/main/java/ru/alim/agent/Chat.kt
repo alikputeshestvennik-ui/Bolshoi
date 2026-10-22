@@ -379,7 +379,7 @@ class ChatStore(val fid: String) {
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
             note = true))
         val heavy = r.products.isNotEmpty() || r.files.isNotEmpty() || r.photos.isNotEmpty()
-        val wantVoice = forFid == null && Prefs.voiceReplies && r.ok && YaSpeech.ready && !heavy && r.text.length < 400 &&
+        val wantVoice = forFid == null && Prefs.voiceReplies && r.ok && VoiceMsg.canSpeak && !heavy && r.text.length < 400 &&
             (lastUserVoice || (voiceCount < 3 && Math.random() < 0.18 && r.text.length < 220))
         lastUserVoice = false
         val base = Msg(newId(), false, r.text, System.currentTimeMillis(),
@@ -387,7 +387,7 @@ class ChatStore(val fid: String) {
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
             photos = r.photos.joinToString(","), buttons = r.buttons, meta = meta, failed = !r.ok)
         if (wantVoice) io.launch {
-            val v = runCatching { VoiceMsg.speakToFile(Chat.app, r.text, friend.male) }.getOrNull()
+            val v = runCatching { VoiceMsg.speakToFile(Chat.app, r.text, friend) }.getOrNull()
             withContext(Dispatchers.Main) {
                 if (v != null) voiceCount++
                 post(if (v != null) base.copy(voice = v.first, dur = v.second) else base)

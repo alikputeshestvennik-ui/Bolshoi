@@ -208,7 +208,7 @@ object AutoReply {
         val user = "Время: ${SimpleDateFormat("HH:mm, EEEE", Locale("ru")).format(Date(now))}\n" +
             "Приложение: ${m.app}\nОт: ${m.from} (в контактах: ${if (known) "да" else "нет"})\n" +
             "Сообщения подряд (ответь на ВСЕ сразу одним ответом, в пересказе упомяни каждое):\n${thread(m)}"
-        val model = Prefs.fastModel
+        val model = Prefs.bg
         try {
             val r = Llm.chat(model, JSONArray().put(JSONObject().put("role", "system").put("content", sys))
                 .put(JSONObject().put("role", "user").put("content", user)), 400)

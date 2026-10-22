@@ -355,6 +355,9 @@ object Agent {
         m.contains("deepseek", true) -> "DeepSeek"
         m.contains("qwen", true) -> "Qwen"
         m.contains("gpt-oss", true) -> "gpt-oss"
+        m.contains("gemma", true) -> "Gemma"
+        m.contains("flash-lite", true) -> "Gemini Lite"
+        m.contains("gemini", true) -> "Gemini " + Regex("\\d+(\\.\\d+)?").find(m)?.value.orEmpty()
         else -> m.substringAfterLast('/').take(18)
     }
 }

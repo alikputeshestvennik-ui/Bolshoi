@@ -468,6 +468,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
     var fastIn by remember { mutableStateOf(Prefs.fastIn) }
     var fastOut by remember { mutableStateOf(Prefs.fastOut) }
     var smart by remember { mutableStateOf(Prefs.smartModel) }
+    var bgm by remember { mutableStateOf(Prefs.bgModel) }
     var smartIn by remember { mutableStateOf(Prefs.smartIn) }
     var smartOut by remember { mutableStateOf(Prefs.smartOut) }
     var city by remember { mutableStateOf(Prefs.homeCity) }
@@ -499,13 +500,14 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 })
             }
 
-            Section("Модели", "${Agent.short(fast)} · ${Agent.short(smart)}") {
+            Section("Модели", "${Agent.short(fast)} · ${Agent.short(smart)} · фон ${Agent.short(bgm)}") {
                 if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
                 Text("Модели Яндекса бесплатны (цена 0) и идут без VPN. Цена — ₽ за 1000 токенов.", style = body(12, color = Muted))
-                ModelEditor("Быстрая — простые команды", "fast", fast, fastIn, fastOut,
+                ModelEditor("Чат — обычные сообщения и простые просьбы", "fast", fast, fastIn, fastOut,
                     { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
-                ModelEditor("Сильная — сложные задачи", "smart", smart, smartIn, smartOut,
+                ModelEditor("Руки — сложные дела (Ozon, много шагов)", "smart", smart, smartIn, smartOut,
                     { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
+                ModelEditor("Фон — уведомления, сводки, сам пишет, поиск фото", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
                 BigButton("Проверить связь", {
                     check = "Проверяю…"
                     scope.launch {
@@ -526,8 +528,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
             }
 
-            Section("Голос", (if (Prefs.sttEngine == "yandex") "распознаёт Яндекс" else "распознаёт телефон") + " · " +
-                    (if (Prefs.ttsEngine == "yandex") "озвучка Яндекс" else "озвучка телефон") + if (speak) " · вслух" else "") {
+            fun eng(e: String) = when (e) { "yandex" -> "Яндекс"; "google" -> "Google"; else -> "телефон" }
+            Section("Голос", "распознаёт ${eng(Prefs.sttEngine)} · озвучка ${eng(Prefs.ttsEngine)}" + if (speak) " · вслух" else "") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Озвучивать ответы", style = body(15, FontWeight.SemiBold), modifier = Modifier.weight(1f))
                     Toggle(speak) { speak = it; Prefs.speak = it }
@@ -593,19 +595,28 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
 fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: String,
                 onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit) {
     // Готовые варианты: Claude через gptunnel или модели Yandex AI Studio (ключ Yandex Cloud, без VPN)
-    val presets = if (slot == "fast") listOf(
+    val g = listOf(
+        Triple("Gemini 3.5 Lite · бесплатно", "google:gemini-3.5-flash-lite", "0" to "0"),
+        Triple("Gemini 3.1 Lite · бесплатно", "google:gemini-3.1-flash-lite", "0" to "0"),
+        Triple("Gemini 3.8 Flash · 20 в день", "google:gemini-3.8-flash", "0" to "0"),
+    )
+    val presets = if (slot == "bg") g.take(2) + listOf(
+        Triple("Claude Haiku", "claude-5.5-haiku", "0.03" to "0.15"),
+        Triple("Alice AI Flash", "yc:aliceai-llm-flash", "0" to "0"),
+        Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
+    ) else if (slot == "fast") listOf(
         Triple("Claude Haiku", "claude-5.5-haiku", "0.03" to "0.15"),
         Triple("Alice AI Flash", "yc:aliceai-llm-flash", "0" to "0"),
         Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
         Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
         Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
-    ) else listOf(
+    ) + g else listOf(
         Triple("Claude Sonnet", "claude-5.5-sonnet", "0.4" to "2"),
         Triple("Alice AI", "yc:aliceai-llm", "0" to "0"),
         Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
         Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
         Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
-    )
+    ) + g.reversed()
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -619,7 +630,8 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
         }
         OutlinedTextField(model, onModel, Modifier.fillMaxWidth(), label = { Text("Модель") }, singleLine = true,
             textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (Llm.isGoogle(model)) Text("Google AI: бесплатно, нужен VPN. Без VPN или сверх лимита ответит Claude Haiku.", style = body(12, color = Muted))
+        if (slot != "bg" && !Llm.isGoogle(model)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(pin, onIn, Modifier.weight(1f), label = { Text("вход ₽/1K") }, singleLine = true,
                 textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))

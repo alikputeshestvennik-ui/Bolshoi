@@ -139,7 +139,7 @@ object Attach {
     /** Модель с распознаванием изображений: Claude через gptunnel (яндексовские модели картинки не видят). */
     private fun look(urls: List<String>): String {
         if (urls.isEmpty()) return "(не удалось открыть)"
-        val model = Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
+        val model = Prefs.bg.takeUnless { Llm.isYandex(it) } ?: Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
         val content = JSONArray().put(JSONObject().put("type", "text").put("text",
             "Опиши по-русски, что на изображении, и перепиши весь видимый текст как есть. Если это вещь или товар — назови тип, бренд и модель как можно точнее " +
                 "(по логотипу, надписям, дизайну), цвет, материал; если место или здание — что это и где, если узнаёшь. В конце строка «Для поиска: …» — 3-6 слов, по которым это искать. Коротко, по делу."))

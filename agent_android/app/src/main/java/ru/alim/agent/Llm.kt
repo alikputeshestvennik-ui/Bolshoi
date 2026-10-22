@@ -37,6 +37,43 @@ object Llm {
     /** Один ход модели. Неизвестное gptunnel название модели — подбираем верное, запоминаем и повторяем. */
     /** YandexGPT и другие модели Yandex AI Studio: «yandexgpt-5.1/latest» или полный «gpt://каталог/…». */
     fun isYandex(m: String) = m.startsWith("gpt://") || m.startsWith("yc:") || m.startsWith("yandex", true)
+    /** Google AI Studio: «google:gemini-3.5-flash-lite», «gemini-…», «gemma-…». Нужен VPN. */
+    fun isGoogle(m: String) = m.startsWith("google:") || m.startsWith("gemini", true) || m.startsWith("gemma", true)
+    /** Платная ли модель (для подсказок в настройках). */
+    fun free(m: String) = isGoogle(m)
+
+    /** Запасная модель, если Google не ответил (нет VPN, лимит): Claude через gptunnel, иначе Яндекс. */
+    private fun fallback(): String = when {
+        key.isNotBlank() -> "claude-5.5-haiku"
+        YaCloud.llmKey.isNotBlank() -> "yc:aliceai-llm-flash"
+        else -> ""
+    }
+
+    private fun googleChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+        val k = Call.key
+        if (k.isBlank()) error("нет ключа Google (GOOGLE_API)")
+        val id = model.removePrefix("google:")
+        fun body(js: Boolean) = JSONObject().put("model", id).put("temperature", 0.3).put("max_tokens", maxTokens + 2000).put("messages", messages)
+            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
+            .also { if (js && !id.contains("lite") && !id.startsWith("gemma")) it.put("reasoning_effort", "low") }
+        fun send(b: JSONObject) = http.newCall(Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+            .header("Authorization", "Bearer $k").post(b.toString().toRequestBody(JSON)).build()).execute()
+            .use { it.code to (it.body?.string() ?: "") }
+        var r = Pair(0, "")
+        for (attempt in 0 until 3) {
+            r = send(body(json))
+            if (r.first == 400 && json) r = send(body(false))
+            // бесплатный тариф: 15 запросов в минуту — при 429 ждём и пробуем ещё
+            if (r.first !in setOf(429, 500, 503)) break
+            if (r.first == 429 && r.second.contains("per day", true)) break
+            Thread.sleep(if (r.first == 429) 6000L * (attempt + 1) else 1500L)
+        }
+        if (r.first !in 200..299) error("Google ${r.first}: ${r.second.take(200)}")
+        val j = JSONObject(r.second)
+        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val u = j.optJSONObject("usage") ?: JSONObject()
+        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
+    }
 
     private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val k = YaCloud.llmKey
@@ -71,9 +108,18 @@ object Llm {
     }
 
     /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
-    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply =
-        try { chatRaw(model, messages, maxTokens, json).also { Online.ok() } }
+    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply {
+        if (isGoogle(model)) {
+            // Google без VPN или сверх лимита — молча отвечает запасная модель
+            try { return googleChat(model, messages, maxTokens, json).also { Online.ok() } }
+            catch (e: Exception) {
+                val fb = fallback(); if (fb.isBlank()) throw e
+                return chat(fb, messages, maxTokens, json)
+            }
+        }
+        return try { chatRaw(model, messages, maxTokens, json).also { Online.ok() } }
         catch (e: java.io.IOException) { Online.fail(); throw e }
+    }
 
     private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply =
         if (isYandex(model)) yandexChat(model, messages, maxTokens, json) else try {

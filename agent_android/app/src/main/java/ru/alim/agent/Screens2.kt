@@ -172,9 +172,29 @@ fun VoiceSettings() {
 
     if (!YaSpeech.ready) Text("Для голоса Яндекса нужен ключ и каталог Yandex Cloud.", style = body(12, color = Amber))
     Text("Распознавание речи", style = body(13, color = Muted))
-    Pick(listOf("android" to "Телефон (Google/Samsung)", "yandex" to "Яндекс SpeechKit"), stt) { stt = it; Prefs.sttEngine = it }
-    Text("Озвучка ответов", style = body(13, color = Muted))
-    Pick(listOf("android" to "Телефон", "yandex" to "Яндекс SpeechKit"), tts) { tts = it; Prefs.ttsEngine = it }
+    Pick(listOf("android" to "Телефон (Samsung)", "google" to "Google Gemini", "yandex" to "Яндекс SpeechKit"), stt) { stt = it; Prefs.sttEngine = it }
+    Text("Не распознал выбранный — пробует остальные по очереди.", style = body(12, color = Muted))
+    Text("Озвучка (голосовые друзей и чтение вслух)", style = body(13, color = Muted))
+    Pick(listOf("google" to "Google — как в звонке", "yandex" to "Яндекс SpeechKit", "android" to "Телефон"), tts) { tts = it; Prefs.ttsEngine = it }
+    if (tts == "google") {
+        var gv by remember { mutableStateOf(Prefs.gVoice) }
+        val male = Friends.main.male
+        Text("Голос ${Friends.main.name} (у остальных друзей — свой, по полу)", style = body(13, color = Muted))
+        Pick(listOf("" to "Авто") + (if (male) Call.MALE else Call.FEMALE).map { it to it }, gv) { gv = it; Prefs.gVoice = it }
+        BigButton("Послушать", {
+            res = "Записываю…"
+            scope.launch {
+                res = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val p = GVoice.synth("Привет, Алим! Вот так я теперь звучу. Как тебе?", Call.voiceFor(Friends.main))
+                        if (p.isEmpty()) error("Google не ответил — включён VPN?")
+                        YaSpeech.play(p, GVoice.RATE); null
+                    }.getOrElse { it.message ?: "ошибка" }
+                }
+            }
+        }, bg = Card, fg = Ink, border = Line)
+        Text("Без VPN голосовые запишет Яндекс.", style = body(12, color = Muted))
+    }
     if (tts == "yandex") {
         Pick(YaSpeech.VOICES, voice) { voice = it; Prefs.ttsVoice = it }
         BigButton("Проверить голос", {

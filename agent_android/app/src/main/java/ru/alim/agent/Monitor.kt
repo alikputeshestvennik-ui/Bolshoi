@@ -79,7 +79,7 @@ object Monitor {
             append("Ответь ТОЛЬКО JSON: {\"urgent\": [{\"id\": 123, \"say\": \"коротко для уведомления, до 12 слов\"}], \"facts\": [\"…\"]}")
         }
         val user = "Сейчас: ${SimpleDateFormat("EEEE d MMMM, HH:mm", Locale("ru")).format(Date())}\nСобытия:\n" + batch.joinToString("\n") { Events.line(it) }
-        val model = Prefs.fastModel
+        val model = Prefs.bg
         val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 700)
         val j = json(r.text)
         val urgent = HashMap<Long, String>()
@@ -115,7 +115,7 @@ object Monitor {
         if (!Prefs.ytPicks) return "подборка выключена"
         val mem = Memory.forPrompt(ctx, 50)
         if (mem.isBlank()) return "в памяти пока нет интересов"
-        val model = Prefs.fastModel
+        val model = Prefs.bg
         val sys = "По фактам об Алиме придумай до 3 коротких запросов (2-4 слова, по-русски) для поиска свежих роликов на YouTube по его устойчивым интересам: " +
             "хобби, увлечения, темы, техника, места, проекты. Не про здоровье и деньги. Ответь ТОЛЬКО JSON {\"q\": [\"…\"]}; интересов не видно — {\"q\": []}."
         val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", mem)), 200)
@@ -157,7 +157,7 @@ object Monitor {
             append("Задачи агента сегодня:\n")
             tasks.forEach { append("- ${it.title} (${if (it.ok) "ок" else "ошибка"})\n") }
         }
-        val model = Prefs.fastModel
+        val model = Prefs.bg
         val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 1200)
         val j = json(r.text)
         val text = j.optString("digest").ifBlank { r.text.trim() }.take(3000)

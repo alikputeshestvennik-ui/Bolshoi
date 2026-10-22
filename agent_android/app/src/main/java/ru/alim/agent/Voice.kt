@@ -127,6 +127,16 @@ class Voice(private val ctx: Context) {
 
     fun say(text: String) {
         hush()
+        if (Prefs.ttsEngine == "google" && GVoice.ready) {
+            sayJob = scope.launch {
+                speaking = true
+                try {
+                    val pcm = withContext(Dispatchers.IO) { GVoice.synth(text.take(800), Call.voiceFor(Friends.main)) }
+                    if (pcm.size > GVoice.RATE) withContext(Dispatchers.IO) { YaSpeech.play(pcm, GVoice.RATE) } else sayAndroid(text)
+                } catch (e: Exception) { sayAndroid(text) } finally { speaking = false }
+            }
+            return
+        }
         if (yaTts) {
             sayJob = scope.launch {
                 speaking = true

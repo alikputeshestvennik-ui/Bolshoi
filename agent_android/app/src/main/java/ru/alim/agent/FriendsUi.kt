@@ -184,7 +184,8 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                 Text("Модель", style = body(12, color = Muted))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("" to "Как в настройках", "claude-5.5-sonnet" to "Claude Sonnet", "claude-5.5-haiku" to "Claude Haiku",
-                        "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT", "yc:deepseek-v4.1-flash" to "DeepSeek", "yc:qwen3.6-35b-a3b" to "Qwen")
+                        "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT", "yc:deepseek-v4.1-flash" to "DeepSeek", "yc:qwen3.6-35b-a3b" to "Qwen",
+                        "google:gemini-3.5-flash-lite" to "Gemini Lite · бесплатно")
                         .forEach { (id, label) ->
                             val on = f.model == id
                             Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) AccentSoft else Th.c.bg)
