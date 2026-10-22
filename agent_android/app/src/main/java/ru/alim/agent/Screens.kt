@@ -547,8 +547,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 statusColor = if (mails > 0) Muted else Amber) { MailSettings() }
 
             val yc = Yoo.connected(ctx) && tick >= 0
-            Section("ЮMoney", if (yc) "подключено · только просмотр" else "не подключено", Violet) {
-                Text("Агент видит баланс и историю, платить не может.", style = body(12, color = Muted))
+            Section("ЮMoney", if (yc) "подключено · переводы с отпечатком" else "не подключено", Violet) {
+                Text("${Friends.main.name} видит баланс и историю. Переводит только по твоей просьбе в чате и после отпечатка пальца.", style = body(12, color = Muted))
                 if (yc) BigButton("Отключить", { Yoo.disconnect(ctx); tick++ }, bg = Card, fg = Ink, border = Line)
                 else BigButton("Подключить ЮMoney", openYoo, bg = Violet, fg = Bg)
             }

@@ -71,36 +71,53 @@ object Proactive {
      * Остальные друзья сами не болтают. Пишут, только если разговор оборвался и забыт на несколько часов,
      * или главный нашёл в уведомлениях что-то, связанное с их разговором.
      */
+    /** Служебный шум, который друзьям пересказывать не нужно. */
+    private val NOISE = Regex("загружен|скачан|download|github|сборк|\\.apk|\\.zip|claude|rustore|обновлен|update|vpn|впн|прошла проверку|не прошла проверку", RegexOption.IGNORE_CASE)
+
     private suspend fun friends(ctx: Context) {
         if (quiet()) return
         val now = System.currentTimeMillis()
+        val day = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         for (f in Friends.list.filter { !it.main }) {
             val c = Chat.of(f.id)
             if (c.core.busy) continue
             val last = c.msgs.lastOrNull { !it.note } ?: continue
+            val lastMine = c.msgs.lastOrNull { it.me }?.ts ?: 0L
+            // не больше одного неотвеченного: уже писала сама после последнего сообщения Алима — молчит
+            val initAt = Prefs.nudgedAt(f.id)
+            if (initAt > lastMine) continue
+            // не чаще раза в 6 часов и не больше двух раз в день
+            if (now - initAt < 6 * 3600_000L) continue
+            if (Prefs.initCount(f.id, day) >= 2) continue
             val model = f.model.ifBlank { Prefs.bg }
+            fun mark() { Prefs.setNudgedAt(f.id, now); Prefs.addInitCount(f.id, day) }
             // 1) разговор оборвался — мягко вернуться (один раз)
-            if (now - last.ts in 3 * 3600_000L..36 * 3600_000L && Prefs.nudgedAt(f.id) < last.ts) {
-                Prefs.setNudgedAt(f.id, now)
-                val sys = Persona.describe(f) + "\nВаш разговор оборвался несколько часов назад. Если тема не закрыта — напиши одно короткое " +
-                    "сообщение, чтобы ненавязчиво к ней вернуться (спроси, как вышло, актуально ли ещё). Если Алим попрощался, поблагодарил " +
-                    "и тема закрыта — верни пустой text. Ответь ТОЛЬКО JSON: {\"text\": \"…\"}"
+            if (now - last.ts in 3 * 3600_000L..36 * 3600_000L && last.me.not() && lastMine > 0) {
+                val sys = Persona.describe(f) + "\nВаш разговор оборвался несколько часов назад. Если тема явно НЕ закрыта (Алим что-то искал, решал, " +
+                    "собирался сделать) — напиши одно короткое сообщение, чтобы ненавязчиво к ней вернуться. Если Алим попрощался, поблагодарил, " +
+                    "ответил коротко или тема закрыта — верни пустой text. Сомневаешься — пустой text. Ответь ТОЛЬКО JSON: {\"text\": \"…\"}"
                 val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", c.recentForPrompt(14))), 250)
-                json(r.text).optString("text").trim().takeIf { it.isNotBlank() }?.let { c.botSays(it.take(500)); return }
+                val t = json(r.text).optString("text").trim()
+                Prefs.setNudgedAt(f.id, now) // даже если промолчала — второй раз к этой паузе не возвращаемся
+                if (t.isNotBlank()) { Prefs.addInitCount(f.id, day); c.botSays(t.take(500)); return }
                 continue
             }
-            // 2) главный заметил в уведомлениях что-то по теме этого разговора
-            if (now - last.ts < 3 * 86_400_000L) {
+            // 2) главный заметил в уведомлениях что-то ПРЯМО по теме этого разговора
+            if (now - lastMine < 2 * 86_400_000L) {
                 val since = maxOf(Prefs.evCheck(f.id), now - 6 * 3600_000L)
                 Prefs.setEvCheck(f.id, now)
-                val ev = Events.since(ctx, since).filterNot { it.bulk }.takeLast(30)
+                val ev = Events.since(ctx, since).filterNot { it.bulk }.map { Events.line(it).take(200) }.filterNot { NOISE.containsMatchIn(it) }.takeLast(25)
                 if (ev.isEmpty()) continue
-                val sys = Persona.describe(f) + "\nНиже новые уведомления с телефона Алима — их заметил ${Friends.main.name}. " +
-                    "Если среди них есть что-то ПРЯМО связанное с темой вашего разговора — напиши Алиму короткое сообщение об этом " +
-                    "(скажи, что ${Friends.main.name} заметил). Если связи нет — пустой text. Ответь ТОЛЬКО JSON: {\"text\": \"…\"}"
-                val user = "Ваш разговор:\n${c.recentForPrompt(10)}\n\nУведомления:\n" + ev.joinToString("\n") { Events.line(it).take(200) }
-                val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 250)
-                json(r.text).optString("text").trim().takeIf { it.isNotBlank() }?.let { c.botSays(it.take(500)); return }
+                val sys = Persona.describe(f) + "\nНиже новые уведомления с телефона Алима — их заметил ${Friends.main.name}. Почти всегда они НЕ касаются вашего " +
+                    "разговора — тогда related=false. related=true ТОЛЬКО если уведомление прямо про предмет вашего разговора (например, вы обсуждали заказ " +
+                    "трусов на Ozon — и пришло «заказ Ozon доставлен»). Покупки, платежи, письма, сервисы, приложения, не упомянутые в разговоре, — НЕ связаны. " +
+                    "Если related=true — в why назови, с какой репликой разговора связь, а в text напиши Алиму одно короткое сообщение. " +
+                    "Ответь ТОЛЬКО JSON: {\"related\": true|false, \"why\": \"…\", \"text\": \"…\"}"
+                val user = "Ваш разговор:\n${c.recentForPrompt(10)}\n\nУведомления:\n" + ev.joinToString("\n")
+                val r = Llm.chat(model, JSONArray().put(msg("system", sys)).put(msg("user", user)), 300)
+                val j = json(r.text)
+                val t = j.optString("text").trim()
+                if (j.optBoolean("related") && j.optString("why").length > 8 && t.isNotBlank()) { mark(); c.botSays(t.take(400)); return }
             }
         }
     }

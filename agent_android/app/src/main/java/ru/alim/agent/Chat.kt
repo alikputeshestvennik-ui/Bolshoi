@@ -63,6 +63,8 @@ data class Friend(
     val avatar: String = "",
     val role: String = "",           // «о чём с ним» — для второстепенных
     val model: String = "",          // "" — как в настройках
+    val voice: String = "",          // голос Google (Algenib, Kore…), "" — по полу
+    val speech: String = "",         // как говорит: акцент, темп, словечки
 ) {
     val main: Boolean get() = id == Friends.MAIN
 }
@@ -82,10 +84,19 @@ object Friends {
             val a = JSONArray(raw)
             for (i in 0 until a.length()) a.getJSONObject(i).let { o ->
                 list.add(Friend(o.getString("id"), o.optString("n"), o.optBoolean("m", true), o.optString("s", "buddy"),
-                    o.optString("a"), o.optString("r"), o.optString("md")))
+                    o.optString("a"), o.optString("r"), o.optString("md"), o.optString("v"), o.optString("sp")))
             }
         }
         if (list.none { it.main }) list.add(0, Friend(MAIN, Prefs.botName, Prefs.botMale, Prefs.botStyle, Prefs.botAvatar))
+        // Мустафа — по описанию Алима (один раз)
+        if (!Prefs.seededMustafa) {
+            Prefs.seededMustafa = true
+            val i = list.indexOfFirst { it.name.trim().equals("Мустафа", true) }
+            val m = if (i >= 0) list[i] else Friend("f" + System.currentTimeMillis(), "Мустафа", true, "buddy", role = "просто поболтать по-братски")
+            val f = m.copy(male = true, voice = m.voice.ifBlank { "Algenib" }, speech = m.speech.ifBlank { MUSTAFA })
+            if (i >= 0) list[i] = f else list.add(f)
+            persist()
+        }
         current = Prefs.lastChat.takeIf { id -> list.any { it.id == id } } ?: MAIN
     }
 
@@ -114,10 +125,13 @@ object Friends {
 
     fun open(id: String) { current = id; Prefs.lastChat = id }
 
+    const val MUSTAFA = "Кавказский акцент, говорит неспешно, тепло и уверенно, как старший брат. Вставляет «слушай, брат», «Иншаллах», " +
+        "«Машаллах», «Альхамдулиллях», «валлах», «дон» — в случайных местах, но не в каждой фразе. Любит пошутить, по-доброму подкалывает."
+
     private fun persist() {
         val a = JSONArray()
         list.forEach { f -> a.put(JSONObject().put("id", f.id).put("n", f.name).put("m", f.male).put("s", f.style)
-            .put("a", f.avatar).put("r", f.role).put("md", f.model)) }
+            .put("a", f.avatar).put("r", f.role).put("md", f.model).put("v", f.voice).put("sp", f.speech)) }
         Prefs.friends = a.toString()
     }
 }
@@ -144,6 +158,7 @@ object Persona {
             append("Главный помощник в телефоне — ${Friends.main.name}: звонки, сообщения, SMS, фото, переводы, будильники и прочие действия в телефоне делает он. ")
             append("Если Алим просит такое — вызови ask_main с понятной просьбой, а Алиму коротко скажи, что передал. ")
         }
+        if (f.speech.isNotBlank()) append("Твоя манера речи (держи её и в тексте, и голосом): ${f.speech} ")
         append("Сообщения короткие, как в переписке: 1-4 фразы. Списки — только когда перечисляешь найденное.")
     }
 

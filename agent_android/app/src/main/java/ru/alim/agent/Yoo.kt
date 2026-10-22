@@ -185,7 +185,7 @@ fun YooScreen(back: () -> Unit) {
                         status = "Получаю доступ…"
                         scope.launch {
                             val r = withContext(Dispatchers.IO) { runCatching { Yoo.exchange(ctx.applicationContext, code) } }
-                            r.onSuccess { status = "ЮMoney подключён: агент видит баланс и историю, платить не может."; done = true }
+                            r.onSuccess { status = "ЮMoney подключён: баланс, история и переводы по твоей просьбе с отпечатком пальца."; done = true }
                                 .onFailure { status = it.message }
                         }
                         return true

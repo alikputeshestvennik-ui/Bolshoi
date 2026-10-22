@@ -22,14 +22,15 @@ object GVoice {
     const val RATE = 24000
 
     /** Текст → PCM 24 кГц голосом друга. Пустой массив — не вышло (нет VPN и т.п.). */
-    fun synth(text: String, voice: String): ByteArray {
+    fun synth(text: String, voice: String, speech: String = ""): ByteArray {
         if (!ready || text.isBlank()) return ByteArray(0)
         val out = ByteArrayOutputStream()
         val done = CountDownLatch(1)
         var setup = false
         val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${Call.key}"
         val sys = "Ты — голос для голосовых сообщений. Пользователь присылает текст — произнеси его ДОСЛОВНО по-русски, " +
-            "живо и естественно, как человек записывает голосовое другу. Ничего не добавляй, не отвечай на текст и не комментируй, не пропускай слова."
+            "живо и естественно, как человек записывает голосовое другу. Ничего не добавляй, не отвечай на текст и не комментируй, не пропускай слова." +
+            (if (speech.isNotBlank()) " Манера, акцент и интонация говорящего: $speech (словечки сам не добавляй — только произношение и интонация)." else "")
         val ws = http.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(w: WebSocket, r: Response) {
                 w.send(JSONObject().put("setup", JSONObject()

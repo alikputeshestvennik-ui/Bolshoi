@@ -131,7 +131,7 @@ class Voice(private val ctx: Context) {
             sayJob = scope.launch {
                 speaking = true
                 try {
-                    val pcm = withContext(Dispatchers.IO) { GVoice.synth(text.take(800), Call.voiceFor(Friends.main)) }
+                    val pcm = withContext(Dispatchers.IO) { GVoice.synth(text.take(800), Call.voiceFor(Friends.main), Friends.main.speech) }
                     if (pcm.size > GVoice.RATE) withContext(Dispatchers.IO) { YaSpeech.play(pcm, GVoice.RATE) } else sayAndroid(text)
                 } catch (e: Exception) { sayAndroid(text) } finally { speaking = false }
             }

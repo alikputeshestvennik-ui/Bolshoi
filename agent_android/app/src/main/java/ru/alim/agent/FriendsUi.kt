@@ -177,6 +177,38 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                     .clip(RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp)).background(Th.c.inBubble).border(1.dp, Line, RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp)).padding(12.dp))
                 Text("так ${f.name.ifBlank { "он" }} будет писать", style = body(12, color = Muted))
             }
+            CardBox {
+                var vmsg by remember { mutableStateOf<String?>(null) }
+                Text("Голос — в звонке и голосовых", style = body(12, color = Muted))
+                val cur = Call.voiceFor(f)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (if (f.male) Call.MALE_V else Call.FEMALE_V).forEach { (id, label) ->
+                        val on = cur == id
+                        Column(Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) AccentSoft else Th.c.bg)
+                            .border(1.dp, if (on) Teal else Line, RoundedCornerShape(12.dp)).clickable { upd(f.copy(voice = id)) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)) {
+                            Text(id, style = body(13, FontWeight.SemiBold, if (on) Teal else Ink))
+                            Text(label, style = body(11, color = Muted))
+                        }
+                    }
+                }
+                androidx.compose.material3.OutlinedTextField(f.speech, { upd(f.copy(speech = it)) }, Modifier.fillMaxWidth(),
+                    label = { Text("Как говорит") }, minLines = 2, maxLines = 6, textStyle = body(14), shape = RoundedCornerShape(14.dp), colors = fieldColors())
+                Text("Акцент, темп, интонация, словечки. Например: «кавказский акцент, неспешно, вставляет ‹слушай, брат›».", style = body(12, color = Muted))
+                BigButton("Послушать", {
+                    vmsg = "Записываю…"
+                    scope.launch {
+                        vmsg = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val p = GVoice.synth("Привет, Алим! Это ${f.name}. Вот так я звучу — как тебе?", Call.voiceFor(f), f.speech)
+                                if (p.isEmpty()) error("Google не ответил — включён VPN?")
+                                YaSpeech.play(p, GVoice.RATE); null
+                            }.getOrElse { it.message ?: "ошибка" }
+                        }
+                    }
+                }, bg = Card, fg = Ink, border = Line)
+                vmsg?.let { Text(it, style = body(13, color = Amber)) }
+            }
             if (!f.main) CardBox {
                 Field("О чём с ним говорить", f.role) { upd(f.copy(role = it)) }
                 Text("Например: «просто поболтать», «помощь с кодом», «спорт и питание». Действия в телефоне он попросит у ${Friends.main.name}.",

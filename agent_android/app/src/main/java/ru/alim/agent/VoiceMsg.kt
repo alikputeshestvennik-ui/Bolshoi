@@ -182,7 +182,7 @@ object VoiceMsg {
         if (clean.isBlank()) return null
         // Google (голос как в звонке) — если выбран; не вышло — Яндекс
         if (Prefs.ttsEngine == "google" && GVoice.ready) {
-            val g = runCatching { GVoice.synth(clean.take(800), Call.voiceFor(f)) }.getOrDefault(ByteArray(0))
+            val g = runCatching { GVoice.synth(clean.take(800), Call.voiceFor(f), f.speech) }.getOrDefault(ByteArray(0))
             if (g.size > GVoice.RATE) return saveWav(ctx, g, GVoice.RATE)
         }
         if (!YaSpeech.ready) return null

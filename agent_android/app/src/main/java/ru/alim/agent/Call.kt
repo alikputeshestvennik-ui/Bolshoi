@@ -87,6 +87,10 @@ object Call {
     /** Друг договаривает фразу, которую Алим оборвал «стой» — её звук выкидываем. */
     @Volatile private var dropping = false
     @Volatile private var ringing = false
+    @Volatile private var resetReq = false
+    @Volatile private var written = 0L
+    private const val PRE_FIRST = OUT_RATE * 2 * 4 / 10   // 0,4 с
+    private const val PRE_AGAIN = OUT_RATE * 2 / 4        // 0,25 с
     private var dialAt = 0L
     private var ringMin = 3000L
     private val STOP = Regex("(^|[^а-яё])(сто[йп]|погоди|подожди|перебью|перебиваю|секунд(у|очку)|хватит|замолчи|тихо|послушай|слушай,|минутку)", RegexOption.IGNORE_CASE)
@@ -171,10 +175,20 @@ object Call {
 
     private fun send(o: JSONObject) { ws?.send(o.toString()) }
 
-    val MALE = listOf("Puck", "Orus", "Charon", "Fenrir")
-    val FEMALE = listOf("Aoede", "Leda", "Kore", "Zephyr")
+    /** Голоса Google: мужские и женские, с характером тембра. */
+    val MALE_V = listOf("Puck" to "бодрый", "Orus" to "твёрдый", "Charon" to "ровный", "Fenrir" to "живой", "Algenib" to "с хрипотцой",
+        "Algieba" to "бархатный", "Achird" to "дружелюбный", "Zubenelgenubi" to "простой", "Umbriel" to "спокойный", "Enceladus" to "с придыханием",
+        "Iapetus" to "чёткий", "Rasalgethi" to "рассказчик", "Alnilam" to "уверенный", "Schedar" to "ровный, низкий", "Sadachbia" to "весёлый",
+        "Sadaltager" to "мудрый")
+    val FEMALE_V = listOf("Aoede" to "лёгкий", "Leda" to "молодой", "Kore" to "уверенный", "Zephyr" to "звонкий", "Callirrhoe" to "непринуждённый",
+        "Autonoe" to "яркий", "Despina" to "бархатный", "Erinome" to "чистый", "Laomedeia" to "бодрый", "Achernar" to "мягкий",
+        "Gacrux" to "взрослый", "Pulcherrima" to "напористый", "Vindemiatrix" to "нежный", "Sulafat" to "тёплый")
+    val MALE = MALE_V.take(4).map { it.first }
+    val FEMALE = FEMALE_V.take(4).map { it.first }
     /** Голос друга — один и тот же в звонке и в голосовых. */
     fun voiceFor(f: Friend): String {
+        val all = (if (f.male) MALE_V else FEMALE_V).map { it.first }
+        if (f.voice in all) return f.voice
         val l = if (f.male) MALE else FEMALE
         if (f.main && Prefs.gVoice in l) return Prefs.gVoice
         return if (f.main) l[0] else l[(f.id.hashCode() and 0x7fffffff) % l.size]
@@ -194,6 +208,7 @@ object Call {
             append("Если в трубке слышно что-то непонятное, обрывки чужого разговора, телевизор или фоновый шум — это не тебе: не отвечай на это, просто жди Алима. ")
             append("Если не расслышал — переспроси, как по телефону: «Алло, плохо слышно, повтори?». ")
             append("Не читай вслух длинные перечни — назови главное. ")
+            if (f.speech.isNotBlank()) append("\nКАК ТЫ ГОВОРИШЬ (голос, акцент, интонация, словечки — держи весь разговор): ${f.speech}\n")
             append("Когда нужно что-то СДЕЛАТЬ или УЗНАТЬ (поиск, погода, Ozon, сообщения, фото, маршрут, YouTube, файлы, напоминание и т.п.) — " +
                 "сначала скажи коротко «сейчас гляну», затем вызови функцию task с понятной просьбой. Результат перескажи коротко своими словами; " +
                 "карточки и фото Алим увидит в вашем чате после звонка. Не выдумывай результат, не вызвав task. ")
@@ -235,6 +250,7 @@ object Call {
                 if (wait > 0) delay(wait)
                 if (state != St.CONNECTING) return@launch
                 ringing = false; delay(250)
+                track?.let { runCatching { it.pause(); it.flush(); it.play() } }; written = 0L
                 state = St.LIVE; startedAt = System.currentTimeMillis()
                 startMic()
                 send(JSONObject().put("realtimeInput", JSONObject().put("text", "(Звонит Алим. Ты сняла/снял трубку — скажи только «Алло?» (можно «Алло, да?») и жди, что он скажет.)")))
@@ -260,7 +276,7 @@ object Call {
                     runCatching { Base64.decode(d.optString("data"), Base64.DEFAULT) }.getOrNull()?.let { play.trySend(it) }
                 }
             }
-            if (sc.optBoolean("turnComplete")) { flushOut(); dropping = false }
+            if (sc.optBoolean("turnComplete")) { flushOut(); if (!dropping) play.trySend(ByteArray(0)); dropping = false }
         }
         o.optJSONObject("toolCall")?.optJSONArray("functionCalls")?.let { calls ->
             for (i in 0 until calls.length()) {
@@ -331,18 +347,31 @@ object Call {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(OUT_RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                .setBufferSizeInBytes(maxOf(min, OUT_RATE)).setTransferMode(AudioTrack.MODE_STREAM).build()
+                .setBufferSizeInBytes(maxOf(min, OUT_RATE * 2 * 3)).setTransferMode(AudioTrack.MODE_STREAM).build()
         }.getOrNull()
         track?.play()
         play = Channel(Channel.UNLIMITED)
         val t = track
         val ch = play
+        // джиттер-буфер: перед фразой копим ~0,4 с звука, при опустевшем буфере — снова ~0,25 с, чтобы не было дыр
         scope?.launch {
+            val pending = ArrayList<ByteArray>(); var pendingBytes = 0; var started = false; var midTurn = false
+            fun write(b: ByteArray) { t?.write(b, 0, b.size); written += b.size / 2 }
+            fun flushPending() { pending.forEach { write(it) }; pending.clear(); pendingBytes = 0 }
             for (buf in ch) {
                 if (!isActive) break
+                if (resetReq) { resetReq = false; pending.clear(); pendingBytes = 0; started = false; midTurn = false }
+                if (buf.isEmpty()) { flushPending(); started = false; midTurn = false; continue } // фраза закончилась — доигрываем остаток
                 talking = true; lastAudioAt = System.currentTimeMillis()
                 level = (rms(buf) * 3f).coerceIn(0f, 1f)
-                t?.write(buf, 0, buf.size)
+                if (started && queued() <= OUT_RATE / 50) started = false // буфер иссяк посреди фразы
+                if (!started) {
+                    pending += buf; pendingBytes += buf.size
+                    val need = if (midTurn) PRE_AGAIN else PRE_FIRST
+                    if (pendingBytes >= need) { flushPending(); started = true; midTurn = true }
+                    continue
+                }
+                write(buf)
             }
         }
         // «говорит» гаснет через полсекунды тишины
@@ -381,8 +410,16 @@ object Call {
 
     private fun clearPlayback() {
         while (play.tryReceive().isSuccess) { }
+        resetReq = true
         track?.let { runCatching { it.pause(); it.flush(); it.play() } }
+        written = 0L
         talking = false; level = 0f
+    }
+
+    /** Сколько кадров ещё не проиграно в AudioTrack. */
+    private fun queued(): Long {
+        val head = (track?.playbackHeadPosition?.toLong() ?: 0L) and 0xffffffffL
+        return written - head
     }
 
     private fun route() {
