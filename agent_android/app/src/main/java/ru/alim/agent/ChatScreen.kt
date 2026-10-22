@@ -216,6 +216,10 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 }
             }
             HGap(8)
+            Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Позвонить") { go(Scr.Call) }, contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icPhone), "Позвонить", tint = Ink, modifier = Modifier.size(22.dp))
+            }
+            HGap(8)
             Box {
                 Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Меню") { menu = true }, contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.MoreVert, "Меню", tint = Ink)
@@ -459,7 +463,7 @@ private fun Typing(core: Agent.Core) {
 }
 
 @Composable
-private fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
+fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
     val text = p.text
     val act = LocalContext.current as? android.app.Activity
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Th.c.inBubble).border(1.dp, Amber.copy(alpha = 0.6f), RoundedCornerShape(20.dp))

@@ -24,6 +24,7 @@ android {
         buildConfigField("String", "YANDEX_API_KEY", secret("YANDEX_API_KEY"))
         buildConfigField("String", "YANDEX_FOLDER_ID", secret("YANDEX_FOLDER_ID"))
         buildConfigField("String", "QWEN_MODEL", secret("QWEN_MODEL"))
+        buildConfigField("String", "GOOGLE_API", secret("GOOGLE_API"))
     }
     val ksPath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
     signingConfigs {
