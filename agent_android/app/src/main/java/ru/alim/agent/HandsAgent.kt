@@ -63,7 +63,11 @@ object HandsAgent {
         state = St.RUNNING
         overlay = HandsOverlay(Hands.inst!!).also { it.show() }
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        job = scope!!.launch { runCatching { loop() }.onFailure { finish("Что-то пошло не так: ${it.message?.take(100)}") } }
+        job = scope!!.launch {
+            try { loop() }
+            catch (e: kotlinx.coroutines.CancellationException) { /* Стоп / конец задачи — не ошибка */ }
+            catch (e: Exception) { if (active) finish("Не получилось: ${e.message?.take(100)}") }
+        }
     }
 
     /** Служба только что включилась — если ждали, стартуем. */
@@ -74,6 +78,7 @@ object HandsAgent {
     }
 
     fun stop() { if (active) finish("Остановил по твоей команде.") }
+
     fun togglePause() { paused = !paused }
     fun reset() { if (state == St.ENDED) state = St.IDLE }
 
@@ -87,32 +92,36 @@ object HandsAgent {
         val h = Hands.inst ?: return finish("Доступ к экрану пропал.")
         val sys = system()
         val history = JSONArray()
-        var lastAsk = ""
         var wantLook = false
-        say("📱 Беру телефон: $task")
-        delay(600)
+        var lastFp = 0; var same = 0
+        var lastMove = ""; var repeat = 0
         var i = 0
         while (i < 28 && state == St.RUNNING) {
             i++
             while (paused && state == St.RUNNING) { step = "Пауза — тронь «▶», чтобы продолжить"; delay(400) }
             if (state != St.RUNNING) break
-            step = "Смотрю на экран"
-            overlay?.update()
-            delay(350)
+            step = "Смотрю на экран"; overlay?.update(); delay(350)
             val screen = h.observe()
-            // глаза через Live (безлимит) — только когда нужно: Алим включил 👁, первый шаг, или модель попросила «look»
+            val fp = screen.hashCode()
+            same = if (i > 1 && fp == lastFp) same + 1 else 0
+            lastFp = fp
+            // застрял: экран не меняется три шага подряд — не крутимся, спрашиваем Алима
+            if (same >= 3) { finish("Застрял: экран не меняется. Подскажи, что делать, или сделай этот шаг сам."); return }
+
             val vision = if (eyes || i == 1 || wantLook) {
                 wantLook = false
                 step = "Присматриваюсь"; overlay?.update()
                 val shot = withContext(Dispatchers.IO) { h.screenshot() }
                 if (shot != null) withContext(Dispatchers.IO) {
-                    runCatching { GEyes.describe(shot, "Коротко опиши, что сейчас на экране: какое это приложение/раздел, что видно (кнопки, поля, списки, важный текст), что можно нажать.") }.getOrNull()
+                    runCatching { GEyes.describe(shot, "Коротко опиши, что сейчас на экране: приложение/раздел, что видно (кнопки, поля, списки, важный текст), что можно нажать.") }.getOrNull()
                 } else null
             } else null
 
             val userText = buildString {
-                append("Задача: ").append(task).append("\nШаг ").append(i).append(".\n").append(screen)
-                if (!vision.isNullOrBlank()) append("\n\nГЛАЗА (что видно на экране глазами): ").append(vision.take(1200))
+                append("Задача: ").append(task).append("\nШаг ").append(i).append(".\n")
+                if (i > 1) append(if (same == 0) "(после прошлого действия экран изменился)\n" else "(после прошлого действия экран НЕ изменился — значит, оно не сработало; попробуй иначе)\n")
+                append(screen)
+                if (!vision.isNullOrBlank()) append("\n\nГЛАЗА (что видно на экране): ").append(vision.take(1200))
                 append("\n\nЧто делаешь дальше? Ответь ТОЛЬКО JSON.")
             }
             val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", sys))
@@ -120,12 +129,16 @@ object HandsAgent {
             for (k in hist) msgs.put(history.getJSONObject(k))
             msgs.put(JSONObject().put("role", "user").put("content", userText))
 
-            val r = withContext(Dispatchers.IO) { Llm.chat(model(), msgs, 500) }
-            history.put(JSONObject().put("role", "user").put("content", "[шаг $i: $screen]".take(1200)))
+            val r = withContext(Dispatchers.IO) { Llm.chat(model(), msgs, 800) }
+            history.put(JSONObject().put("role", "user").put("content", "[шаг $i]".take(200)))
             history.put(JSONObject().put("role", "assistant").put("content", r.text.take(600)))
 
             val j = parse(r.text)
-            if (j == null) { say(r.text.trim().take(300).ifBlank { "Не понял экран." }); break }
+            if (j == null) {
+                // не сумели разобрать ответ — не показываем Алиму сырой JSON, просто пробуем снова
+                if (same >= 2) { finish("Запутался на этом экране. Подскажи, что делать."); return }
+                delay(500); continue
+            }
             val action = j.optString("action").trim().lowercase()
             val target = j.optInt("target", -1)
             val text = j.optString("text")
@@ -134,7 +147,11 @@ object HandsAgent {
             if (j.optBoolean("look")) wantLook = true
             overlay?.update()
 
-            if (sayMsg.isNotBlank() && sayMsg != lastAsk) { say(sayMsg); lastAsk = sayMsg }
+            // одно и то же действие три раза подряд — зациклился
+            val moveKey = "$action/$target/${j.optString("app")}"
+            repeat = if (moveKey == lastMove) repeat + 1 else 0
+            lastMove = moveKey
+            if (repeat >= 2) { finish(sayMsg.ifBlank { "Кручусь на одном месте — останавливаюсь. Подскажи, как лучше." }); return }
 
             when (action) {
                 "done" -> { finish(sayMsg.ifBlank { "Готово." }); return }
@@ -146,7 +163,7 @@ object HandsAgent {
                     val okOpen = CompletableDeferred<Boolean>()
                     Hands.go { okOpen.complete(h.openApp(j.optString("app"))) }
                     if (!okOpen.await()) say("Не нашёл приложение «${j.optString("app")}».")
-                    delay(1500)
+                    delay(1600)
                 }
                 "scroll" -> { val d = j.optString("dir", "down") != "up"; Hands.go { h.scroll(d) }; delay(700) }
                 "type" -> {
@@ -156,10 +173,9 @@ object HandsAgent {
                     delay(500)
                 }
                 "tap" -> {
-                    // отправить / заказать / оплатить / удалить — спрашиваем Алима
-                    if (j.optBoolean("commit") || looksCommitting(j)) {
-                        if (!confirm(j.optString("commit_text").ifBlank { "Подтвердить: ${step}?" })) {
-                            say("Отменил. Что дальше?"); finish("Отменил действие, жду тебя."); return
+                    if (j.optBoolean("commit")) {
+                        if (!confirm(j.optString("commit_text").ifBlank { "Подтвердить: $step?" })) {
+                            finish("Отменил это действие, жду тебя."); return
                         }
                     }
                     val ok = CompletableDeferred<Boolean>()
@@ -167,7 +183,7 @@ object HandsAgent {
                     if (!ok.await()) say("Не нашёл, куда нажать (№$target).")
                     delay(900)
                 }
-                else -> { say("Не понял, что делать дальше."); break }
+                else -> { delay(400) }
             }
         }
         if (state == St.RUNNING) finish("Остановился после $i шагов. Если не доделал — напиши, продолжу.")
@@ -187,12 +203,14 @@ object HandsAgent {
     }
 
     private fun finish(text: String) {
+        if (state == St.ENDED || state == St.IDLE) return
         state = St.ENDED
-        job?.cancel(); scope?.cancel(); scope = null
         Hands.go { overlay?.hide(); overlay = null }
         step = ""
         say(text)
         Chat.of(fid).note("📱 Телефон снова у тебя")
+        val j = job; job = null; scope = null
+        j?.cancel()
     }
 
     private fun parse(t: String): JSONObject? {
@@ -221,6 +239,10 @@ object HandsAgent {
         append("- Оплату картой (ввод данных карты) не делаешь. Доводи до страницы оплаты и action ask «осталось оплатить».\n")
         append("- Делай по одному шагу. После каждого увидишь новый экран. Не выдумывай, чего не видишь: если нужного элемента нет — листай или open нужное приложение.\n")
         append("- Экран не загрузился, пусто, крутится — action wait.\n")
+        append("- Сначала выбери ПРАВИЛЬНОЕ приложение под задачу (подписка Яндекс Плюс — Яндекс/Яндекс Музыка, а не Карты). Ошибся приложением — вернись (back/home) и открой нужное.\n")
+        append("- Прежде чем заказать/добавить в корзину/отправить — сверь, что товар или получатель РЕАЛЬНО подходят под просьбу Алима (модель, размер, цена, «с камерой», «маленькая» и т.п.). Не то — вернись к списку и ищи дальше, не бери первое попавшееся.\n")
+        append("- После каждого действия проверяй по новому экрану, сработало ли оно (появился товар в корзине, открылся нужный раздел). Не сработало — попробуй иначе, а не повторяй то же самое.\n")
+        append("- В say пиши ТОЛЬКО когда спрашиваешь Алима (ask) или даёшь итог (done). Ход работы он видит на плашке — не описывай каждый шаг в чат, оставляй say пустым.\n")
         append("Сейчас: ").append(SimpleDateFormat("EEEE, HH:mm", Locale("ru")).format(Date())).append(".\n")
         append("Что ты знаешь об Алиме:\n").append(runCatching { Memory.forPrompt(app!!, 20) }.getOrDefault("")).append('\n')
     }

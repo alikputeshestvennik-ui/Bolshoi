@@ -136,6 +136,11 @@ object Attach {
         }
     }
 
+    private fun isRefusal(t: String): Boolean {
+        val l = t.lowercase()
+        return t.length < 220 && Regex("не могу|не буду|не в состоянии|cannot|can.t|unable to|i'm sorry|извините|не имею возможности|обсуждать эту тему").containsMatchIn(l)
+    }
+
     /** Модель с распознаванием изображений: Claude через gptunnel (яндексовские модели картинки не видят). */
     private fun look(urls: List<String>): String {
         if (urls.isEmpty()) return "(не удалось открыть)"
@@ -144,8 +149,13 @@ object Attach {
             "Опиши по-русски, что на изображении, и перепиши весь видимый текст как есть. Если это вещь или товар — назови тип, бренд и модель как можно точнее " +
                 "(по логотипу, надписям, дизайну), цвет, материал; если место или здание — что это и где, если узнаёшь. В конце строка «Для поиска: …» — 3-6 слов, по которым это искать. Коротко, по делу."))
         urls.forEach { content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", it))) }
-        val r = Llm.chat(model, JSONArray().put(JSONObject().put("role", "user").put("content", content)), 1500, json = false)
-        return r.text.trim().take(6000)
+        val body = JSONArray().put(JSONObject().put("role", "user").put("content", content))
+        var out = runCatching { Llm.chat(model, body, 1500, json = false).text.trim() }.getOrDefault("")
+        // Google иногда отказывается описывать фото (например, где есть ребёнок в рекламе) — тогда просим Claude
+        if (out.isBlank() || isRefusal(out)) {
+            if (Llm.key.isNotBlank()) out = runCatching { Llm.chat("claude-5.5-haiku", body, 1500, json = false).text.trim() }.getOrDefault(out)
+        }
+        return out.take(6000).ifBlank { "(не удалось рассмотреть изображение)" }
     }
 }
 

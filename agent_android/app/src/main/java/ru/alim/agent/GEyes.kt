@@ -60,6 +60,9 @@ object GEyes {
         })
         done.await(30, TimeUnit.SECONDS)
         runCatching { ws.close(1000, "ok") }
-        return sb.toString().trim()
+        val out = sb.toString().trim()
+        // Google отказался описывать картинку — лучше пусто, чем «не могу» в рассуждениях рук
+        if (out.length < 200 && Regex("не могу|не буду|cannot|unable|i'm sorry|извините").containsMatchIn(out.lowercase())) return ""
+        return out
     }
 }
