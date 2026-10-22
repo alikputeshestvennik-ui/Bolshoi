@@ -641,7 +641,9 @@ object Tools {
             val task = a.optString("task").trim().ifBlank { core.task }
             // есть свой инструмент — быстрее и надёжнее, чем лезть в приложения
             val tl = task.lowercase()
-            when {
+            // Алим сам назвал приложение или попросил руками — делаем, как сказал
+            val explicit = Regex("в приложени|открой |руками|через (яндекс|карт|браузер|прилож)|в (яндекс|карт|браузер|хроме|chrome)").containsMatchIn(tl)
+            if (!explicit) when {
                 Regex("погод|температур|дожд|прогноз").containsMatchIn(tl) -> return@t "для погоды не нужны руки — вызови weather с place."
                 Regex("маршрут|как доехать|сколько ехать|проложи").containsMatchIn(tl) -> return@t "для маршрута не нужны руки — вызови maps_route."
                 Regex("youtube|ютуб").containsMatchIn(tl) && !Regex("подпис|коммент|лайк").containsMatchIn(tl) -> return@t "для YouTube есть youtube_search / youtube_open."
