@@ -95,6 +95,7 @@ object HandsAgent {
         var wantLook = false
         var lastFp = 0; var same = 0
         var lastMove = ""; var repeat = 0
+        var checks = 0
         var i = 0
         while (i < 28 && state == St.RUNNING) {
             i++
@@ -102,7 +103,8 @@ object HandsAgent {
             if (state != St.RUNNING) break
             step = "Смотрю на экран"; overlay?.update(); delay(350)
             val screen = h.observe()
-            val fp = screen.hashCode()
+            // отпечаток экрана без цифр: таймеры и часы не считаются «изменением»
+            val fp = screen.replace(Regex("\\d"), "").hashCode()
             same = if (i > 1 && fp == lastFp) same + 1 else 0
             lastFp = fp
             // застрял: экран не меняется три шага подряд — не крутимся, спрашиваем Алима
@@ -153,10 +155,15 @@ object HandsAgent {
             lastMove = moveKey
             if (repeat >= 2) { finish(sayMsg.ifBlank { "Кручусь на одном месте — останавливаюсь. Подскажи, как лучше." }); return }
 
+            if (action != "wait") checks = 0
             when (action) {
                 "done" -> { finish(sayMsg.ifBlank { "Готово." }); return }
                 "ask" -> { finish(sayMsg.ifBlank { "Нужна твоя подсказка." }); return }
-                "wait" -> { step = "Жду загрузку"; delay(1600) }
+                "wait" -> {
+                    // перепроверяет одно и то же — хватит, отдаём Алиму
+                    if (++checks >= 3) { finish("Похоже, всё сделано, но я не уверен до конца — глянь сам, пожалуйста."); return }
+                    step = "Жду загрузку"; delay(1600)
+                }
                 "back" -> { Hands.go { h.back() }; delay(700) }
                 "home" -> { Hands.go { h.home() }; delay(700) }
                 "open" -> {
@@ -244,6 +251,7 @@ object HandsAgent {
         append("- После каждого действия проверяй по новому экрану, сработало ли оно (появился товар в корзине, открылся нужный раздел). Не сработало — попробуй иначе, а не повторяй то же самое.\n")
         append("- В commit_text пиши, ЧТО именно уйдёт, как это видно на экране (кому, сколько фото и что на них, какой текст). Если на экране не то, что просил Алим, — не подтверждай, исправь.\n")
         append("- Скриншоты в Галерее — в альбоме «Скриншоты» (Альбомы → Скриншоты), а не в общей ленте: там вперемешку с фото камеры.\n")
+        append("- Как только цель видна на экране (нужный пункт [ВЫБРАН], статус «подключено», товар в корзине, сообщение отправлено) — сразу done. Перепроверять больше одного раза не нужно.\n")
         append("- В say пиши ТОЛЬКО когда спрашиваешь Алима (ask) или даёшь итог (done). Ход работы он видит на плашке — не описывай каждый шаг в чат, оставляй say пустым.\n")
         append("Сейчас: ").append(SimpleDateFormat("EEEE, HH:mm", Locale("ru")).format(Date())).append(".\n")
         append("Что ты знаешь об Алиме:\n").append(runCatching { Memory.forPrompt(app!!, 20) }.getOrDefault("")).append('\n')

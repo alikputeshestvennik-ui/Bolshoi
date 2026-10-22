@@ -78,7 +78,7 @@ class Hands : AccessibilityService() {
                 n.isCheckable -> "переключатель" + (if (n.isChecked) " (вкл)" else " (выкл)")
                 n.isScrollable -> "список"
                 else -> "элемент"
-            }
+            } + (if (n.isSelected) " [ВЫБРАН]" else "") + (if (n.isChecked && !n.isCheckable) " [ОТМЕЧЕН]" else "")
             out += El(out.size + 1, n, label.ifBlank { n.viewIdResourceName?.substringAfterLast('/') ?: "—" }, kind, r, n.isEditable)
         } else if (visible && t.isNotEmpty()) {
             plain.append(t).append('\n')
