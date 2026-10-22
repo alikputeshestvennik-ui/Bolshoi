@@ -45,6 +45,8 @@ object Prefs {
     /** Фоновая модель: уведомления, сводки, сам пишет, поиск фото. Пусто — как «Чат». */
     var bgModel: String get() = s("bgm", "google:gemini-3.5-flash-lite"); set(v) = put("bgm", v.trim())
     val bg: String get() = bgModel.ifBlank { fastModel }
+    /** Модель для «рук» — должна уметь смотреть картинки. Gemini 3.8 бесплатно, запасной Claude. */
+    var handsModel: String get() = s("hands", "google:gemini-3.8-flash"); set(v) = put("hands", v.trim())
     /** Счётчики бесплатных запросов Google за сутки (JSON). */
     fun initCount(fid: String, day: String) = if (sp.getString("icd_$fid", "") == day) sp.getInt("icn_$fid", 0) else 0
     fun addInitCount(fid: String, day: String) { val n = initCount(fid, day) + 1; sp.edit().putString("icd_$fid", day).putInt("icn_$fid", n).apply() }

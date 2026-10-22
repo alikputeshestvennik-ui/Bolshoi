@@ -73,7 +73,12 @@
         <receiver android:name=".BootIn" android:exported="true">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
-        <service android:name=".NotifListener" android:exported="true" android:label="Свои: мессенджеры"
+        <service android:name=".Hands" android:exported="false" android:label="Свои: руки на телефоне"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/hands_service" />
+        </service>
+                <service android:name=".NotifListener" android:exported="true" android:label="Свои: мессенджеры"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>

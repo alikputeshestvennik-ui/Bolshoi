@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Chats, Task, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative, Call }
+enum class Scr { Home, Chats, Task, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative, Call, Hands }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
@@ -112,6 +112,7 @@ fun App(voice: Voice) {
                 Scr.Profile -> ProfileScreen(Friends.current, home)
                 Scr.Look -> LookScreen(home)
                 Scr.Call -> CallScreen(Friends.current) { scr = Scr.Home }
+                Scr.Hands -> HandsScreen(home)
                 Scr.Initiative -> InitiativeScreen(home)
                 Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }

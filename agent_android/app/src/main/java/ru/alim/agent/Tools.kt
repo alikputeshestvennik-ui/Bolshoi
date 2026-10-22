@@ -620,6 +620,15 @@ object Tools {
                 "открыл Google Play" else "Google Play не открылся"
         },
 
+        Tool("device_control", "{\"task\": \"закажи такси домой в Яндекс Go\"} — ВЗЯТЬ ТЕЛЕФОН В РУКИ: самому открывать приложения и нажимать на экране. Для задач, у которых нет своего инструмента (заказать в приложении, ответить в мессенджере, посмотреть в чужом приложении). Отправку/заказ Алим подтвердит. Вернёт управление сам.") t@{ ctx, a ->
+            val core = Agent.cur()
+            val task = a.optString("task").trim().ifBlank { core.task }
+            if (!HandsAgent.serviceOn) return@t "нужен доступ к управлению экраном — Алим включит его в ⋮ → Настройки → Руки на телефоне. Скажи ему об этом."
+            if (HandsAgent.active) return@t "я уже управляю телефоном — дождись окончания"
+            HandsAgent.start(ctx, core.fid, task)
+            "Беру телефон в руки и делаю: $task. Следи за плашкой сверху, «Стоп» остановит. Итог пришлю сюда."
+        },
+
         Tool("kion_open", "{\"query\": \"Нюрнберг\"} — найти фильм или сериал в KION и открыть; без query — просто открыть KION") t@{ ctx, a ->
             val pm = ctx.packageManager
             val kion = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
