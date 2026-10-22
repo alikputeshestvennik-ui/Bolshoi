@@ -3,7 +3,7 @@
     android:description="@string/hands_desc"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds|flagRequestAccessibilityButton"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
     android:canTakeScreenshot="true"
