@@ -1,0 +1,13 @@
+name: LIVE_TEST
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install websockets
+      - run: python tools/live_test.py
+        env:
+          GOOGLE_API: ${{ secrets.GOOGLE_API }}
