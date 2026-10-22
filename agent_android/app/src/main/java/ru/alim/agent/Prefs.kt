@@ -45,6 +45,8 @@ object Prefs {
     /** Фоновая модель: уведомления, сводки, сам пишет, поиск фото. Пусто — как «Чат». */
     var bgModel: String get() = s("bgm", "google:gemini-3.5-flash-lite"); set(v) = put("bgm", v.trim())
     val bg: String get() = bgModel.ifBlank { fastModel }
+    /** Счётчики бесплатных запросов Google за сутки (JSON). */
+    var gQuota: String get() = s("gq", ""); set(v) = put("gq", v)
     var ttsVoice: String get() = s("voice", "filipp"); set(v) = put("voice", v)
     var interval: Int get() = sp.getInt("int", 30); set(v) = sp.edit().putInt("int", v).apply()
     var digestHour: Int get() = sp.getInt("dh", 21); set(v) = sp.edit().putInt("dh", v).apply()

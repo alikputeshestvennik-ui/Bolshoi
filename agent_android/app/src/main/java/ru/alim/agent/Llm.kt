@@ -49,24 +49,23 @@ object Llm {
         else -> ""
     }
 
-    private fun googleChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+    class GoogleLimit(val daily: Boolean, msg: String) : Exception(msg)
+
+    private fun googleChat(id: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val k = Call.key
         if (k.isBlank()) error("нет ключа Google (GOOGLE_API)")
-        val id = model.removePrefix("google:")
         fun body(js: Boolean) = JSONObject().put("model", id).put("temperature", 0.3).put("max_tokens", maxTokens + 2000).put("messages", messages)
             .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
             .also { if (js && !id.contains("lite") && !id.startsWith("gemma")) it.put("reasoning_effort", "low") }
         fun send(b: JSONObject) = http.newCall(Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
             .header("Authorization", "Bearer $k").post(b.toString().toRequestBody(JSON)).build()).execute()
             .use { it.code to (it.body?.string() ?: "") }
-        var r = Pair(0, "")
-        for (attempt in 0 until 3) {
-            r = send(body(json))
-            if (r.first == 400 && json) r = send(body(false))
-            // бесплатный тариф: 15 запросов в минуту — при 429 ждём и пробуем ещё
-            if (r.first !in setOf(429, 500, 503)) break
-            if (r.first == 429 && r.second.contains("per day", true)) break
-            Thread.sleep(if (r.first == 429) 6000L * (attempt + 1) else 1500L)
+        var r = send(body(json))
+        if (r.first == 400 && json) r = send(body(false))
+        if (r.first == 503 || r.first == 500) { Thread.sleep(1500); r = send(body(false)) }
+        if (r.first == 429) {
+            val daily = r.second.contains("PerDay", true) || r.second.contains("per day", true) || r.second.contains("daily", true)
+            throw GoogleLimit(daily, "Google: лимит ${if (daily) "на сутки" else "в минуту"}")
         }
         if (r.first !in 200..299) error("Google ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
@@ -75,47 +74,31 @@ object Llm {
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
 
-    private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
-        val k = YaCloud.llmKey
-        if (k.isBlank()) error("нет ключа Yandex Cloud (YANDEX_API_KEY)")
-        val uri = if (model.startsWith("gpt://")) model else {
-            val f = YaCloud.folder; if (f.isBlank()) error("нет ID каталога Yandex Cloud")
-            "gpt://$f/${model.removePrefix("yandex:").removePrefix("yc:")}"
+    /**
+     * Google с учётом лимитов: берём выбранную модель, если влезает; иначе соседнюю бесплатную;
+     * всё бесплатное на сегодня кончилось, нет VPN или Google упал — запасная платная.
+     */
+    private fun googleRouted(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, maxWait: Long): Reply {
+        val want = model.removePrefix("google:")
+        var last: Exception? = null
+        for (i in 0 until 4) {
+            val id = Quota.pick(want, maxWait) ?: break
+            Quota.take(id)
+            try { return googleChat(id, messages, maxTokens, json) }
+            catch (e: GoogleLimit) { Quota.hit(id, e.daily); last = e }   // эта модель упёрлась — пробуем соседнюю
+            catch (e: Exception) { last = e; break }                        // нет VPN или Google сломался — сразу на запасную
         }
-        fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens).put("messages", messages)
-            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
-        val keys = (listOf(k) + YaCloud.all).distinct()
-        fun sendWith(key: String, b: JSONObject) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/v1/chat/completions")
-            .header("Authorization", "Api-Key $key").post(b.toString().toRequestBody(JSON)).build()).execute()
-            .use { it.code to (it.body?.string() ?: "") }
-        var r = Pair(0, "")
-        for (attempt in 0 until 3) {
-            for (key in keys) {
-                r = sendWith(key, body(json))
-                if (r.first == 400 && json) r = sendWith(key, body(false))
-                if (r.first != 401 && r.first != 403) break
-            }
-            // у Яндекса бывают разовые 500/503/429 — пробуем ещё раз через паузу
-            if (r.first !in setOf(429, 500, 502, 503, 504)) break
-            Thread.sleep(1200L * (attempt + 1))
-        }
-        if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
-        if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")
-        val j = JSONObject(r.second)
-        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
-        val u = j.optJSONObject("usage") ?: JSONObject()
-        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
+        val fb = fallback()
+        if (fb.isBlank()) throw last ?: IllegalStateException("бесплатный лимит Google на сегодня исчерпан")
+        return chatRaw(fb, messages, maxTokens, json)
     }
 
     /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
     fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply {
         if (isGoogle(model)) {
-            // Google без VPN или сверх лимита — молча отвечает запасная модель
-            try { return googleChat(model, messages, maxTokens, json).also { Online.ok() } }
-            catch (e: Exception) {
-                val fb = fallback(); if (fb.isBlank()) throw e
-                return chat(fb, messages, maxTokens, json)
-            }
+            // фон может подождать окно до 20 с, переписка — не больше 3 с
+            val wait = if (model == Prefs.bg && model != Prefs.fastModel) 20_000L else 3_000L
+            return googleRouted(model, messages, maxTokens, json, wait).also { Online.ok() }
         }
         return try { chatRaw(model, messages, maxTokens, json).also { Online.ok() } }
         catch (e: java.io.IOException) { Online.fail(); throw e }

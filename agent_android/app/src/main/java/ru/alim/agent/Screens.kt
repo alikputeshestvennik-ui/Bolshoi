@@ -508,6 +508,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 ModelEditor("Руки — сложные дела (Ozon, много шагов)", "smart", smart, smartIn, smartOut,
                     { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
                 ModelEditor("Фон — уведомления, сводки, сам пишет, поиск фото", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
+                Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
+                    style = body(12, color = Muted), lineHeight = 17.sp)
                 BigButton("Проверить связь", {
                     check = "Проверяю…"
                     scope.launch {

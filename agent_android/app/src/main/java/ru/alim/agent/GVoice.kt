@@ -68,7 +68,9 @@ object GVoice {
     /** Голосовое (PCM 16 кГц) → текст через Gemini. */
     fun recognize(pcm: ByteArray, rate: Int = 16000): String {
         if (!ready || pcm.isEmpty()) return ""
-        val model = Prefs.bg.takeIf { Llm.isGoogle(it) }?.removePrefix("google:") ?: "gemini-3.5-flash-lite"
+        val model = Quota.pick(Prefs.bg.takeIf { Llm.isGoogle(it) }?.removePrefix("google:") ?: "gemini-3.5-flash-lite", 5000)
+            ?: error("лимит Google на сегодня")
+        Quota.take(model)
         val wav = Base64.encodeToString(wav(pcm, rate), Base64.NO_WRAP)
         val msg = JSONObject().put("role", "user").put("content", JSONArray()
             .put(JSONObject().put("type", "text").put("text", "Распознай русскую речь в аудио ДОСЛОВНО. Верни только текст, без кавычек и пояснений. Если речи нет — пустую строку."))
@@ -78,6 +80,7 @@ object GVoice {
             .header("Authorization", "Bearer ${Call.key}")
             .post(body.toString().toRequestBody("application/json".toMediaType())).build()).execute()
             .use { it.code to (it.body?.string() ?: "") }
+        if (r.first == 429) Quota.hit(model, r.second.contains("day", true))
         if (r.first !in 200..299) error("Google ${r.first}")
         return JSONObject(r.second).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content").trim()
     }
