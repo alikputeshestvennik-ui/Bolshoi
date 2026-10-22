@@ -93,6 +93,38 @@ object Llm {
         return chatRaw(fb, messages, maxTokens, json)
     }
 
+    private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+        val k = YaCloud.llmKey
+        if (k.isBlank()) error("нет ключа Yandex Cloud (YANDEX_API_KEY)")
+        val uri = if (model.startsWith("gpt://")) model else {
+            val f = YaCloud.folder; if (f.isBlank()) error("нет ID каталога Yandex Cloud")
+            "gpt://$f/${model.removePrefix("yandex:").removePrefix("yc:")}"
+        }
+        fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens).put("messages", messages)
+            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
+        val keys = (listOf(k) + YaCloud.all).distinct()
+        fun sendWith(key: String, b: JSONObject) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/v1/chat/completions")
+            .header("Authorization", "Api-Key $key").post(b.toString().toRequestBody(JSON)).build()).execute()
+            .use { it.code to (it.body?.string() ?: "") }
+        var r = Pair(0, "")
+        for (attempt in 0 until 3) {
+            for (key in keys) {
+                r = sendWith(key, body(json))
+                if (r.first == 400 && json) r = sendWith(key, body(false))
+                if (r.first != 401 && r.first != 403) break
+            }
+            // у Яндекса бывают разовые 500/503/429 — пробуем ещё раз через паузу
+            if (r.first !in setOf(429, 500, 502, 503, 504)) break
+            Thread.sleep(1200L * (attempt + 1))
+        }
+        if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
+        if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")
+        val j = JSONObject(r.second)
+        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val u = j.optJSONObject("usage") ?: JSONObject()
+        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
+    }
+
     /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
     fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply {
         if (isGoogle(model)) {
