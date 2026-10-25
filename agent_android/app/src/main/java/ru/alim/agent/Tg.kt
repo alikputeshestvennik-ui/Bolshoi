@@ -260,7 +260,17 @@ object Tg {
 
     // ——— медиа по запросу: скачать фото из чата/паблика и показать ———
 
-    suspend fun fetchFile(fileId: Int): String? = download(fileId)
+    suspend fun fetchFile(fileId: Int): String? {
+        val c = client ?: return null
+        // видео бывают тяжёлые — ждём дольше, чем обычный запрос
+        return withTimeoutOrNull(180_000) {
+            suspendCancellableCoroutine { cont ->
+                c.send(TdApi.DownloadFile(fileId, 32, 0, 0, true)) { r ->
+                    cont.resume((r as? TdApi.File)?.local?.path?.takeIf { it.isNotBlank() && (r as TdApi.File).local.isDownloadingCompleted })
+                }
+            }
+        }
+    }
 
     private suspend fun download(fileId: Int): String? {
         val f = call<TdApi.File>(TdApi.DownloadFile(fileId, 1, 0, 0, true)) ?: return null

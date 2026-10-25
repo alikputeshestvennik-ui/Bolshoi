@@ -590,6 +590,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 "Звонки" to granted(Manifest.permission.CALL_PHONE),
                 "SMS: отправка" to granted(Manifest.permission.SEND_SMS),
                 "SMS: чтение" to granted(Manifest.permission.READ_SMS),
+                "Журнал звонков" to granted(Manifest.permission.READ_CALL_LOG),
                 "Фото" to granted(if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE),
                 "Уведомления" to (NotifStore.accessGranted(ctx) && t >= 0),
             )

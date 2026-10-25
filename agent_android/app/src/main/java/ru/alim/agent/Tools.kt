@@ -12,6 +12,7 @@ import android.os.Looper
 import android.provider.AlarmClock
 import android.provider.ContactsContract
 import android.provider.MediaStore
+import android.provider.CallLog
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
@@ -62,6 +63,10 @@ object Tools {
 
     private fun has(ctx: Context, p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
     private fun digits(s: String) = s.filter { it.isDigit() || it == '+' }
+    private val CYR = "а б в г д е ё ж з и й к л м н о п р с т у ф х ц ч ш щ ъ ы ь э ю я".split(" ")
+    private val LAT = "a b v g d e e zh z i y k l m n o p r s t u f h ts ch sh sch   y   e yu ya".split(" ")
+    /** Грубая транслитерация, чтобы «спортмастер» находил отправителя SPORTMASTER. */
+    private fun translit(s: String) = buildString { for (ch in s.lowercase()) { val i = CYR.indexOf(ch.toString()); append(if (i >= 0) LAT[i] else ch) } }
 
     private suspend fun launch(ctx: Context, i: Intent): Boolean = withContext(Dispatchers.Main) {
         runCatching { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }.getOrDefault(false)
@@ -283,23 +288,58 @@ object Tools {
             if (ok) "открыл фото в Галерее" else "Галерея не открылась"
         },
 
-        Tool("sms_read", "{\"from\": \"имя или номер, можно пусто\", \"limit\": 5} — последние входящие SMS") t@{ ctx, a ->
+        Tool("sms_read", "{\"query\": \"спортмастер бонусы\", \"from\": \"отправитель, необяз.\", \"days\": 90, \"limit\": 15} — найти SMS по отправителю ИЛИ по словам в тексте за период. Ищет по всему ящику, латиницу и кириллицу сопоставляет сам. Без query и from — просто последние") t@{ ctx, a ->
             if (!has(ctx, Manifest.permission.READ_SMS)) return@t "нет разрешения на чтение SMS — пусть Алим выдаст его в «Подключениях»"
-            val from = a.optString("from").trim().lowercase(); val lim = a.optInt("limit", 5).coerceIn(1, 20)
+            val q = a.optString("query").trim().lowercase()
+            val from = a.optString("from").trim().lowercase()
+            val needles = (listOf(q, from).filter { it.isNotBlank() } + listOf(q, from).filter { it.isNotBlank() }.map { translit(it) }).distinct()
+            val lim = a.optInt("limit", if (needles.isEmpty()) 8 else 15).coerceIn(1, 40)
+            val days = a.optInt("days", 90).coerceIn(1, 3650)
+            val since = System.currentTimeMillis() - days * 86_400_000L
             val out = ArrayList<String>()
             val df = SimpleDateFormat("d MMM HH:mm", ru)
             ctx.contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI,
-                arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE), null, null, "${Telephony.Sms.DATE} DESC")?.use { c ->
+                arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+                "${Telephony.Sms.DATE} >= ?", arrayOf(since.toString()), "${Telephony.Sms.DATE} DESC")?.use { c ->
                 var seen = 0
-                while (c.moveToNext() && out.size < lim && seen < 300) {
+                while (c.moveToNext() && out.size < lim && seen < 2000) {
                     seen++
                     val addr = c.getString(0).orEmpty()
+                    val body = c.getString(1).orEmpty()
                     val name = contactName(ctx, addr) ?: addr
-                    if (from.isNotBlank() && !name.lowercase().contains(from) && !addr.contains(from)) continue
-                    out += "$name (${df.format(Date(c.getLong(2)))}): ${NotifStore.safe(c.getString(1).orEmpty())}"
+                    val hay = "${name.lowercase()} ${addr.lowercase()} ${body.lowercase()}"
+                    if (needles.isNotEmpty() && needles.none { hay.contains(it) }) continue
+                    out += "$name (${df.format(Date(c.getLong(2)))}): ${NotifStore.safe(body)}"
                 }
             }
-            if (out.isEmpty()) "SMS не найдено" else out.joinToString("\n")
+            if (out.isEmpty()) (if (needles.isEmpty()) "SMS нет" else "по этому в SMS за $days дн. ничего не нашёл") else out.joinToString("\n")
+        },
+
+        Tool("calls_log", "{\"days\": 7, \"type\": \"out|in|missed|all\", \"who\": \"имя/номер, необяз.\"} — журнал звонков за период: кто, когда, тип, длительность; плюс сводка (сколько звонков и средняя длительность)") t@{ ctx, a ->
+            if (!has(ctx, Manifest.permission.READ_CALL_LOG)) return@t "нет доступа к журналу вызовов — пусть Алим выдаст его в «Подключениях»"
+            val days = a.optInt("days", 7).coerceIn(1, 365)
+            val since = System.currentTimeMillis() - days * 86_400_000L
+            val want = a.optString("type", "all").lowercase()
+            val who = a.optString("who").trim().lowercase()
+            val df = SimpleDateFormat("d MMM HH:mm", ru)
+            val rows = ArrayList<String>(); var cnt = 0; var dur = 0L
+            ctx.contentResolver.query(CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.TYPE, CallLog.Calls.DATE, CallLog.Calls.DURATION),
+                "${CallLog.Calls.DATE} >= ?", arrayOf(since.toString()), "${CallLog.Calls.DATE} DESC")?.use { c ->
+                while (c.moveToNext()) {
+                    val num = c.getString(0).orEmpty(); val nm = c.getString(1).orEmpty().ifBlank { contactName(ctx, num) ?: num }
+                    val t = c.getInt(2); val d = c.getLong(4)
+                    val kind = when (t) { CallLog.Calls.OUTGOING_TYPE -> "out"; CallLog.Calls.INCOMING_TYPE -> "in"; CallLog.Calls.MISSED_TYPE -> "missed"; else -> "other" }
+                    if (want != "all" && kind != want) continue
+                    if (who.isNotBlank() && !nm.lowercase().contains(who) && !num.contains(who)) continue
+                    val label = when (kind) { "out" -> "исходящий"; "in" -> "входящий"; "missed" -> "пропущенный"; else -> "звонок" }
+                    if (kind != "missed") { cnt++; dur += d }
+                    if (rows.size < 40) rows += "$nm — $label, ${df.format(Date(c.getLong(3)))}${if (d > 0) ", ${d / 60} мин ${d % 60} сек" else ""}"
+                }
+            }
+            if (rows.isEmpty()) return@t "звонков за $days дн. не нашёл"
+            val avg = if (cnt > 0) dur / cnt else 0
+            "За $days дн.: состоявшихся $cnt, средняя длительность ${avg / 60} мин ${avg % 60} сек.\n" + rows.take(25).joinToString("\n")
         },
 
         Tool("ussd", "{\"code\": \"*100#\"} — USSD-запрос оператору (баланс, тариф, остатки); ответ оператора придёт текстом",

@@ -55,7 +55,7 @@ enum class Scr { Home, Task, Tg, History, Rules, Settings, YooMoney, Memory, Dig
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
+        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_CALL_LOG)
     if (Build.VERSION.SDK_INT >= 33) { l += Manifest.permission.READ_MEDIA_IMAGES; l += Manifest.permission.POST_NOTIFICATIONS }
     else l += Manifest.permission.READ_EXTERNAL_STORAGE
     return l.toTypedArray()
