@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -137,31 +138,58 @@ object PhotoSearch {
     }
 }
 
-/** Медиа из Telegram: миниатюры по локальным путям, тап — полноэкранный просмотр внутри приложения. */
+/** Медиа из Telegram: миниатюры по локальным путям. Фото — просмотр в приложении, видео (с пометкой \tvid=ID) — ▶ по тапу качает и проигрывает. */
 @Composable
-fun TgPhotoGrid(paths: List<String>) {
-    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+fun TgPhotoGrid(entries: List<String>) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var openImg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var openVid by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var loading by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        paths.chunked(3).forEach { row ->
+        entries.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { path ->
+                row.forEach { entry ->
+                    val path = entry.substringBefore("\t")
+                    val vid = Regex("vid=(\\d+)").find(entry)?.groupValues?.get(1)?.toIntOrNull()
                     val bmp = androidx.compose.runtime.remember(path) { loadBitmap(path, 480) }
                     Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(Card)
-                        .clickable { open = path }) {
+                        .clickable {
+                            if (vid == null) openImg = path
+                            else { loading = entry; scope.launch { val f = Tg.fetchFile(vid); loading = null; if (f != null) openVid = f } }
+                        }, contentAlignment = androidx.compose.ui.Alignment.Center) {
                         if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        if (vid != null) Box(Modifier.size(42.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            androidx.compose.material3.Text(if (loading == entry) "…" else "\u25B6", style = body(20, color = androidx.compose.ui.graphics.Color.White))
+                        }
                     }
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
-    open?.let { p ->
-        androidx.compose.ui.window.Dialog(onDismissRequest = { open = null },
+    openImg?.let { p ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { openImg = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
             val big = androidx.compose.runtime.remember(p) { loadBitmap(p, 1600) }
             Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.95f))
-                .clickable { open = null }, contentAlignment = androidx.compose.ui.Alignment.Center) {
+                .clickable { openImg = null }, contentAlignment = androidx.compose.ui.Alignment.Center) {
                 if (big != null) Image(big, null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+            }
+        }
+    }
+    openVid?.let { path ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { openVid = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)
+                .clickable { openVid = null }, contentAlignment = androidx.compose.ui.Alignment.Center) {
+                androidx.compose.ui.viewinterop.AndroidView(factory = { c ->
+                    android.widget.VideoView(c).apply {
+                        setVideoPath(path)
+                        setOnPreparedListener { it.isLooping = true; start() }
+                        val mc = android.widget.MediaController(c); mc.setAnchorView(this); setMediaController(mc)
+                    }
+                }, modifier = Modifier.fillMaxWidth())
             }
         }
     }

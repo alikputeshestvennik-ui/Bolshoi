@@ -260,6 +260,8 @@ object Tg {
 
     // ——— медиа по запросу: скачать фото из чата/паблика и показать ———
 
+    suspend fun fetchFile(fileId: Int): String? = download(fileId)
+
     private suspend fun download(fileId: Int): String? {
         val f = call<TdApi.File>(TdApi.DownloadFile(fileId, 1, 0, 0, true)) ?: return null
         return f.local?.path?.takeIf { it.isNotBlank() && f.local.isDownloadingCompleted }
@@ -280,13 +282,15 @@ object Tg {
         for (m in hist) {
             if (paths.size >= count) break
             val c = m.content
-            val fileId = when (c) {
+            val coverId = when (c) {
                 is TdApi.MessagePhoto -> bestPhoto(c.photo)
                 is TdApi.MessageVideo -> bestPhoto(c.cover) ?: c.video?.thumbnail?.file?.id
                 else -> null
             } ?: continue
-            download(fileId)?.let { path ->
-                paths += path
+            val vidId = (c as? TdApi.MessageVideo)?.video?.video?.id
+            download(coverId)?.let { path ->
+                // обложка + id видеофайла (качаем по тапу, чтобы не тянуть тяжёлое зря)
+                paths += if (vidId != null) "$path\tvid=$vidId" else path
                 val cap = when (c) { is TdApi.MessagePhoto -> c.caption.text; is TdApi.MessageVideo -> "[видео] ${c.caption.text}"; else -> "" }.trim()
                 if (cap.isNotBlank()) caps.append("• ").append(cap.take(120)).append('\n')
             }

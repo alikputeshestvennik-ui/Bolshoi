@@ -330,7 +330,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
             if (cards) Column(Modifier.widthIn(max = 330.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble).padding(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
-                if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('|').filter { it.isNotBlank() })
+                if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('\n').filter { it.isNotBlank() })
                 if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
                 if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
             }
@@ -367,7 +367,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
                     Text(text, style = body(13, color = meta), modifier = Modifier.padding(horizontal = 2.dp))
                 if (m.att.isNotBlank()) Text("📎 ${m.att}", style = body(13, color = meta), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
-                if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('|').filter { it.isNotBlank() })
+                if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('\n').filter { it.isNotBlank() })
                 if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
                 if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
                 Row(Modifier.align(Alignment.End).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -394,7 +394,7 @@ class ChatStore(val fid: String) {
         val base = Msg(newId(), false, r.text, System.currentTimeMillis(),
             items = if (r.products.isEmpty()) "" else Shop.toJson(r.products),
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
-            photos = r.photos.joinToString(","), tgPhotos = r.tgPhotos.joinToString("|"), buttons = r.buttons, meta = meta, failed = !r.ok)
+            photos = r.photos.joinToString(","), tgPhotos = r.tgPhotos.joinToString("\n"), buttons = r.buttons, meta = meta, failed = !r.ok)
         if (wantVoice) io.launch {
             val v = runCatching { VoiceMsg.speakToFile(Chat.app, r.text, friend) }.getOrNull()
             withContext(Dispatchers.Main) {
