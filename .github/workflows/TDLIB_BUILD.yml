@@ -1,0 +1,38 @@
+name: TDLIB_BUILD
+# Сборка официальной библиотеки Telegram (tdlib/td) для Android arm64 — один раз, результат кладётся в релиз репозитория
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gperf php-cli perl make cmake g++ zip unzip default-jdk
+      - name: TDLib source (official)
+        run: |
+          git clone -q --depth 1 https://github.com/tdlib/td.git td
+          cd td && git log -1 --format='commit %H %cd'
+      - name: Android SDK + NDK
+        working-directory: td/example/android
+        run: ./fetch-sdk.sh
+      - name: OpenSSL
+        working-directory: td/example/android
+        run: ./build-openssl.sh
+      - name: TDLib (arm64-v8a, Java)
+        working-directory: td/example/android
+        run: ./build-tdlib.sh '' '' '' '' 'Java' '26' 'arm64-v8a'
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la td/example/android/tdlib
+          V=$(grep -m1 -oE 'project\(TDLib VERSION [0-9.]+' td/CMakeLists.txt | grep -oE '[0-9.]+$')
+          echo "TDLib $V"
+          gh release create "tdlib-$V" td/example/android/tdlib/tdlib.zip --title "TDLib $V (arm64)" \
+            --notes "Собрано из официального github.com/tdlib/td, $(cd td && git log -1 --format=%H)" \
+            || gh release upload "tdlib-$V" td/example/android/tdlib/tdlib.zip --clobber
