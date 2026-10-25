@@ -201,8 +201,8 @@ object Tg {
     /** Найти чат по имени и прочитать последние сообщения. */
     suspend fun readChat(query: String, count: Int = 20): String {
         if (state != St.READY) return "Telegram не подключён"
-        val found = call<TdApi.Chats>(TdApi.SearchChats(query, 1))?.chatIds?.firstOrNull()
-            ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, 1))?.chatIds?.firstOrNull()
+        val found = call<TdApi.Chats>(TdApi.SearchChats(query, null, 1))?.chatIds?.firstOrNull()
+            ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, null, 1))?.chatIds?.firstOrNull()
             ?: return "не нашёл чат «$query»"
         val title = chatTitle(found)
         val hist = call<TdApi.Messages>(TdApi.GetChatHistory(found, 0, 0, count.coerceIn(1, 50), false))?.messages?.toList().orEmpty()
@@ -218,7 +218,7 @@ object Tg {
     suspend fun search(query: String, count: Int = 15): String {
         if (state != St.READY) return "Telegram не подключён"
         val f = TdApi.SearchMessages().apply {
-            this.query = query; this.limit = count.coerceIn(1, 40); chatList = TdApi.ChatListMain()
+            this.query = query; this.limit = count.coerceIn(1, 40); chatList = TdApi.ChatListMain(); offset = ""
         }
         val res = call<TdApi.FoundMessages>(f)?.messages?.toList().orEmpty()
         if (res.isEmpty()) return "по «$query» ничего не нашёл"
@@ -234,8 +234,8 @@ object Tg {
 
     /** Вернёт id чата по имени — чтобы показать Алиму, кому именно уйдёт. */
     suspend fun findChat(query: String): Pair<Long, String>? {
-        val id = call<TdApi.Chats>(TdApi.SearchChats(query, 1))?.chatIds?.firstOrNull()
-            ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, 1))?.chatIds?.firstOrNull() ?: return null
+        val id = call<TdApi.Chats>(TdApi.SearchChats(query, null, 1))?.chatIds?.firstOrNull()
+            ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, null, 1))?.chatIds?.firstOrNull() ?: return null
         return id to chatTitle(id)
     }
 
