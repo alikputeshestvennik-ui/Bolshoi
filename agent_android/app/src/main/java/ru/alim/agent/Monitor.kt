@@ -178,7 +178,7 @@ object Monitor {
         val pi = PendingIntent.getActivity(ctx, id, Intent(ctx, MainActivity::class.java).putExtra("open", open)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         runCatching {
-            NotificationManagerCompat.from(ctx).notify(id, NotificationCompat.Builder(ctx, "important").setSmallIcon(R.drawable.ic_launcher_fg)
+            NotificationManagerCompat.from(ctx).notify(id, NotificationCompat.Builder(ctx, "important").setSmallIcon(R.drawable.ic_launcher_mono)
                 .setContentTitle(title).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setContentIntent(pi).setAutoCancel(true).build())
         }

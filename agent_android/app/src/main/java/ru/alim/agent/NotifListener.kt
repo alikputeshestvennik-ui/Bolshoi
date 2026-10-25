@@ -300,7 +300,7 @@ object AutoReply {
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE)
         runCatching {
             NotificationManagerCompat.from(ctx).notify((System.currentTimeMillis() % 100000).toInt(),
-                NotificationCompat.Builder(ctx, "auto").setSmallIcon(R.drawable.ic_launcher_fg)
+                NotificationCompat.Builder(ctx, "auto").setSmallIcon(R.drawable.ic_launcher_mono)
                     .setContentTitle(title).setContentText(text)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                     .setContentIntent(open).setAutoCancel(true).build())

@@ -438,7 +438,7 @@ class ChatStore(val fid: String) {
         }
         runCatching {
             NotificationManagerCompat.from(app).notify(notifId(), NotificationCompat.Builder(app, "artur_msg")
-                .setSmallIcon(R.drawable.ic_launcher_fg).setStyle(style).setContentIntent(pi).setAutoCancel(true)
+                .setSmallIcon(R.drawable.ic_launcher_mono).setStyle(style).setContentIntent(pi).setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE).build())
         }
     }
