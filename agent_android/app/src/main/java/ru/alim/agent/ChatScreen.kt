@@ -233,7 +233,6 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                         "Отвечать за меня" to { go(Scr.Rules) },
                         "Оформление" to { go(Scr.Look) },
                         "Настройки" to { go(Scr.Settings) },
-                        "Передать телефон" to { go(Scr.Hands) },
                         "Поиск по переписке" to { search = "" },
                     ).forEach { (t, f) ->
                         DropdownMenuItem(text = { Text(t, style = body(15)) }, onClick = { menu = false; f() })

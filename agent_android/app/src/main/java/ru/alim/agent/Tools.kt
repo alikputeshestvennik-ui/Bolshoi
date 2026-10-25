@@ -155,8 +155,8 @@ object Tools {
             else "нашёл ${ids.size} фото «$q» среди $seen последних — показал сеткой. Отправить — photos_send."
         },
 
-        Tool("photos_send", "{\"which\": \"all\" | \"1,3\", \"app\": \"telegram|whatsapp|max|any\", \"to\": \"Егор\", \"text\": \"подпись\"} — отправить найденные фото. С \"to\" (кому) — сам выберу чат в приложении и перед отправкой спрошу «ОК»; без \"to\" — откроется выбор чата для Алима",
-            confirm = { a -> if (a.optString("to").isNotBlank() && HandsAgent.serviceOn) "" else "Отправить ${pick(a.optString("which", "all")).size} фото в ${a.optString("app", "любое приложение")}? Там выберешь чат." }) t@{ ctx, a ->
+        Tool("photos_send", "{\"which\": \"all\" | \"1,3\", \"app\": \"telegram|whatsapp|max|any\", \"text\": \"подпись\"} — отправить найденные фото (откроется приложение, чат Алим выберет сам)",
+            confirm = { a -> "Отправить ${pick(a.optString("which", "all")).size} фото в ${a.optString("app", "любое приложение")}? Там выберешь чат." }) t@{ ctx, a ->
             val ids = pick(a.optString("which", "all"))
             if (ids.isEmpty()) return@t "сначала photos_find"
             val uris = ArrayList<Uri>(ids.map { ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, it) })
@@ -166,16 +166,6 @@ object Tools {
             a.optString("text").takeIf { it.isNotBlank() }?.let { i.putExtra(Intent.EXTRA_TEXT, it) }
             val pkg = installed(ctx, a.optString("app"))
             val ok = if (pkg != null) launch(ctx, i.setPackage(pkg)) else launch(ctx, Intent.createChooser(i, "Отправить фото"))
-            val to = a.optString("to").trim()
-            if (ok && to.isNotBlank() && pkg != null && HandsAgent.serviceOn && !HandsAgent.active) {
-                // файл уже прикреплён — рукам остаётся выбрать чат и нажать «отправить» (с подтверждением Алима)
-                val core = Agent.cur()
-                withContext(Dispatchers.Main) {
-                    HandsAgent.start(ctx, core.fid, "В приложении ${a.optString("app")} уже открыта отправка ${ids.size} фото (файлы прикреплены, ничего в галерее не выбирай). " +
-                        "Найди чат «$to», открой его и нажми «отправить». commit_text: «Отправить $to в ${a.optString("app")}: ${ids.size} фото».")
-                }
-                return@t "открыл отправку ${ids.size} фото в ${a.optString("app")}, беру телефон и выбираю чат «$to» — перед отправкой Алим подтвердит"
-            }
             if (ok) "открыл отправку ${ids.size} фото${if (pkg != null) " в ${a.optString("app")}" else ""} — Алим выберет чат" else "не получилось открыть отправку"
         },
 
@@ -634,24 +624,6 @@ object Tools {
             }
             if (launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(m)).setPackage("com.android.vending")) || launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(w))))
                 "открыл Google Play" else "Google Play не открылся"
-        },
-
-        Tool("device_control", "{\"task\": \"закажи такси домой в Яндекс Go\"} — ВЗЯТЬ ТЕЛЕФОН В РУКИ: самому открывать приложения и нажимать на экране. ТОЛЬКО в последнюю очередь — когда своего инструмента нет (заказать в приложении, поменять настройку, ответить в мессенджере, посмотреть что-то в чужом приложении). НЕ для погоды (weather), поиска информации (web_search), маршрутов (maps_route), товаров (shop_search), YouTube, фото, SMS, звонков, ЮMoney — для них есть свои инструменты. Отправку/заказ Алим подтвердит.") t@{ ctx, a ->
-            val core = Agent.cur()
-            val task = a.optString("task").trim().ifBlank { core.task }
-            // есть свой инструмент — быстрее и надёжнее, чем лезть в приложения
-            val tl = task.lowercase()
-            // Алим сам назвал приложение или попросил руками — делаем, как сказал
-            val explicit = Regex("в приложени|открой |руками|через (яндекс|карт|браузер|прилож)|в (яндекс|карт|браузер|хроме|chrome)").containsMatchIn(tl)
-            if (!explicit) when {
-                Regex("погод|температур|дожд|прогноз").containsMatchIn(tl) -> return@t "для погоды не нужны руки — вызови weather с place."
-                Regex("маршрут|как доехать|сколько ехать|проложи").containsMatchIn(tl) -> return@t "для маршрута не нужны руки — вызови maps_route."
-                Regex("youtube|ютуб").containsMatchIn(tl) && !Regex("подпис|коммент|лайк").containsMatchIn(tl) -> return@t "для YouTube есть youtube_search / youtube_open."
-            }
-            if (!HandsAgent.serviceOn) return@t "нужен доступ к управлению экраном — Алим включит его в ⋮ → Настройки → Руки на телефоне. Скажи ему об этом."
-            if (HandsAgent.active) return@t "я уже управляю телефоном — дождись окончания"
-            HandsAgent.start(ctx, core.fid, task)
-            "Беру телефон в руки и делаю: $task. Следи за плашкой сверху, «Стоп» остановит. Итог пришлю сюда."
         },
 
         Tool("kion_open", "{\"query\": \"Нюрнберг\"} — найти фильм или сериал в KION и открыть; без query — просто открыть KION") t@{ ctx, a ->

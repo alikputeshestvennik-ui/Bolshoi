@@ -35,7 +35,7 @@ import java.util.Locale
 object NotifStore {
     class Msg(
         val id: Int, val app: String, val pkg: String, val from: String, val text: String,
-        val ts: Long, val group: Boolean, val action: Notification.Action?,
+        val ts: Long, val group: Boolean, val action: Notification.Action?, val key: String = "",
     ) {
         val canReply get() = action?.remoteInputs?.isNotEmpty() == true
         fun time(): String = SimpleDateFormat("HH:mm", Locale("ru")).format(Date(ts))
@@ -57,10 +57,10 @@ object NotifStore {
     @Synchronized fun byId(id: Int): Msg? = msgs.firstOrNull { it.id == id }
 
     @Synchronized
-    fun add(app: String, pkg: String, from: String, text: String, group: Boolean, action: Notification.Action?): Msg? {
+    fun add(app: String, pkg: String, from: String, text: String, group: Boolean, action: Notification.Action?, key: String = ""): Msg? {
         // Мессенджеры перевыпускают одно и то же уведомление — дубли не нужны
         if (msgs.takeLast(15).any { it.pkg == pkg && it.from == from && it.text == text }) return null
-        val m = Msg(nextId++, app, pkg, from, text, System.currentTimeMillis(), group, action)
+        val m = Msg(nextId++, app, pkg, from, text, System.currentTimeMillis(), group, action, key)
         msgs += m
         while (msgs.size > 80) msgs.removeAt(0)
         version.intValue = version.intValue + 1
@@ -75,20 +75,47 @@ object NotifStore {
     }
     fun safe(text: String) = if (sensitive(text)) "[скрыто: похоже на код или деньги]" else text.take(400)
 
-    fun reply(ctx: Context, id: Int, text: String): String {
-        val m = byId(id) ?: return "сообщение #$id не найдено"
-        val act = m.action ?: return "у этого уведомления нет кнопки ответа"
-        val inputs = act.remoteInputs ?: return "у этого уведомления нет поля ответа"
-        if (text.isBlank()) return "пустой ответ"
+class ReplyResult(val sent: Boolean, val confirmed: Boolean, val text: String)
+
+    /** Кнопка «Ответить» у уведомления: предпочитаем семантическую «ответить». */
+    fun replyAction(n: Notification): Notification.Action? {
+        val acts = n.actions?.filter { it.remoteInputs?.isNotEmpty() == true }.orEmpty()
+        return acts.firstOrNull { Build.VERSION.SDK_INT >= 28 && it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY } ?: acts.firstOrNull()
+    }
+
+    /** Живое уведомление этого чата прямо сейчас (мессенджеры его постоянно перевыпускают — старая кнопка «протухает»). */
+    private fun liveFor(m: Msg): StatusBarNotification? {
+        val act = NotifListener.inst?.let { runCatching { it.activeNotifications }.getOrNull() } ?: return null
+        return act.firstOrNull { it.key == m.key && m.key.isNotEmpty() }
+            ?: act.firstOrNull { it.packageName == m.pkg && NotifListener.fromOf(it.notification) == m.from }
+    }
+
+    suspend fun reply(ctx: Context, id: Int, text: String): String = replyFull(ctx, id, text).text
+
+    suspend fun replyFull(ctx: Context, id: Int, text: String): ReplyResult {
+        val m = byId(id) ?: return ReplyResult(false, false, "сообщение #$id не найдено")
+        if (text.isBlank()) return ReplyResult(false, false, "пустой ответ")
+        val live = liveFor(m)
+        val act = live?.notification?.let { replyAction(it) } ?: m.action
+            ?: return ReplyResult(false, false, "у этого уведомления нет кнопки ответа")
+        val inputs = act.remoteInputs ?: return ReplyResult(false, false, "у этого уведомления нет поля ответа")
         val intent = Intent()
         val bundle = Bundle()
         inputs.forEach { bundle.putCharSequence(it.resultKey, text) }
         RemoteInput.addResultsToIntent(inputs, intent, bundle)
-        return try {
-            act.actionIntent.send(ctx, 0, intent); "ответил ${m.from} в ${m.app}"
-        } catch (e: PendingIntent.CanceledException) {
-            "уведомление уже закрыто — ответить так нельзя, открой чат"
+        if (Build.VERSION.SDK_INT >= 28) RemoteInput.setResultsSource(intent, RemoteInput.SOURCE_FREE_FORM_INPUT)
+        try { act.actionIntent.send(ctx, 0, intent) }
+        catch (e: PendingIntent.CanceledException) { return ReplyResult(false, false, "уведомление уже закрыто — ответить так нельзя, открой чат") }
+        // проверяем: мессенджер после отправки убирает уведомление или дописывает в него мой ответ
+        val before = live?.notification?.let { NotifListener.lastText(it) }
+        repeat(8) {
+            delay(700)
+            val now = liveFor(m) ?: return ReplyResult(true, true, "ответил ${m.from} в ${m.app}")
+            val t = NotifListener.lastText(now.notification)
+            if (t != null && (t.contains(text.take(30)) || t != before && NotifListener.lastFromMe(now.notification)))
+                return ReplyResult(true, true, "ответил ${m.from} в ${m.app}")
         }
+        return ReplyResult(true, false, "отправил ${m.from} в ${m.app}, но подтверждения не увидел — проверь чат")
     }
 
     fun accessGranted(ctx: Context): Boolean =
@@ -105,6 +132,36 @@ class NotifListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() { super.onCreate(); Prefs.init(this) }
+    override fun onListenerConnected() { inst = this }
+    override fun onListenerDisconnected() { if (inst === this) inst = null }
+    override fun onDestroy() { if (inst === this) inst = null; super.onDestroy() }
+
+    companion object {
+        @Volatile var inst: NotifListener? = null
+
+        /** Кто пишет — так же, как при приходе сообщения. */
+        fun fromOf(n: Notification): String {
+            val ex = n.extras ?: return ""
+            val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
+            val last = style?.messages?.lastOrNull()
+            val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+            val group = (style?.isGroupConversation == true) ||
+                (Build.VERSION.SDK_INT >= 28 && ex.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION))
+            return (if (group) "${style?.conversationTitle ?: title}: ${last?.person?.name ?: ""}" else (last?.person?.name?.toString() ?: title)).trim()
+        }
+
+        fun lastText(n: Notification): String? {
+            val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
+            return (style?.messages?.lastOrNull()?.text ?: n.extras?.getCharSequence(Notification.EXTRA_TEXT))?.toString()
+        }
+
+        /** Последнее сообщение в уведомлении — от самого Алима (мессенджер показал отправленный ответ). */
+        fun lastFromMe(n: Notification): Boolean {
+            val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) ?: return false
+            val last = style.messages.lastOrNull() ?: return false
+            return last.person == null || last.person?.name == style.user.name
+        }
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val pkg = sbn.packageName
@@ -121,8 +178,8 @@ class NotifListener : NotificationListenerService() {
         val from = (if (group) "${style?.conversationTitle ?: title}: ${last?.person?.name ?: ""}" else (last?.person?.name?.toString() ?: title)).trim()
         val text = (last?.text ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty().trim()
         if (from.isEmpty() || text.isEmpty()) return
-        val action = n.actions?.firstOrNull { it.remoteInputs?.isNotEmpty() == true }
-        val m = NotifStore.add(app, pkg, from, text, group, action) ?: return
+        val action = NotifStore.replyAction(n)
+        val m = NotifStore.add(app, pkg, from, text, group, action, sbn.key) ?: return
         // SMS ловит свой приёмник; группы — в ленту, но без разбора моделью (их слишком много)
         if (app != "SMS") Events.add(applicationContext, "msg", app, from, if (group) "группа" else "", text, bulk = group)
         if (Prefs.autoReply && !group && m.canReply && !NotifStore.sensitive(text)) AutoReply.schedule(applicationContext, m)
@@ -187,7 +244,7 @@ object AutoReply {
         return listOf("алим", "передам", "передать ему", "он занят", "он перезвонит", "он ответит", "я помощник", "ассистент", "бот").any { r.contains(it) }
     }
 
-    fun handle(ctx: Context, m: NotifStore.Msg) {
+    suspend fun handle(ctx: Context, m: NotifStore.Msg) {
         val key = m.pkg + m.from
         // Знакомым из контактов не отвечаем никогда (если Алим сам не разрешил) — только уведомление
         val known = inContacts(ctx, m.from)
@@ -219,9 +276,13 @@ object AutoReply {
             if (reply != null && thirdPerson(reply)) {
                 notify(ctx, "${m.from} · ${m.app}", "$note (ответ «$reply» не отправил — звучал не от тебя)")
             } else if (reply != null) {
-                val res = NotifStore.reply(ctx, m.id, reply)
-                lastReply[key] = now
-                notify(ctx, "Ответил: ${m.from}", "«$reply»\n$note ($res)")
+                val res = NotifStore.replyFull(ctx, m.id, reply)
+                if (res.sent) lastReply[key] = now
+                when {
+                    res.confirmed -> notify(ctx, "Ответил: ${m.from}", "«$reply»\n$note")
+                    res.sent -> notify(ctx, "Ответ мог не дойти: ${m.from}", "Пытался ответить «$reply», но ${m.app} не подтвердил отправку — проверь чат.\n$note")
+                    else -> notify(ctx, "Не смог ответить: ${m.from}", "${res.text}. Хотел ответить: «$reply»\n$note")
+                }
             } else {
                 notify(ctx, "${m.from} · ${m.app}", note)
             }
