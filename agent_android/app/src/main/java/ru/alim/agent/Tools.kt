@@ -433,10 +433,10 @@ object Tools {
             Tg.join(u)
         },
 
-        Tool("tg_media", "{\"chat\": \"Крымский ветер\", \"count\": 8, \"day\": \"today|yesterday|ГГГГ-ММ-ДД\"} — ПОКАЗАТЬ фото и видео из чата или паблика Telegram прямо в этом чате (скачивает и показывает; видео играет по ▶). Для любого «покажи фото/видео/ролик» — этот инструмент, НЕ открывай приложение Telegram") t@{ _, a ->
+        Tool("tg_media", "{\"chat\": \"Крымский ветер\", \"count\": 8, \"day\": \"today|yesterday|ГГГГ-ММ-ДД\", \"kind\": \"video|photo|all\"} — ПОКАЗАТЬ медиа из чата/паблика Telegram прямо в чате (видео играет по ▶). При «покажи видео/ролик» ставь kind=video, при «фото» — photo. Если инструмент вернул, что видео нет (только фото), ТАК и скажи, не называй фото видео. НЕ открывай приложение Telegram") t@{ _, a ->
             if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
             val q = a.optString("chat").trim(); if (q.isEmpty()) return@t "из какого чата?"
-            val (text, paths) = Tg.chatMedia(q, a.optInt("count", 10), a.optString("day"))
+            val (text, paths) = Tg.chatMedia(q, a.optInt("count", 10), a.optString("day"), a.optString("kind", "all"))
             if (paths.isNotEmpty()) withContext(Dispatchers.Main) { Agent.cur().tgPhotos.clear(); Agent.cur().tgPhotos.addAll(paths) }
             text
         },

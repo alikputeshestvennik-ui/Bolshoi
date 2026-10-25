@@ -298,20 +298,29 @@ object Tg {
     private fun bestPhoto(p: TdApi.Photo?): Int? = p?.sizes?.maxByOrNull { it.width * it.height }?.photo?.id
 
     /** Последние медиа в чате/паблике: подписи + локальные пути к скачанным фото (включая обложки видео). */
-    suspend fun chatMedia(query: String, count: Int = 12, day: String = ""): Pair<String, List<String>> {
+    /** kind: "video" — только ролики, "photo" — только фото, "all"/прочее — и то и другое. */
+    suspend fun chatMedia(query: String, count: Int = 12, day: String = "", kind: String = "all"): Pair<String, List<String>> {
         if (state != St.READY) return "Telegram не подключён" to emptyList()
         val id = call<TdApi.Chats>(TdApi.SearchChats(query, null, 1))?.chatIds?.firstOrNull()
             ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, null, 1))?.chatIds?.firstOrNull()
             ?: return "не нашёл чат «$query»" to emptyList()
         val title = chatTitle(id)
         val bounds = dayBounds(day)
-        var hist = call<TdApi.Messages>(TdApi.GetChatHistory(id, 0, 0, if (bounds != null) 100 else 50, false))?.messages?.toList().orEmpty()
+        val onlyVideo = kind.startsWith("vid") || kind.startsWith("вид")
+        val onlyPhoto = kind.startsWith("ph") || kind.startsWith("фот")
+        var hist = call<TdApi.Messages>(TdApi.GetChatHistory(id, 0, 0, if (bounds != null) 100 else 60, false))?.messages?.toList().orEmpty()
         if (bounds != null) hist = hist.filter { it.date * 1000L in bounds.first until bounds.second }
         val paths = ArrayList<String>()
         val caps = StringBuilder()
+        var nVid = 0; var nPhoto = 0; var skippedPhoto = 0; var skippedVid = 0
         for (m in hist) {
             if (paths.size >= count) break
             val c = m.content
+            val isVideo = c is TdApi.MessageVideo
+            val isPhoto = c is TdApi.MessagePhoto
+            if (!isVideo && !isPhoto) continue
+            if (onlyVideo && !isVideo) { skippedPhoto++; continue }
+            if (onlyPhoto && !isPhoto) { skippedVid++; continue }
             val coverId = when (c) {
                 is TdApi.MessagePhoto -> bestPhoto(c.photo)
                 is TdApi.MessageVideo -> bestPhoto(c.cover) ?: c.video?.thumbnail?.file?.id
@@ -319,13 +328,18 @@ object Tg {
             } ?: continue
             val vidId = (c as? TdApi.MessageVideo)?.video?.video?.id
             download(coverId)?.let { path ->
-                // обложка + id видеофайла (качаем по тапу, чтобы не тянуть тяжёлое зря)
                 paths += if (vidId != null) "$path\tvid=$vidId" else path
-                val cap = when (c) { is TdApi.MessagePhoto -> c.caption.text; is TdApi.MessageVideo -> "[видео] ${c.caption.text}"; else -> "" }.trim()
-                if (cap.isNotBlank()) caps.append("• ").append(cap.take(120)).append('\n')
+                if (isVideo) nVid++ else nPhoto++
+                val cap = when (c) { is TdApi.MessagePhoto -> "[фото] ${c.caption.text}"; is TdApi.MessageVideo -> "[видео] ${c.caption.text}"; else -> "" }.trim()
+                if (cap != "[фото]" && cap != "[видео]") caps.append("• ").append(cap.take(120)).append('\n')
             }
         }
-        val head = if (paths.isEmpty()) "в «$title» свежих фото не нашёл" else "Медиа из «$title» (${paths.size})" + (if (caps.isNotBlank()) ":\n$caps" else "")
+        val head = when {
+            paths.isNotEmpty() -> "Из «$title»: " + listOfNotNull(if (nVid > 0) "видео $nVid" else null, if (nPhoto > 0) "фото $nPhoto" else null).joinToString(", ") + (if (caps.isNotBlank()) ":\n$caps" else "")
+            onlyVideo && skippedPhoto > 0 -> "видео${if (bounds != null) " за этот день" else ""} в «$title» нет, только фото ($skippedPhoto). Показать фото?"
+            onlyPhoto && skippedVid > 0 -> "фото${if (bounds != null) " за этот день" else ""} в «$title» нет, только видео ($skippedVid). Показать видео?"
+            else -> "в «$title»${if (bounds != null) " за этот день" else ""} медиа не нашёл"
+        }
         return head.trim() to paths
     }
 
