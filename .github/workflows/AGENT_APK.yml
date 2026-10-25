@@ -53,6 +53,19 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/agent-release.keystore"
           test -s "$RUNNER_TEMP/agent-release.keystore"
 
+      - name: Get SHA-1 for VK ID
+        env:
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -list -v \
+            -keystore "$RUNNER_TEMP/agent-release.keystore" \
+            -alias "$ANDROID_KEY_ALIAS" \
+            -storepass "$ANDROID_STORE_PASSWORD" \
+            | grep -E 'SHA1:'
+
       - name: Build signed release APK
         working-directory: agent_android
         env:
