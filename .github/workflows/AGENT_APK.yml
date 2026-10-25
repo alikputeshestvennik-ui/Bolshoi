@@ -67,6 +67,8 @@ jobs:
           YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
           QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
           GOOGLE_API: ${{ secrets.GOOGLE_API }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
         shell: bash
         run: |
           set -o pipefail

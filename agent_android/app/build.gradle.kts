@@ -25,6 +25,9 @@ android {
         buildConfigField("String", "YANDEX_FOLDER_ID", secret("YANDEX_FOLDER_ID"))
         buildConfigField("String", "QWEN_MODEL", secret("QWEN_MODEL"))
         buildConfigField("String", "GOOGLE_API", secret("GOOGLE_API"))
+        buildConfigField("String", "TG_API_ID", secret("TG_API_ID"))
+        buildConfigField("String", "TG_API_HASH", secret("TG_API_HASH"))
+        ndk { abiFilters += "arm64-v8a" }   // TDLib собрана под arm64 (Flip7)
     }
     val ksPath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
     signingConfigs {
@@ -42,6 +45,8 @@ android {
             if (ksPath != null) signingConfig = signingConfigs.getByName("release")
         }
     }
+    sourceSets["main"].java.srcDir("src/main/tdlib/java")
+    sourceSets["main"].jniLibs.srcDir("src/main/tdlib/libs")
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

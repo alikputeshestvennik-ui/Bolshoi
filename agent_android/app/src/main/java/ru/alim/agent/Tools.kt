@@ -328,6 +328,32 @@ object Tools {
             }
         },
 
+        Tool("tg_overview", "{\"unread\": true} — что нового в ЛИЧНОМ Telegram Алима: кто писал, сколько непрочитанных. unread=true — только непрочитанные") t@{ _, a ->
+            if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён — Алим включает его в ⋮ → Настройки → Telegram"
+            Tg.overview(onlyUnread = a.optBoolean("unread", true))
+        },
+
+        Tool("tg_chat", "{\"chat\": \"Егор\", \"count\": 20} — прочитать последние сообщения в чате/канале из личного Telegram Алима (по названию или имени человека). Прочитанным не помечает") t@{ _, a ->
+            if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
+            val q = a.optString("chat").trim(); if (q.isEmpty()) return@t "какой чат?"
+            Tg.readChat(q, a.optInt("count", 20))
+        },
+
+        Tool("tg_search", "{\"query\": \"адрес склада\"} — поиск по всем перепискам личного Telegram Алима") t@{ _, a ->
+            if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
+            val q = a.optString("query").trim(); if (q.isEmpty()) return@t "что искать?"
+            Tg.search(q, a.optInt("count", 15))
+        },
+
+        Tool("tg_send", "{\"chat\": \"Егор\", \"text\": \"буду через 10 минут\"} — отправить сообщение в личном Telegram Алима. ТОЛЬКО по прямой просьбе Алима. Подтверждение покажет приложение",
+            confirm = { a -> "Отправить в Telegram «${a.optString("chat")}»:\n${a.optString("text")}" }) t@{ _, a ->
+            if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
+            val q = a.optString("chat").trim(); val text = a.optString("text").trim()
+            if (q.isEmpty() || text.isEmpty()) return@t "нужно кому и что"
+            val chat = Tg.findChat(q) ?: return@t "не нашёл чат «$q» в Telegram"
+            Tg.sendMessage(chat.first, text)
+        },
+
         Tool("tg_channel", "{\"username\": \"ник_канала\"} — последние посты ОТКРЫТОГО Telegram-канала (ник без @). Ник не знаешь — найди через web_search") t@{ _, a ->
             val u = a.optString("username").trim().removePrefix("@").removePrefix("https://").removePrefix("t.me/").substringBefore('/').substringBefore('?')
             if (u.isEmpty()) return@t "нужен ник канала"

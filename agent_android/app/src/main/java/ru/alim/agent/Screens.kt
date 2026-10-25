@@ -461,7 +461,7 @@ fun RulesScreen(back: () -> Unit) {
 // ————————————————— Подключения —————————————————
 
 @Composable
-fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var fast by remember { mutableStateOf(Prefs.fastModel) }
@@ -564,6 +564,12 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 Text("${Friends.main.name} видит баланс и историю. Переводит только по твоей просьбе в чате и после отпечатка пальца.", style = body(12, color = Muted))
                 if (yc) BigButton("Отключить", { Yoo.disconnect(ctx); tick++ }, bg = Card, fg = Ink, border = Line)
                 else BigButton("Подключить ЮMoney", openYoo, bg = Violet, fg = Bg)
+            }
+
+            Section("Telegram", if (Tg.state == Tg.St.READY) "подключён" else "не подключён",
+                statusColor = if (Tg.state == Tg.St.READY) Muted else Amber) {
+                Text("Твой личный Telegram: «что нового», «что писал Егор», поиск по переписке. Писать — только по твоей просьбе.", style = body(12, color = Muted))
+                BigButton(if (Tg.state == Tg.St.READY) "Открыть" else "Подключить Telegram", openTg, bg = if (Tg.state == Tg.St.READY) Card else Teal, fg = if (Tg.state == Tg.St.READY) Ink else Bg, border = if (Tg.state == Tg.St.READY) Line else null)
             }
 
             Section("Поиск в интернете", if (YaSearch.ready) "Яндекс Поиск" else "запасной: DuckDuckGo",
