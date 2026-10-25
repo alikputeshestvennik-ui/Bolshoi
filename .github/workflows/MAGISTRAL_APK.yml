@@ -1,0 +1,85 @@
+name: Build Magistral APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'magistral/**'
+      - '.github/workflows/MAGISTRAL_APK.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Bundle 3D library into the game (works offline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o magistral/app/src/main/assets/three.min.js \
+            "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+          test -s magistral/app/src/main/assets/three.min.js
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-provider: basic
+
+      - name: Prepare release keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_B64"
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/magistral-release.keystore"
+          test -s "$RUNNER_TEMP/magistral-release.keystore"
+
+      - name: Build signed release APK
+        working-directory: magistral
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/magistral-release.keystore
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Name the APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp magistral/app/build/outputs/apk/release/app-release.apk "out/Magistral-${{ github.run_number }}.apk"
+          ls -lh out
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: magistral-apk
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release with direct download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: magistral-${{ github.run_number }}
+          name: Магистраль ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          body: Сборка игры «Магистраль». Скачайте APK ниже и установите на телефон.
+          files: out/*.apk
