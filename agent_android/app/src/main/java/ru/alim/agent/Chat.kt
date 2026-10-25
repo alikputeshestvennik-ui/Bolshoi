@@ -88,16 +88,9 @@ object Friends {
             }
         }
         if (list.none { it.main }) list.add(0, Friend(MAIN, Prefs.botName, Prefs.botMale, Prefs.botStyle, Prefs.botAvatar))
-        // Мустафа — по описанию Алима (один раз)
-        if (!Prefs.seededMustafa) {
-            Prefs.seededMustafa = true
-            val i = list.indexOfFirst { it.name.trim().equals("Мустафа", true) }
-            val m = if (i >= 0) list[i] else Friend("f" + System.currentTimeMillis(), "Мустафа", true, "buddy", role = "просто поболтать по-братски")
-            val f = m.copy(male = true, voice = m.voice.ifBlank { "Algenib" }, speech = m.speech.ifBlank { MUSTAFA })
-            if (i >= 0) list[i] = f else list.add(f)
-            persist()
-        }
-        current = Prefs.lastChat.takeIf { id -> list.any { it.id == id } } ?: MAIN
+        // теперь помощник один — остальных друзей не показываем
+        list.removeAll { !it.main }
+        current = MAIN
     }
 
     fun get(id: String): Friend = list.firstOrNull { it.id == id } ?: list.firstOrNull { it.main } ?: Friend(MAIN, "Артур", true, "buddy")

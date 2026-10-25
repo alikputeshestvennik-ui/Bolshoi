@@ -74,7 +74,7 @@ object Prefs {
     var chatty: Int get() = sp.getInt("chatty", 2); set(v) = sp.edit().putInt("chatty", v).apply()
     /** Кнопки быстрых ответов под сообщениями Артура. По умолчанию скрыты. */
     var quickButtons: Boolean get() = b("qbtn", false); set(v) = putB("qbtn", v)
-    var voiceReplies: Boolean get() = b("vrep", true); set(v) = putB("vrep", v)
+    var voiceReplies: Boolean get() = b("vrep2", false); set(v) = putB("vrep2", v)
     var quietFrom: Int get() = sp.getInt("qfrom", 23); set(v) = sp.edit().putInt("qfrom", v).apply()
     var quietTo: Int get() = sp.getInt("qto", 8); set(v) = sp.edit().putInt("qto", v).apply()
     var lastMorning: String get() = s("lmorn", ""); set(v) = put("lmorn", v)

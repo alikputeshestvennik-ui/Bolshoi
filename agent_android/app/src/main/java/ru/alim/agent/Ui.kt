@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Chats, Task, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative, Call }
+enum class Scr { Home, Task, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
@@ -74,17 +74,16 @@ fun App(voice: Voice) {
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(open) {
         if (open == "digest") { scr = Scr.Digest; Nav.open = "" }
-        if (open.startsWith("chat:")) { Friends.open(open.removePrefix("chat:")); scr = Scr.Home; Nav.open = "" }
+        if (open.startsWith("chat:")) { scr = Scr.Home; Nav.open = "" }
         if (open == "yt") {
             Nav.open = ""
             Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
         }
     }
 
-    // из чата «назад» — к списку чатов, из списка — выход; остальные экраны — в чат
-    BackHandler(enabled = scr != Scr.Chats) {
+    // из чата «назад» — выход; остальные экраны — в чат
+    BackHandler(enabled = scr != Scr.Home) {
         when (scr) {
-            Scr.Home -> scr = Scr.Chats
             Scr.Task -> { Agent.close(); scr = taskBack; taskBack = Scr.Home }
             else -> scr = Scr.Home
         }
@@ -101,17 +100,13 @@ fun App(voice: Voice) {
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Call) Modifier else Modifier.systemBarsPadding().imePadding())) {
+        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home) Modifier else Modifier.systemBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             when (scr) {
-                Scr.Home -> androidx.compose.runtime.key(Friends.current) { ChatScreen(Friends.current, go) }
-                Scr.Chats -> ChatListScreen(open = { Friends.open(it); scr = Scr.Home },
-                    add = { val f = Friends.add(); Friends.open(f.id); scr = Scr.Profile },
-                    profile = { Friends.open(it); scr = Scr.Profile })
-                Scr.Profile -> ProfileScreen(Friends.current, home)
+                Scr.Home -> ChatScreen(Friends.MAIN, go)
+                Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen(home)
-                Scr.Call -> CallScreen(Friends.current) { scr = Scr.Home }
                 Scr.Initiative -> InitiativeScreen(home)
                 Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }

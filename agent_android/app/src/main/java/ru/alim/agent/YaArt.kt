@@ -103,7 +103,7 @@ object YaArt {
             put(MediaStore.Images.Media.DISPLAY_NAME, "agent_${System.currentTimeMillis()}.${if (png) "png" else "jpg"}")
             put(MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
             if (Build.VERSION.SDK_INT >= 29) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Свои")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Пилот")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }

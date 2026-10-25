@@ -500,6 +500,19 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit) 
                 })
             }
 
+            Section("Быстрый доступ", "выделить текст · поделиться · шторка") {
+                Text("• Выдели текст в любом приложении → в меню «Пилот».\n• Из любого приложения «Поделиться» → «Пилот» (ссылка, скриншот, текст).\n• Шторка поверх всего — по плитке «Спросить» или по боковой кнопке.",
+                    style = body(13, color = Muted), lineHeight = 19.sp)
+                var tileMsg by remember { mutableStateOf<String?>(null) }
+                BigButton("Добавить плитку «Спросить» в шторку", { QuickTile.requestAdd(ctx) { tileMsg = it } }, bg = Card, fg = Ink, border = Line)
+                tileMsg?.let { Text(it, style = body(13, color = Muted)) }
+                Text("Боковая кнопка: сделай Пилота цифровым помощником (Приложения по умолчанию → Цифровой помощник → Пилот), затем Настройки → Дополнительные функции → Боковая кнопка → Нажатие и удержание → Цифровой помощник.",
+                    style = body(12, color = Muted), lineHeight = 17.sp)
+                BigButton("Приложения по умолчанию", {
+                    runCatching { ctx.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                }, bg = Card, fg = Ink, border = Line)
+            }
+
             Section("Модели", "${Agent.short(fast)} · ${Agent.short(smart)} · фон ${Agent.short(bgm)}") {
                 if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
                 Text("Модели Яндекса бесплатны (цена 0) и идут без VPN. Цена — ₽ за 1000 токенов.", style = body(12, color = Muted))

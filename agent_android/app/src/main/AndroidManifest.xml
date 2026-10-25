@@ -50,7 +50,7 @@
     </queries>
 
     <application
-        android:label="Свои"
+        android:label="Пилот"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
@@ -63,6 +63,35 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".QuickActivity" android:exported="true" android:label="Пилот"
+            android:theme="@style/QuickTheme" android:excludeFromRecents="true" android:taskAffinity="ru.alim.agent.quick"
+            android:launchMode="singleTask" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|density">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <service android:name=".QuickTile" android:exported="true" android:label="Спросить Пилота"
+            android:icon="@drawable/ic_launcher_mono" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <receiver android:name=".SmsIn" android:exported="true" android:permission="android.permission.BROADCAST_SMS">
             <intent-filter><action android:name="android.provider.Telephony.SMS_RECEIVED" /></intent-filter>
         </receiver>
@@ -73,7 +102,7 @@
         <receiver android:name=".BootIn" android:exported="true">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
-        <service android:name=".NotifListener" android:exported="true" android:label="Свои: мессенджеры"
+        <service android:name=".NotifListener" android:exported="true" android:label="Пилот: уведомления"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>

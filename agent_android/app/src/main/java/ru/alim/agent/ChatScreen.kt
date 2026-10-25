@@ -192,17 +192,6 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
                 }
             } else {
-                // назад — к списку чатов (с отметкой, если у других друзей есть новое)
-                val others = Friends.list.filter { it.id != fid }.sumOf { Chat.of(it.id).unread }
-                Box(Modifier.size(48.dp)) {
-                    Box(Modifier.fillMaxSize().glass(haze, CircleShape).clickable(onClickLabel = "Все чаты") { go(Scr.Chats) }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Все чаты", tint = Ink)
-                    }
-                    if (others > 0) Box(Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
-                        Text(if (others > 9) "9+" else "$others", style = body(10, FontWeight.Bold, OnAccent))
-                    }
-                }
-                HGap(8)
                 Row(Modifier.weight(1f).height(56.dp).glass(haze, RoundedCornerShape(28.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Avatar(44.dp, online = Online.online && tick >= 0, f = f)
@@ -214,10 +203,6 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-            }
-            HGap(8)
-            Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Позвонить") { go(Scr.Call) }, contentAlignment = Alignment.Center) {
-                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icPhone), "Позвонить", tint = Ink, modifier = Modifier.size(22.dp))
             }
             HGap(8)
             Box {

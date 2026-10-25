@@ -47,7 +47,6 @@ object Proactive {
     suspend fun tick(ctx: Context): String = lock.withLock {
         Prefs.init(ctx); Chat.init(ctx)
         if (!Online.online || Agent.busy) return "—"
-        runCatching { friends(ctx) }
         val c = Calendar.getInstance(); val h = c.get(Calendar.HOUR_OF_DAY)
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.time)
         if (Prefs.initMorning && h >= Prefs.morningHour && h < 12 && Prefs.lastMorning != today && !quiet(h)) {
