@@ -320,16 +320,17 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     val bg = if (m.me) Th.c.outBubble else Th.c.inBubble
     val ink = if (m.me) Th.c.outInk else Th.c.ink
     val meta = if (m.me) Th.c.outMeta else Th.c.meta
-    val hasCards = m.items.isNotBlank() || m.files.isNotBlank() || m.photos.isNotBlank()
+    val hasCards = m.items.isNotBlank() || m.files.isNotBlank() || m.photos.isNotBlank() || m.tgPhotos.isNotBlank()
 
     if (m.note) {
         Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(md(m.text), style = body(13, color = Ink), lineHeight = 18.sp, modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(12.dp))
                 .background(Th.c.inBubble.copy(alpha = 0.7f)).padding(horizontal = 12.dp, vertical = 6.dp))
-            val cards = m.photos.isNotBlank() || m.items.isNotBlank() || m.files.isNotBlank()
+            val cards = m.photos.isNotBlank() || m.tgPhotos.isNotBlank() || m.items.isNotBlank() || m.files.isNotBlank()
             if (cards) Column(Modifier.widthIn(max = 330.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble).padding(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
+                if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('|').filter { it.isNotBlank() })
                 if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
                 if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
             }
@@ -366,6 +367,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
                     Text(text, style = body(13, color = meta), modifier = Modifier.padding(horizontal = 2.dp))
                 if (m.att.isNotBlank()) Text("📎 ${m.att}", style = body(13, color = meta), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
+                if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('|').filter { it.isNotBlank() })
                 if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
                 if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
                 Row(Modifier.align(Alignment.End).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {

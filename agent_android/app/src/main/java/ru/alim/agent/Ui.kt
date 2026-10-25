@@ -69,6 +69,18 @@ fun App(voice: Voice) {
     LaunchedEffect(Unit) {
         if (!Prefs.askedPerms) { Prefs.askedPerms = true; perms.launch(neededPerms()) }
     }
+    // при открытии приложения — коротко показать новое в Telegram (один раз за запуск)
+    val tgCtx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        if (Tg.configured && !Tg.shownOnOpen) {
+            Tg.start(tgCtx)
+            var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)
+            if (!Tg.shownOnOpen) {
+                Tg.shownOnOpen = true
+                runCatching { Tg.openSummary() }.getOrNull()?.let { Chat.main.note("📨 Новое в Telegram:\n$it") }
+            }
+        }
+    }
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current

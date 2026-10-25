@@ -43,7 +43,8 @@ object Agent {
 
     /** Итог задачи — уходит в переписку сообщением Артура. */
     class Done(val ok: Boolean, val text: String, val buttons: List<String>, val products: List<Shop.Item>,
-               val files: List<Docs.FileRef>, val photos: List<Long>, val steps: List<String>, val secs: Long)
+               val files: List<Docs.FileRef>, val photos: List<Long>, val steps: List<String>, val secs: Long,
+               val tgPhotos: List<String> = emptyList())
 
     lateinit var app: Context
     var onSpeak: ((String) -> Unit)? = null
@@ -86,6 +87,7 @@ object Agent {
         val steps = mutableStateListOf<Step>()
         /** Фото, которые агент показывает на экране задачи. */
         val photos = mutableStateListOf<Long>()
+        val tgPhotos = mutableStateListOf<String>()
         /** Товары, найденные в этой задаче, — карточками на экране. */
         val products = mutableStateListOf<Shop.Item>()
         /** Файлы Word/Excel, сделанные в этой задаче. */
@@ -124,7 +126,7 @@ object Agent {
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList()
             startedAt = System.currentTimeMillis(); endedAt = 0L
             model = fast(); phase = Phase.WORKING
-            lastMsgs = null; photos.clear(); products.clear(); files.clear()
+            lastMsgs = null; photos.clear(); tgPhotos.clear(); products.clear(); files.clear()
             job = scope.launch(RunCtx(this)) { loop(t, null, false) }
         }
 
@@ -135,7 +137,7 @@ object Agent {
             val base = lastMsgs
             if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList()
-            photos.clear(); products.clear(); files.clear()
+            photos.clear(); tgPhotos.clear(); products.clear(); files.clear()
             startedAt = System.currentTimeMillis(); endedAt = 0L
             model = if (lastSmart) smart() else fast(); phase = Phase.WORKING
             job = scope.launch(RunCtx(this)) { loop(t, base, lastSmart) }
@@ -157,7 +159,7 @@ object Agent {
         /** Открыть прошлую задачу из истории: шаги, ответ, товары. Можно продолжить разговор. */
         fun showPast(r: TaskRec) {
             if (busy) return
-            task = r.title; steps.clear(); photos.clear(); products.clear(); files.clear(); pending = null
+            task = r.title; steps.clear(); photos.clear(); tgPhotos.clear(); products.clear(); files.clear(); pending = null
             r.log.lines().filter { it.isNotBlank() }.forEach { l ->
                 steps.add(Step(l.substringBefore('\t')).also { it.done = true; it.detail = l.substringAfter('\t', "").replace("⏎", "\n") })
             }
@@ -219,7 +221,7 @@ object Agent {
             append("ПАМЯТЬ — что ты знаешь об Алиме (номер в скобках — id записи):\n")
             append(Memory.forPrompt(Agent.app, 40).ifBlank { "(пока пусто)" }).append("\n")
             append("- Алим просит запомнить — memory_save. Узнал в разговоре что-то устойчивое и полезное (кто есть кто, привычки, планы) — тоже memory_save, коротко. Догадки проверяй, прежде чем на них опираться.\n")
-            append("- Личный Telegram Алима: «что нового/кто писал в телеге» — tg_overview; «что писал X», прочитать чат/канал — tg_chat; найти по переписке — tg_search; написать кому-то — tg_send (только по прямой просьбе). Если Telegram не подключён, инструмент сам это скажет.\n")
+            append("- Личный Telegram Алима: «что нового/кто писал в телеге» — tg_overview; «что писал X», прочитать чат/канал — tg_chat; найти по переписке — tg_search; подписаться — tg_join; показать фото/видео из чата или паблика — tg_media; написать кому-то — tg_send (tg_join и tg_send — только по прямой просьбе). Если Telegram не подключён, инструмент сам это скажет.\n")
             append("- «Что нового», «кто писал», «что в почте», «что было сегодня» — events и mail_check. Ты сам следишь за уведомлениями, SMS и почтой.\n")
             append("Инструменты (аргументы — пример JSON):\n")
             append(Tools.describe(if (isMain) null else Tools.FRIEND_TOOLS))
@@ -336,7 +338,7 @@ object Agent {
             }
             val cb = onFinish
             if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
-                steps.map { it.text }, (endedAt - startedAt) / 1000))
+                steps.map { it.text }, (endedAt - startedAt) / 1000, tgPhotos.toList()))
             else if (ok && Prefs.speak) onSpeak?.invoke(text)
         }
 

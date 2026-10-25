@@ -354,6 +354,21 @@ object Tools {
             Tg.sendMessage(chat.first, text)
         },
 
+        Tool("tg_join", "{\"username\": \"@example\"} — подписаться на Telegram-канал/чат в личном Telegram Алима. Только по прямой просьбе",
+            confirm = { a -> "Подписаться в Telegram на ${a.optString("username")}?" }) t@{ _, a ->
+            if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
+            val u = a.optString("username").trim(); if (u.isEmpty()) return@t "на кого подписаться?"
+            Tg.join(u)
+        },
+
+        Tool("tg_media", "{\"chat\": \"Крымский ветер\", \"count\": 8} — показать фото/видео из чата или паблика Telegram (скачивает и показывает в приложении)") t@{ _, a ->
+            if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
+            val q = a.optString("chat").trim(); if (q.isEmpty()) return@t "из какого чата?"
+            val (text, paths) = Tg.chatMedia(q, a.optInt("count", 10))
+            if (paths.isNotEmpty()) withContext(Dispatchers.Main) { Agent.cur().tgPhotos.clear(); Agent.cur().tgPhotos.addAll(paths) }
+            text
+        },
+
         Tool("tg_channel", "{\"username\": \"ник_канала\"} — последние посты ОТКРЫТОГО Telegram-канала (ник без @). Ник не знаешь — найди через web_search") t@{ _, a ->
             val u = a.optString("username").trim().removePrefix("@").removePrefix("https://").removePrefix("t.me/").substringBefore('/').substringBefore('?')
             if (u.isEmpty()) return@t "нужен ник канала"

@@ -31,7 +31,8 @@ object Tg {
     var state by mutableStateOf(St.OFF); private set
     var hint by mutableStateOf(""); private set
     var me by mutableStateOf(""); private set
-    var error by mutableStateOf(""); private set
+    var error by mutableStateOf("")
+    @Volatile var shownOnOpen = false
 
     private var client: Client? = null
     private var app: Context? = null
@@ -245,5 +246,59 @@ object Tg {
         val f = TdApi.SendMessage().apply { this.chatId = chatId; inputMessageContent = content }
         val r = call<TdApi.Message>(f)
         return if (r != null) "отправил в «${chatTitle(chatId)}»" else "не получилось отправить"
+    }
+
+    // ——— подписка на канал (по просьбе Алима, с подтверждением на уровне инструмента) ———
+
+    suspend fun join(username: String): String {
+        if (state != St.READY) return "Telegram не подключён"
+        val name = username.trim().removePrefix("@").substringAfterLast("/")
+        val chat = call<TdApi.Chat>(TdApi.SearchPublicChat(name)) ?: return "не нашёл @$name"
+        val r = call<TdApi.Ok>(TdApi.JoinChat(chat.id))
+        return if (r != null) "подписался на «${chat.title}»" else "не получилось подписаться на «${chat.title}»"
+    }
+
+    // ——— медиа по запросу: скачать фото из чата/паблика и показать ———
+
+    private suspend fun download(fileId: Int): String? {
+        val f = call<TdApi.File>(TdApi.DownloadFile(fileId, 1, 0, 0, true)) ?: return null
+        return f.local?.path?.takeIf { it.isNotBlank() && f.local.isDownloadingCompleted }
+    }
+
+    private fun bestPhoto(p: TdApi.Photo?): Int? = p?.sizes?.maxByOrNull { it.width * it.height }?.photo?.id
+
+    /** Последние медиа в чате/паблике: подписи + локальные пути к скачанным фото (включая обложки видео). */
+    suspend fun chatMedia(query: String, count: Int = 12): Pair<String, List<String>> {
+        if (state != St.READY) return "Telegram не подключён" to emptyList()
+        val id = call<TdApi.Chats>(TdApi.SearchChats(query, null, 1))?.chatIds?.firstOrNull()
+            ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, null, 1))?.chatIds?.firstOrNull()
+            ?: return "не нашёл чат «$query»" to emptyList()
+        val title = chatTitle(id)
+        val hist = call<TdApi.Messages>(TdApi.GetChatHistory(id, 0, 0, 50, false))?.messages?.toList().orEmpty()
+        val paths = ArrayList<String>()
+        val caps = StringBuilder()
+        for (m in hist) {
+            if (paths.size >= count) break
+            val c = m.content
+            val fileId = when (c) {
+                is TdApi.MessagePhoto -> bestPhoto(c.photo)
+                is TdApi.MessageVideo -> bestPhoto(c.cover) ?: c.video?.thumbnail?.file?.id
+                else -> null
+            } ?: continue
+            download(fileId)?.let { path ->
+                paths += path
+                val cap = when (c) { is TdApi.MessagePhoto -> c.caption.text; is TdApi.MessageVideo -> "[видео] ${c.caption.text}"; else -> "" }.trim()
+                if (cap.isNotBlank()) caps.append("• ").append(cap.take(120)).append('\n')
+            }
+        }
+        val head = if (paths.isEmpty()) "в «$title» свежих фото не нашёл" else "Медиа из «$title» (${paths.size})" + (if (caps.isNotBlank()) ":\n$caps" else "")
+        return head.trim() to paths
+    }
+
+    /** При открытии приложения: кратко показать новое в Telegram (вместо постоянных пушей). */
+    suspend fun openSummary(): String? {
+        if (state != St.READY) return null
+        val s = overview(limit = 8, onlyUnread = true)
+        return s.takeIf { it.isNotBlank() && it != "Непрочитанного нет" && it != "Telegram не подключён" }
     }
 }

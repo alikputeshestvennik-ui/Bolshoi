@@ -45,6 +45,7 @@ data class Msg(
     val items: String = "",          // товары или ролики (Shop.toJson)
     val files: String = "",          // файлы Word/Excel
     val photos: String = "",         // id фото через запятую
+    val tgPhotos: String = "",       // локальные пути к медиа из Telegram (через запятую)
     val buttons: List<String> = emptyList(),
     val meta: String = "",           // «искал на Ozon · 34 сек»
     val status: String = "sent",     // pending — ждёт сети, sent — ✓, read — ✓✓
@@ -386,14 +387,14 @@ class ChatStore(val fid: String) {
             items = if (r.products.isEmpty()) "" else Shop.toJson(r.products), photos = r.photos.joinToString(","),
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
             note = true))
-        val heavy = r.products.isNotEmpty() || r.files.isNotEmpty() || r.photos.isNotEmpty()
+        val heavy = r.products.isNotEmpty() || r.files.isNotEmpty() || r.photos.isNotEmpty() || r.tgPhotos.isNotEmpty()
         val wantVoice = forFid == null && Prefs.voiceReplies && r.ok && VoiceMsg.canSpeak && !heavy && r.text.length < 400 &&
             (lastUserVoice || (voiceCount < 3 && Math.random() < 0.18 && r.text.length < 220))
         lastUserVoice = false
         val base = Msg(newId(), false, r.text, System.currentTimeMillis(),
             items = if (r.products.isEmpty()) "" else Shop.toJson(r.products),
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
-            photos = r.photos.joinToString(","), buttons = r.buttons, meta = meta, failed = !r.ok)
+            photos = r.photos.joinToString(","), tgPhotos = r.tgPhotos.joinToString("|"), buttons = r.buttons, meta = meta, failed = !r.ok)
         if (wantVoice) io.launch {
             val v = runCatching { VoiceMsg.speakToFile(Chat.app, r.text, friend) }.getOrNull()
             withContext(Dispatchers.Main) {
@@ -449,12 +450,12 @@ class ChatStore(val fid: String) {
 
     private fun toJson(m: Msg) = JSONObject().put("id", m.id).put("me", m.me).put("t", m.text).put("ts", m.ts)
         .put("v", m.voice).put("d", m.dur).put("r", m.replyTo).put("rm", m.replyMe).put("rt", m.replyText)
-        .put("i", m.items).put("f", m.files).put("p", m.photos).put("b", JSONArray(m.buttons)).put("mt", m.meta)
+        .put("i", m.items).put("f", m.files).put("p", m.photos).put("tgp", m.tgPhotos).put("b", JSONArray(m.buttons)).put("mt", m.meta)
         .put("s", m.status).put("a", m.att).put("x", m.failed).put("n", m.note).put("fr", m.from)
 
     private fun fromJson(o: JSONObject) = Msg(o.optLong("id"), o.optBoolean("me"), o.optString("t"), o.optLong("ts"),
         o.optString("v"), o.optInt("d"), o.optLong("r"), o.optBoolean("rm"), o.optString("rt"),
-        o.optString("i"), o.optString("f"), o.optString("p"),
+        o.optString("i"), o.optString("f"), o.optString("p"), o.optString("tgp"),
         o.optJSONArray("b")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(),
         o.optString("mt"), o.optString("s", "read").let { if (it == "pending") "pending" else it }, o.optString("a"), o.optBoolean("x"),
         o.optBoolean("n"), o.optString("fr"))

@@ -276,12 +276,23 @@ object AutoReply {
             if (reply != null && thirdPerson(reply)) {
                 notify(ctx, "${m.from} · ${m.app}", "$note (ответ «$reply» не отправил — звучал не от тебя)")
             } else if (reply != null) {
-                val res = NotifStore.replyFull(ctx, m.id, reply)
-                if (res.sent) lastReply[key] = now
-                when {
-                    res.confirmed -> notify(ctx, "Ответил: ${m.from}", "«$reply»\n$note")
-                    res.sent -> notify(ctx, "Ответ мог не дойти: ${m.from}", "Пытался ответить «$reply», но ${m.app} не подтвердил отправку — проверь чат.\n$note")
-                    else -> notify(ctx, "Не смог ответить: ${m.from}", "${res.text}. Хотел ответить: «$reply»\n$note")
+                // Telegram — отправляем надёжно через свой клиент (API), если он подключён; иначе через кнопку уведомления
+                val viaApi = m.app == "Telegram" && Tg.state == Tg.St.READY
+                val ok = if (viaApi) {
+                    val chat = runCatching { Tg.findChat(m.from) }.getOrNull()
+                    if (chat != null) { runCatching { Tg.sendMessage(chat.first, reply) }.isSuccess } else false
+                } else false
+                if (ok) {
+                    lastReply[key] = now
+                    notify(ctx, "Ответил: ${m.from}", "«$reply»\n$note")
+                } else {
+                    val res = NotifStore.replyFull(ctx, m.id, reply)
+                    if (res.sent) lastReply[key] = now
+                    when {
+                        res.confirmed -> notify(ctx, "Ответил: ${m.from}", "«$reply»\n$note")
+                        res.sent -> notify(ctx, "Ответ мог не дойти: ${m.from}", "Пытался ответить «$reply», но ${m.app} не подтвердил отправку — проверь чат.\n$note")
+                        else -> notify(ctx, "Не смог ответить: ${m.from}", "${res.text}. Хотел ответить: «$reply»\n$note")
+                    }
                 }
             } else {
                 notify(ctx, "${m.from} · ${m.app}", note)

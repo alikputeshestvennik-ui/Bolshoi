@@ -135,3 +135,33 @@ object PhotoSearch {
         return ids.filter { it in found } to ids.size
     }
 }
+
+/** Медиа из Telegram: миниатюры по локальным путям, тап — полноэкранный просмотр внутри приложения. */
+@Composable
+fun TgPhotoGrid(paths: List<String>) {
+    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        paths.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { path ->
+                    val bmp = androidx.compose.runtime.remember(path) { loadBitmap(path, 480) }
+                    Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(Card)
+                        .clickable { open = path }) {
+                        if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+    open?.let { p ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { open = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            val big = androidx.compose.runtime.remember(p) { loadBitmap(p, 1600) }
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.95f))
+                .clickable { open = null }, contentAlignment = androidx.compose.ui.Alignment.Center) {
+                if (big != null) Image(big, null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+            }
+        }
+    }
+}
