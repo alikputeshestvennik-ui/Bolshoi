@@ -368,6 +368,30 @@ object Tools {
             }
         },
 
+        Tool("vk_feed", "{\"count\": 15} — лента новостей ВКонтакте Алима") t@{ _, _ ->
+            if (!Vk.ready) return@t "ВК не подключён — Алим включит его в ⋮ → Настройки → ВКонтакте"
+            Vk.feed()
+        },
+        Tool("vk_wall", "{\"who\": \"durov или адрес группы\", \"count\": 10} — стена человека или сообщества в ВК") t@{ _, a ->
+            if (!Vk.ready) return@t "ВК не подключён"
+            val w = a.optString("who").trim(); if (w.isEmpty()) return@t "чья стена?"
+            Vk.wall(w, a.optInt("count", 10))
+        },
+        Tool("music_search", "{\"query\": \"Баста\"} — найти треки/альбом в Яндекс Музыке") t@{ _, a ->
+            if (!YaMusic.ready) return@t "Яндекс Музыка не подключена — ⋮ → Настройки → Яндекс Музыка"
+            val q = a.optString("query").trim(); if (q.isEmpty()) return@t "что искать?"
+            YaMusic.search(q)
+        },
+        Tool("music_play", "{\"query\": \"Баста - Сансара\"} — поставить трек: найдёт и откроет в приложении Яндекс Музыки") t@{ ctx, a ->
+            if (!YaMusic.ready) return@t "Яндекс Музыка не подключена"
+            val q = a.optString("query").trim(); if (q.isEmpty()) return@t "что поставить?"
+            YaMusic.play(ctx, q)
+        },
+        Tool("music_my", "{} — твои плейлисты в Яндекс Музыке") t@{ _, _ ->
+            if (!YaMusic.ready) return@t "Яндекс Музыка не подключена"
+            YaMusic.myPlaylists()
+        },
+
         Tool("gh_build", "{} — статус последней сборки приложения «Пилот» на GitHub (идёт / успешно / упала)") t@{ _, _ ->
             Git.lastBuild()
         },

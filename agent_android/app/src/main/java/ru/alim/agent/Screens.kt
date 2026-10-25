@@ -461,7 +461,7 @@ fun RulesScreen(back: () -> Unit) {
 // ————————————————— Подключения —————————————————
 
 @Composable
-fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openVk: () -> Unit, openMusic: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var fast by remember { mutableStateOf(Prefs.fastModel) }
@@ -570,6 +570,16 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 statusColor = if (Tg.state == Tg.St.READY) Muted else Amber) {
                 Text("Твой личный Telegram: «что нового», «что писал Егор», поиск по переписке. Писать — только по твоей просьбе.", style = body(12, color = Muted))
                 BigButton(if (Tg.state == Tg.St.READY) "Открыть" else "Подключить Telegram", openTg, bg = if (Tg.state == Tg.St.READY) Card else Teal, fg = if (Tg.state == Tg.St.READY) Ink else Bg, border = if (Tg.state == Tg.St.READY) Line else null)
+            }
+
+            Section("ВКонтакте", if (Vk.ready) "подключён" else "не подключён", statusColor = if (Vk.ready) Muted else Amber) {
+                Text("Лента, стены людей и сообществ. Писать и личные сообщения — ограничение ВК.", style = body(12, color = Muted))
+                BigButton(if (Vk.ready) "Открыть" else "Подключить ВКонтакте", openVk, bg = if (Vk.ready) Card else Teal, fg = if (Vk.ready) Ink else Bg, border = if (Vk.ready) Line else null)
+            }
+
+            Section("Яндекс Музыка", if (YaMusic.ready) "подключена" else "не подключена", statusColor = if (YaMusic.ready) Muted else Amber) {
+                Text("Поиск, плейлисты и воспроизведение в приложении Яндекс Музыки.", style = body(12, color = Muted))
+                BigButton(if (YaMusic.ready) "Открыть" else "Подключить Музыку", openMusic, bg = if (YaMusic.ready) Card else Teal, fg = if (YaMusic.ready) Ink else Bg, border = if (YaMusic.ready) Line else null)
             }
 
             Section("Поиск в интернете", if (YaSearch.ready) "Яндекс Поиск" else "запасной: DuckDuckGo",
