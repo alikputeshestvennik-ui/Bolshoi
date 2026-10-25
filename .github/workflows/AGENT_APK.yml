@@ -82,6 +82,9 @@ jobs:
           GOOGLE_API: ${{ secrets.GOOGLE_API }}
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          VK_APP_ID: ${{ secrets.VK_APP_ID }}
+          VK_SECURE_KEY: ${{ secrets.VK_SECURE_KEY }}
         shell: bash
         run: |
           set -o pipefail

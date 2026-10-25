@@ -27,6 +27,9 @@ android {
         buildConfigField("String", "GOOGLE_API", secret("GOOGLE_API"))
         buildConfigField("String", "TG_API_ID", secret("TG_API_ID"))
         buildConfigField("String", "TG_API_HASH", secret("TG_API_HASH"))
+        buildConfigField("String", "GH_PAT", secret("GH_PAT"))
+        buildConfigField("String", "VK_APP_ID", secret("VK_APP_ID"))
+        buildConfigField("String", "VK_SECURE_KEY", secret("VK_SECURE_KEY"))
         ndk { abiFilters += "arm64-v8a" }   // TDLib собрана под arm64 (Flip7)
     }
     val ksPath: String? = System.getenv("ANDROID_KEYSTORE_PATH")

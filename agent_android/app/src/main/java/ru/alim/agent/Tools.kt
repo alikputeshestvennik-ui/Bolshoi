@@ -368,15 +368,23 @@ object Tools {
             }
         },
 
+        Tool("gh_build", "{} — статус последней сборки приложения «Пилот» на GitHub (идёт / успешно / упала)") t@{ _, _ ->
+            Git.lastBuild()
+        },
+
+        Tool("gh_update", "{} — скачать свежую собранную версию приложения и открыть установку (Алим подтвердит). Только по его просьбе «обнови/поставь новую версию»") t@{ ctx, _ ->
+            Git.installLatest(ctx)
+        },
+
         Tool("tg_overview", "{\"unread\": true} — что нового в ЛИЧНОМ Telegram Алима: кто писал, сколько непрочитанных. unread=true — только непрочитанные") t@{ _, a ->
             if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён — Алим включает его в ⋮ → Настройки → Telegram"
             Tg.overview(onlyUnread = a.optBoolean("unread", true))
         },
 
-        Tool("tg_chat", "{\"chat\": \"Егор\", \"count\": 20} — прочитать последние сообщения в чате/канале из личного Telegram Алима (по названию или имени человека). Прочитанным не помечает") t@{ _, a ->
+        Tool("tg_chat", "{\"chat\": \"Егор\", \"count\": 20, \"day\": \"today|yesterday|ГГГГ-ММ-ДД\"} — прочитать сообщения в чате/канале Telegram. day — за конкретный день (по местному времени); без day — последние. Прочитанным не помечает") t@{ _, a ->
             if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
             val q = a.optString("chat").trim(); if (q.isEmpty()) return@t "какой чат?"
-            Tg.readChat(q, a.optInt("count", 20))
+            Tg.readChat(q, a.optInt("count", 20), a.optString("day"))
         },
 
         Tool("tg_search", "{\"query\": \"адрес склада\"} — поиск по всем перепискам личного Telegram Алима") t@{ _, a ->
@@ -401,10 +409,10 @@ object Tools {
             Tg.join(u)
         },
 
-        Tool("tg_media", "{\"chat\": \"Крымский ветер\", \"count\": 8} — показать фото/видео из чата или паблика Telegram (скачивает и показывает в приложении)") t@{ _, a ->
+        Tool("tg_media", "{\"chat\": \"Крымский ветер\", \"count\": 8, \"day\": \"today|yesterday|ГГГГ-ММ-ДД\"} — ПОКАЗАТЬ фото и видео из чата или паблика Telegram прямо в этом чате (скачивает и показывает; видео играет по ▶). Для любого «покажи фото/видео/ролик» — этот инструмент, НЕ открывай приложение Telegram") t@{ _, a ->
             if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
             val q = a.optString("chat").trim(); if (q.isEmpty()) return@t "из какого чата?"
-            val (text, paths) = Tg.chatMedia(q, a.optInt("count", 10))
+            val (text, paths) = Tg.chatMedia(q, a.optInt("count", 10), a.optString("day"))
             if (paths.isNotEmpty()) withContext(Dispatchers.Main) { Agent.cur().tgPhotos.clear(); Agent.cur().tgPhotos.addAll(paths) }
             text
         },

@@ -177,6 +177,21 @@ object Tg {
 
     private fun hhmm(ts: Int) = SimpleDateFormat("d MMM HH:mm", Locale("ru")).format(Date(ts * 1000L))
 
+    /** Границы суток по местному времени телефона: "today"/"сегодня", "yesterday"/"вчера" или "ГГГГ-ММ-ДД". null — не фильтровать. */
+    private fun dayBounds(spec: String): Pair<Long, Long>? {
+        val s = spec.trim().lowercase()
+        if (s.isBlank()) return null
+        val c = java.util.Calendar.getInstance()   // местный часовой пояс телефона
+        when (s) {
+            "today", "сегодня" -> {}
+            "yesterday", "вчера" -> c.add(java.util.Calendar.DAY_OF_YEAR, -1)
+            else -> runCatching { c.time = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(s)!! }.getOrElse { return null }
+        }
+        c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+        val start = c.timeInMillis
+        return start to (start + 86_400_000L)
+    }
+
     /** Обзор чатов: кто писал, сколько непрочитанных. onlyUnread — только с непрочитанными. */
     suspend fun overview(limit: Int = 20, onlyUnread: Boolean): String {
         if (state != St.READY) return "Telegram не подключён"
@@ -200,15 +215,18 @@ object Tg {
     }
 
     /** Найти чат по имени и прочитать последние сообщения. */
-    suspend fun readChat(query: String, count: Int = 20): String {
+    suspend fun readChat(query: String, count: Int = 20, day: String = ""): String {
         if (state != St.READY) return "Telegram не подключён"
         val found = call<TdApi.Chats>(TdApi.SearchChats(query, null, 1))?.chatIds?.firstOrNull()
             ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, null, 1))?.chatIds?.firstOrNull()
             ?: return "не нашёл чат «$query»"
         val title = chatTitle(found)
-        val hist = call<TdApi.Messages>(TdApi.GetChatHistory(found, 0, 0, count.coerceIn(1, 50), false))?.messages?.toList().orEmpty()
-        if (hist.isEmpty()) return "в «$title» пусто или не удалось прочитать"
-        val sb = StringBuilder("Чат «$title»:")
+        val bounds = dayBounds(day)
+        val limit = if (bounds != null) 80 else count.coerceIn(1, 50)
+        var hist = call<TdApi.Messages>(TdApi.GetChatHistory(found, 0, 0, limit, false))?.messages?.toList().orEmpty()
+        if (bounds != null) hist = hist.filter { it.date * 1000L in bounds.first until bounds.second }
+        if (hist.isEmpty()) return if (bounds != null) "в «$title» за эту дату ничего не нашёл" else "в «$title» пусто или не удалось прочитать"
+        val sb = StringBuilder("Чат «$title»${if (bounds != null) " ($day)" else ""}:")
         for (m in hist.reversed()) {
             val who = if (m.isOutgoing) "ты" else senderName(m.senderId)
             sb.append("\n[${hhmm(m.date)}] $who: ${contentText(m.content).replace('\n', ' ').take(300)}")
@@ -280,13 +298,15 @@ object Tg {
     private fun bestPhoto(p: TdApi.Photo?): Int? = p?.sizes?.maxByOrNull { it.width * it.height }?.photo?.id
 
     /** Последние медиа в чате/паблике: подписи + локальные пути к скачанным фото (включая обложки видео). */
-    suspend fun chatMedia(query: String, count: Int = 12): Pair<String, List<String>> {
+    suspend fun chatMedia(query: String, count: Int = 12, day: String = ""): Pair<String, List<String>> {
         if (state != St.READY) return "Telegram не подключён" to emptyList()
         val id = call<TdApi.Chats>(TdApi.SearchChats(query, null, 1))?.chatIds?.firstOrNull()
             ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(query, null, 1))?.chatIds?.firstOrNull()
             ?: return "не нашёл чат «$query»" to emptyList()
         val title = chatTitle(id)
-        val hist = call<TdApi.Messages>(TdApi.GetChatHistory(id, 0, 0, 50, false))?.messages?.toList().orEmpty()
+        val bounds = dayBounds(day)
+        var hist = call<TdApi.Messages>(TdApi.GetChatHistory(id, 0, 0, if (bounds != null) 100 else 50, false))?.messages?.toList().orEmpty()
+        if (bounds != null) hist = hist.filter { it.date * 1000L in bounds.first until bounds.second }
         val paths = ArrayList<String>()
         val caps = StringBuilder()
         for (m in hist) {
