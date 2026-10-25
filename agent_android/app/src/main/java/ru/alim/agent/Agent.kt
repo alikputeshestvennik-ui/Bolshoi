@@ -251,7 +251,12 @@ object Agent {
                     i++
                     val m = if (smart) smart() else fast()
                     model = m
-                    val r = withContext(Dispatchers.IO) { Llm.chat(m, msgs) }
+                    var r = withContext(Dispatchers.IO) { Llm.chat(m, msgs) }
+                    // модель-заглушка отказалась (чаще YandexGPT) — переспрашиваем Claude
+                    if (refusal(r.text) && !m.contains("claude", true) && Llm.key.isNotBlank()) {
+                        model = "claude-5.5-sonnet"
+                        r = withContext(Dispatchers.IO) { Llm.chat(model, msgs) }
+                    }
                     cost += r.cost(m)
                     msgs.put(msg("assistant", r.text))
                     steps.lastOrNull()?.done = true
@@ -333,6 +338,12 @@ object Agent {
             if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
                 steps.map { it.text }, (endedAt - startedAt) / 1000))
             else if (ok && Prefs.speak) onSpeak?.invoke(text)
+        }
+
+        /** Пустой отказ модели без причины («не могу обсуждать эту тему») — повод переспросить другую модель. */
+        private fun refusal(t: String): Boolean {
+            val l = t.lowercase().replace('ё', 'е')
+            return t.length < 240 && listOf("не могу обсуждать", "не могу помочь с этим", "давайте поговорим о чем-нибудь", "не могу ответить на этот", "обсудить эту тему").any { l.contains(it) }
         }
 
         /** Ошибка — человеческими словами, без JSON от сервера. */
