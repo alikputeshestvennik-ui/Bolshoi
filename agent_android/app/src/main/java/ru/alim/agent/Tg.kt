@@ -207,11 +207,12 @@ object Tg {
         val title = chatTitle(found)
         val hist = call<TdApi.Messages>(TdApi.GetChatHistory(found, 0, 0, count.coerceIn(1, 50), false))?.messages?.toList().orEmpty()
         if (hist.isEmpty()) return "в «$title» пусто или не удалось прочитать"
-        val lines = hist.reversed().joinToString("\n") { m ->
+        val sb = StringBuilder("Чат «$title»:")
+        for (m in hist.reversed()) {
             val who = if (m.isOutgoing) "ты" else senderName(m.senderId)
-            "[${hhmm(m.date)}] $who: ${contentText(m.content).replace('\n', ' ').take(300)}"
+            sb.append("\n[${hhmm(m.date)}] $who: ${contentText(m.content).replace('\n', ' ').take(300)}")
         }
-        return "Чат «$title»:\n$lines"
+        return sb.toString()
     }
 
     /** Поиск по всем перепискам. */
