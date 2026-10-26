@@ -219,9 +219,28 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     // отрыв: кабина поднимается при входе
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(520, easing = EaseOutCubic)) }
-    // посадка: итог мягко «садится»
-    val land = remember { Animatable(0f) }
-    LaunchedEffect(phase) { if (phase == Agent.Phase.DONE) { land.snapTo(0f); land.animateTo(1f, tween(600, easing = EaseOutCubic)) } }
+    // посадка: только когда рейс реально завершился (WORKING → DONE), а не при открытии из истории
+    var prevPhase by remember { mutableStateOf(phase) }
+    val touch = remember { Animatable(0f) }      // вспышка горизонта + кольцо от со-пилота
+    val orbDrop = remember { Animatable(0f) }    // со-пилот опускается и пружинит
+    val cardY = remember { Animatable(0f) }      // итог выезжает снизу
+    var touchdown by remember { mutableStateOf(false) }
+    LaunchedEffect(phase) {
+        val landed = phase == Agent.Phase.DONE && prevPhase == Agent.Phase.WORKING
+        prevPhase = phase
+        if (landed) {
+            touchdown = true
+            cardY.snapTo(1f)
+            orbDrop.snapTo(-1f)
+            kotlinx.coroutines.coroutineScope {
+                launch { orbDrop.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.3f, stiffness = 220f)) }
+                launch { touch.snapTo(0f); touch.animateTo(1f, tween(1100, easing = EaseOutCubic)) }
+                launch { delay(180); cardY.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 260f)) }
+                launch { delay(1300); touchdown = false }
+            }
+        }
+    }
+    val flash = if (touch.value in 0.001f..0.999f) (1f - touch.value) else 0f
     val glow = when (phase) {
         Agent.Phase.WORKING -> Sky.glowWork
         Agent.Phase.CONFIRM -> Sky.glowAsk
@@ -231,10 +250,10 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val bobT = rememberInfiniteTransition(label = "bob")
     val bob by bobT.animateFloat(-1f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing), RepeatMode.Reverse), label = "bobv")
     val pulse by bobT.animateFloat(0.35f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
-    val glassBg = Color(0x17FFFFFF); val glassLine = Color(0x2EFFFFFF)
+    val glassBg = Color(0x17FFFFFF); val glassLine = Color(0x2EFFFFFF); val panel = Color(0xE6102034)
 
     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))) {
-        CockpitSky(glow, Modifier.fillMaxSize(), working = running)
+        CockpitSky(glow, Modifier.fillMaxSize(), working = running, flash = flash)
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp)
             .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 36.dp.toPx() },
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -249,20 +268,31 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             }
             // приборы: со-пилот + состояние + время
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.graphicsLayer { translationY = bob * (if (running) 7f else 3f) * density }) {
-                    CopilotOrb(orbState, 118.dp)
+                Box(contentAlignment = Alignment.Center) {
+                    // кольцо касания расходится от со-пилота
+                    if (flash > 0f) androidx.compose.foundation.Canvas(Modifier.size(118.dp)) {
+                        val k = touch.value
+                        drawCircle(glow.copy(alpha = 0.9f * (1f - k)), radius = size.minDimension * (0.36f + 0.9f * k), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6f * (1f - k) + 1f))
+                        drawCircle(Color.White.copy(alpha = 0.5f * (1f - k)), radius = size.minDimension * (0.36f + 0.55f * k), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f * (1f - k) + 0.5f))
+                    }
+                    Box(Modifier.graphicsLayer {
+                        translationY = (bob * (if (running) 7f else 3f) + orbDrop.value * 34f) * density
+                        // лёгкое «сжатие» в момент касания
+                        val squash = (-orbDrop.value).coerceIn(-0.25f, 0.25f)
+                        scaleX = 1f - squash * 0.25f; scaleY = 1f + squash * 0.25f
+                    }) { CopilotOrb(orbState, 118.dp) }
                 }
                 HGap(10)
                 Column {
                     Text(when (phase) {
                         Agent.Phase.WORKING -> "В ПОЛЁТЕ"
                         Agent.Phase.CONFIRM -> "НУЖНО ТВОЁ ОК"
-                        else -> if (Agent.failed) "НЕ ДОЛЕТЕЛИ" else "ГОРИЗОНТ ЧИСТЫЙ"
+                        else -> if (Agent.failed) "НЕ ДОЛЕТЕЛИ" else if (touchdown) "ПОСАДКА" else "ГОРИЗОНТ ЧИСТЫЙ"
                     }, style = body(13, FontWeight.Bold, when (phase) {
                         Agent.Phase.WORKING -> Color(0xFFBFC9FF).copy(alpha = pulse)
                         Agent.Phase.CONFIRM -> Color(0xFFF2C58A)
-                        else -> Sky.inkMuted
-                    }).copy(letterSpacing = 1.5.sp))
+                        else -> if (touchdown) Color(0xFF8FEAFF) else Sky.inkMuted
+                    }).copy(letterSpacing = if (touchdown) 3.sp else 1.5.sp))
                     Gap(2)
                     Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 38.sp, fontWeight = FontWeight.SemiBold, color = Sky.ink))
                     Text(if (Agent.busy) "Пилот ведёт рейс" else "время в пути", style = body(12, color = Sky.inkMuted))
@@ -271,7 +301,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
             Text("МАРШРУТ", style = body(12, FontWeight.Bold, Sky.inkMuted).copy(letterSpacing = 1.5.sp))
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Agent.steps) { s ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(glassBg).border(1.dp, glassLine, RoundedCornerShape(16.dp))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(panel).border(1.dp, glassLine, RoundedCornerShape(16.dp))
                         .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(glow.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Filled.Check, null, tint = Sky.ink, modifier = Modifier.size(15.dp))
@@ -285,7 +315,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                 }
                 Agent.pending?.let { p ->
                     item {
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Sky.glowAsk.copy(alpha = 0.22f))
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xF02A1C0E))
                             .border(1.dp, Sky.glowAsk.copy(alpha = 0.6f), RoundedCornerShape(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(p.text, style = body(16, FontWeight.SemiBold, Sky.ink), lineHeight = 22.sp)
                             BigButton("Да, делай", { Agent.answer(true) }, bg = Color(0xFFF2C58A), fg = Color(0xFF1A1206))
@@ -299,9 +329,9 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                 if (Agent.files.isNotEmpty()) item { FileCards(Agent.files.toList()) }
                 if (phase == Agent.Phase.DONE) item {
                     Column(Modifier.fillMaxWidth()
-                        .graphicsLayer { alpha = land.value; translationY = (1f - land.value) * -24.dp.toPx(); scaleX = 0.96f + 0.04f * land.value; scaleY = scaleX }
+                        .graphicsLayer { translationY = cardY.value * 160.dp.toPx(); alpha = 1f - cardY.value.coerceIn(0f, 1f) * 0.9f }
                         .clip(RoundedCornerShape(20.dp))
-                        .background(if (Agent.failed) Sky.glowAsk.copy(alpha = 0.22f) else Color(0x24FFFFFF))
+                        .background(if (Agent.failed) Color(0xF02A1C0E) else Color(0xF0122238))
                         .border(1.dp, if (Agent.failed) Sky.glowAsk.copy(alpha = 0.6f) else glow.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
                         .padding(16.dp)) {
                         Text(md(Agent.result), style = body(16, color = Sky.ink), lineHeight = 22.sp)
