@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +41,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -116,8 +119,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
         if (!typing) Column(Modifier.fillMaxWidth().weight(1f).padding(top = 14.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)) {
-            Guardian(Idle, if (voice.listening) 3 else 0, 290.dp, voice.level, voice.speaking,
-                Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
+            CopilotOrb(if (voice.listening) 1 else 0, 240.dp, Modifier.clickable(onClickLabel = "Говорить", onClick = onMic))
             Text(
                 when {
                     voice.listening -> voice.partial.ifBlank { "Слушаю…" }
@@ -125,7 +127,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
                 },
                 style = body(20, FontWeight.SemiBold), textAlign = TextAlign.Center,
             )
-            Text(hint ?: if (voice.listening) "Говори, я записываю" else "Нажми на микрофон или на Стража",
+            Text(hint ?: if (voice.listening) "Говори, я записываю" else "Нажми на микрофон или на Пилота",
                 style = body(14, color = if (hint != null) Amber else Muted), textAlign = TextAlign.Center)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Погода на завтра", "Последние сообщения", "Сколько потратил?", "Будильник на 7:00").forEach { s ->
@@ -208,11 +210,6 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     var hint by remember { mutableStateOf<String?>(null) }
     val phase = Agent.phase
     val running = phase == Agent.Phase.WORKING
-    val pal = when (phase) {
-        Agent.Phase.CONFIRM -> Ask
-        Agent.Phase.WORKING -> Work
-        else -> if (Agent.failed) Ask else Idle
-    }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(phase) {
         while (Agent.busy) { now = System.currentTimeMillis(); delay(500) }
@@ -221,95 +218,123 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val secs = (((if (Agent.endedAt > 0) Agent.endedAt else now) - Agent.startedAt) / 1000).coerceAtLeast(0)
     // отрыв: кабина поднимается при входе
     val enter = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { enter.animateTo(1f, tween(480, easing = EaseOutCubic)) }
+    LaunchedEffect(Unit) { enter.animateTo(1f, tween(520, easing = EaseOutCubic)) }
+    // посадка: итог мягко «садится»
+    val land = remember { Animatable(0f) }
+    LaunchedEffect(phase) { if (phase == Agent.Phase.DONE) { land.snapTo(0f); land.animateTo(1f, tween(600, easing = EaseOutCubic)) } }
     val glow = when (phase) {
         Agent.Phase.WORKING -> Sky.glowWork
         Agent.Phase.CONFIRM -> Sky.glowAsk
         else -> if (Agent.failed) Sky.glowAsk else Sky.glowCalm
     }
-
+    val orbState = when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }
     val bobT = rememberInfiniteTransition(label = "bob")
     val bob by bobT.animateFloat(-1f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing), RepeatMode.Reverse), label = "bobv")
+    val pulse by bobT.animateFloat(0.35f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
+    val glassBg = Color(0x17FFFFFF); val glassLine = Color(0x2EFFFFFF)
 
-    Screen(Agent.task, back) {
-        Box(Modifier.fillMaxWidth().height(148.dp).clip(RoundedCornerShape(22.dp))
-            .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 44.dp.toPx() }) {
-            CockpitSky(glow, Modifier.matchParentSize(), working = running)
-            Row(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.graphicsLayer { if (running) translationY = bob * 6.dp.toPx() }) {
-                    Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 96.dp, voice.level, voice.speaking)
+    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))) {
+        CockpitSky(glow, Modifier.fillMaxSize(), working = running)
+        Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp)
+            .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 36.dp.toPx() },
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // верх: назад + задача
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).background(glassBg).border(1.dp, glassLine, RoundedCornerShape(22.dp))
+                    .clickable(onClickLabel = "Назад") { back() }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Sky.ink, modifier = Modifier.size(22.dp))
                 }
-                HGap(14)
+                Text(Agent.task, style = TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Sky.ink),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            // приборы: со-пилот + состояние + время
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.graphicsLayer { translationY = bob * (if (running) 7f else 3f) * density }) {
+                    CopilotOrb(orbState, 118.dp)
+                }
+                HGap(10)
                 Column {
-                    Label(when (phase) {
-                        Agent.Phase.WORKING -> "в полёте"
-                        Agent.Phase.CONFIRM -> "нужно твоё ОК"
-                        else -> if (Agent.failed) "не долетели" else "горизонт чистый"
-                    }, color = if (phase == Agent.Phase.WORKING) Color(0xFFBFC9FF) else if (phase == Agent.Phase.CONFIRM) Color(0xFFF2C58A) else Sky.inkMuted)
-                    Gap(4)
-                    Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Sky.ink))
+                    Text(when (phase) {
+                        Agent.Phase.WORKING -> "В ПОЛЁТЕ"
+                        Agent.Phase.CONFIRM -> "НУЖНО ТВОЁ ОК"
+                        else -> if (Agent.failed) "НЕ ДОЛЕТЕЛИ" else "ГОРИЗОНТ ЧИСТЫЙ"
+                    }, style = body(13, FontWeight.Bold, when (phase) {
+                        Agent.Phase.WORKING -> Color(0xFFBFC9FF).copy(alpha = pulse)
+                        Agent.Phase.CONFIRM -> Color(0xFFF2C58A)
+                        else -> Sky.inkMuted
+                    }).copy(letterSpacing = 1.5.sp))
+                    Gap(2)
+                    Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 38.sp, fontWeight = FontWeight.SemiBold, color = Sky.ink))
                     Text(if (Agent.busy) "Пилот ведёт рейс" else "время в пути", style = body(12, color = Sky.inkMuted))
                 }
             }
-        }
-
-        Label("Шаги")
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            items(Agent.steps) { s ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(AccentSoft), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(14.dp))
-                    } else Box(Modifier.size(26.dp).border(2.dp, Violet, RoundedCornerShape(13.dp)))
-                    HGap(12)
-                    Column(Modifier.weight(1f)) {
-                        Text(s.text, style = body(15, if (s.done) FontWeight.Normal else FontWeight.SemiBold))
-                        if (s.detail.isNotBlank()) Text(s.detail, style = body(12, color = Muted), maxLines = 5)
+            Text("МАРШРУТ", style = body(12, FontWeight.Bold, Sky.inkMuted).copy(letterSpacing = 1.5.sp))
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(Agent.steps) { s ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(glassBg).border(1.dp, glassLine, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(glow.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Check, null, tint = Sky.ink, modifier = Modifier.size(15.dp))
+                        } else Box(Modifier.size(26.dp).border(2.dp, Color(0xFFBFC9FF).copy(alpha = pulse), RoundedCornerShape(13.dp)))
+                        HGap(12)
+                        Column(Modifier.weight(1f)) {
+                            Text(s.text, style = body(15, if (s.done) FontWeight.Normal else FontWeight.SemiBold, Sky.ink))
+                            if (s.detail.isNotBlank()) Text(s.detail, style = body(12, color = Sky.inkMuted), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                Agent.pending?.let { p ->
+                    item {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Sky.glowAsk.copy(alpha = 0.22f))
+                            .border(1.dp, Sky.glowAsk.copy(alpha = 0.6f), RoundedCornerShape(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(p.text, style = body(16, FontWeight.SemiBold, Sky.ink), lineHeight = 22.sp)
+                            BigButton("Да, делай", { Agent.answer(true) }, bg = Color(0xFFF2C58A), fg = Color(0xFF1A1206))
+                            BigButton("Нет", { Agent.answer(false) }, bg = glassBg, fg = Sky.ink, border = glassLine)
+                        }
+                    }
+                }
+                if (Agent.photos.isNotEmpty()) item { PhotoGrid(Agent.photos.toList()) }
+                if (Agent.ytVideos.isNotEmpty()) item { YtGrid(Agent.ytVideos.toList()) }
+                if (Agent.products.isNotEmpty()) item { ProductCards(Agent.products.toList()) }
+                if (Agent.files.isNotEmpty()) item { FileCards(Agent.files.toList()) }
+                if (phase == Agent.Phase.DONE) item {
+                    Column(Modifier.fillMaxWidth()
+                        .graphicsLayer { alpha = land.value; translationY = (1f - land.value) * -24.dp.toPx(); scaleX = 0.96f + 0.04f * land.value; scaleY = scaleX }
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (Agent.failed) Sky.glowAsk.copy(alpha = 0.22f) else Color(0x24FFFFFF))
+                        .border(1.dp, if (Agent.failed) Sky.glowAsk.copy(alpha = 0.6f) else glow.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
+                        .padding(16.dp)) {
+                        Text(md(Agent.result), style = body(16, color = Sky.ink), lineHeight = 22.sp)
                     }
                 }
             }
-            Agent.pending?.let { p ->
-                item {
-                    CardBox(border = WarnLine, bg = WarnBg) {
-                        Text(p.text, style = body(16, FontWeight.SemiBold), lineHeight = 22.sp)
-                        Gap(6)
-                        BigButton("Да, делай", { Agent.answer(true) })
-                        BigButton("Нет", { Agent.answer(false) }, bg = Card, fg = Ink, border = Line)
-                    }
-                }
-            }
-            if (Agent.photos.isNotEmpty()) item { PhotoGrid(Agent.photos.toList()) }
-            if (Agent.ytVideos.isNotEmpty()) item { YtGrid(Agent.ytVideos.toList()) }
-            if (Agent.products.isNotEmpty()) item { ProductCards(Agent.products.toList()) }
-            if (Agent.files.isNotEmpty()) item { FileCards(Agent.files.toList()) }
-            if (phase == Agent.Phase.DONE) item {
-                CardBox(bg = if (Agent.failed) DangerBg else AccentSoft) {
-                    Text(md(Agent.result), style = body(16, color = if (Agent.failed) Danger else Ink), lineHeight = 22.sp)
-                }
-            }
-        }
 
-        if (Agent.canFollowUp) {
-            if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Teal))
-            hint?.let { Text(it, style = body(13, color = Amber)) }
-            AttachChips()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconTile(Icons.Filled.Add, "Прикрепить файл", attach, 52.dp)
-                HGap(8)
-                OutlinedTextField(reply, { reply = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Ответить агенту…", style = body(15, color = Muted)) },
-                    textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Agent.followUp(reply); reply = "" } }))
-                HGap(8)
-                if (reply.isNotBlank() || Attach.pending.isNotEmpty()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Agent.followUp(reply); reply = "" }, 52.dp)
-                else Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(if (voice.listening) Danger else Teal)
-                    .clickable(onClickLabel = "Ответить голосом") {
-                        hint = null
-                        if (voice.listening) voice.stopListen()
-                        else voice.listen(onText = { Agent.followUp(it) }, onError = { hint = it })
-                    }, contentAlignment = Alignment.Center) { MicIcon(Bg, 26.dp) }
+            if (Agent.canFollowUp) {
+                if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Color(0xFF8FEAFF)))
+                hint?.let { Text(it, style = body(13, color = Color(0xFFF2C58A))) }
+                AttachChips()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(glassBg).border(1.dp, glassLine, RoundedCornerShape(26.dp))
+                        .clickable(onClickLabel = "Прикрепить файл") { attach() }, contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Add, "Прикрепить файл", tint = Sky.ink, modifier = Modifier.size(24.dp))
+                    }
+                    HGap(8)
+                    OutlinedTextField(reply, { reply = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Дать команду Пилоту…", style = body(15, color = Muted)) },
+                        textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Agent.followUp(reply); reply = "" } }))
+                    HGap(8)
+                    if (reply.isNotBlank() || Attach.pending.isNotEmpty()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Agent.followUp(reply); reply = "" }, 52.dp)
+                    else Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(if (voice.listening) Danger else Sky.glowCalm)
+                        .clickable(onClickLabel = "Ответить голосом") {
+                            hint = null
+                            if (voice.listening) voice.stopListen()
+                            else voice.listen(onText = { Agent.followUp(it) }, onError = { hint = it })
+                        }, contentAlignment = Alignment.Center) { MicIcon(Sky.ink, 26.dp) }
+                }
             }
+            if (Agent.busy) BigButton("Остановить рейс", { Agent.stop() }, bg = glassBg, fg = Color(0xFFFF9A8F), border = Color(0x66FF9A8F))
         }
-        if (Agent.busy) BigButton("Остановить", { Agent.stop() }, bg = DangerBg, fg = Danger, border = DangerLine)
     }
 }
 

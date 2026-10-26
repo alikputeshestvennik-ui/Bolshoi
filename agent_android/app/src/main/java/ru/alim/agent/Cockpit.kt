@@ -17,6 +17,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -52,6 +53,53 @@ object Haptics {
     fun landing(ctx: Context) = wave(ctx, longArrayOf(0, 30, 50, 70), intArrayOf(0, 140, 0, 255))
     /** Лёгкий тик для мелких подтверждений. */
     fun tick(ctx: Context) = one(ctx, 20, 160)
+}
+
+/**
+ * Со-пилот: светлый стеклянный шарик с тёмным визором и светящимися глазами-дужками.
+ * state: 0 — спокоен/готово (улыбается), 1 — в полёте (глаза сканируют), 2 — просит капитана (тёплые круглые глаза).
+ */
+@Composable
+fun CopilotOrb(state: Int, size: Dp, modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "orb")
+    val scan by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Reverse), label = "scan")
+    val breath by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Reverse), label = "breath")
+    val blinkT by t.animateFloat(0f, 1f, infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Restart), label = "blink")
+    val eye = when (state) { 2 -> Color(0xFFFFC98A); else -> Color(0xFF8FEAFF) }
+    val glow = when (state) { 1 -> Sky.glowWork; 2 -> Sky.glowAsk; else -> Sky.glowCalm }
+    Canvas(modifier.size(size)) {
+        val c = Offset(this.size.width / 2, this.size.height / 2)
+        val r = this.size.minDimension * 0.36f
+        // мягкое свечение вокруг
+        drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = 0.45f + 0.2f * breath), Color.Transparent), c, r * 1.9f), r * 1.9f, c)
+        // стеклянная сфера
+        drawCircle(Brush.radialGradient(listOf(Color(0xFFF4F8FD), Color(0xFFB9CCE2), Color(0xFF6E89AA)),
+            Offset(c.x - r * 0.35f, c.y - r * 0.4f), r * 1.5f), r, c)
+        // блик
+        drawCircle(Color.White.copy(alpha = 0.55f), r * 0.16f, Offset(c.x - r * 0.42f, c.y - r * 0.48f))
+        // визор
+        val vw = r * 1.42f; val vh = r * 0.86f
+        drawRoundRect(Brush.verticalGradient(listOf(Color(0xFF14233A), Color(0xFF070D18)), c.y - vh / 2, c.y + vh / 2),
+            Offset(c.x - vw / 2, c.y - vh / 2 + r * 0.06f), androidx.compose.ui.geometry.Size(vw, vh),
+            androidx.compose.ui.geometry.CornerRadius(vh / 2, vh / 2))
+        // глаза
+        val dx = if (state == 1) scan * r * 0.12f else 0f
+        val blink = if (blinkT > 0.96f) 0.15f else 1f
+        val ey = c.y + r * 0.06f
+        val ex = r * 0.34f
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = r * 0.11f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        for (s in listOf(-1f, 1f)) {
+            val cx = c.x + s * ex + dx
+            if (state == 2) {
+                drawCircle(eye, r * 0.1f * blink.coerceAtLeast(0.4f), Offset(cx, ey))
+            } else {
+                // дужка-улыбка «^»
+                val w = r * 0.3f; val h = r * 0.26f * blink
+                drawArc(eye, 200f, 140f, false, Offset(cx - w / 2, ey - h / 2), androidx.compose.ui.geometry.Size(w, h.coerceAtLeast(1f)), style = stroke)
+            }
+            drawCircle(eye.copy(alpha = 0.18f), r * 0.22f, Offset(cx, ey)) // свечение глаза
+        }
+    }
 }
 
 /** Палитра кабины — рассвет над морем. Не зависит от темы чата: задача всегда «в кабине». */
