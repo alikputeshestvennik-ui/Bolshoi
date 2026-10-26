@@ -168,7 +168,7 @@ private fun FavPicker(close: () -> Unit) {
                 }
             }
             if (list != null) BigButton("Сохранить", {
-                YtMe.setFavs(list.filter { chosen.contains(it.id) }); close()
+                YtMe.saveFavs(list.filter { chosen.contains(it.id) }); close()
             })
         }
     }

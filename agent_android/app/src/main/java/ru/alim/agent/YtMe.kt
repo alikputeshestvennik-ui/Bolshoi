@@ -120,7 +120,7 @@ object YtMe {
     // ——— любимые каналы ———
     data class Chan(val id: String, val title: String)
     var favs: List<Chan> by mutableStateOf(emptyList()); private set
-    fun setFavs(list: List<Chan>) { favs = list; runCatching { sp().edit().putString("favs", org.json.JSONArray().also { a -> list.forEach { a.put(JSONObject().put("id", it.id).put("t", it.title)) } }.toString()).apply() } }
+    fun saveFavs(list: List<Chan>) { favs = list; runCatching { sp().edit().putString("favs", org.json.JSONArray().also { a -> list.forEach { a.put(JSONObject().put("id", it.id).put("t", it.title)) } }.toString()).apply() } }
     private fun loadFavs() { runCatching { val a = org.json.JSONArray(sp().getString("favs", "[]")); favs = (0 until a.length()).map { Chan(a.getJSONObject(it).optString("id"), a.getJSONObject(it).optString("t")) } } }
 
     /** Все подписки — для выбора любимых. */
