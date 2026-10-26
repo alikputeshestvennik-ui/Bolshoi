@@ -58,10 +58,10 @@ private fun netThumb(id: String): ImageBitmap? {
     return state.value
 }
 
-/** Сетка видео YouTube: превью + название, по тапу — встроенный плеер (официальный iframe), без ухода в приложение. */
+/** Сетка видео YouTube: превью + название, по тапу открывает видео в приложении YouTube (или в браузере). */
 @Composable
 fun YtGrid(entries: List<String>) {
-    var play by remember { mutableStateOf<String?>(null) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         entries.forEach { e ->
             val p = e.split('\t')
@@ -69,7 +69,7 @@ fun YtGrid(entries: List<String>) {
             val title = p.getOrNull(1).orEmpty()
             val chan = p.getOrNull(2).orEmpty()
             if (id.isBlank()) return@forEach
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Card).clickable { play = id }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Card).clickable { openYtVideo(ctx, id) }
                 .padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.size(width = 112.dp, height = 63.dp).clip(RoundedCornerShape(8.dp)).background(Bg), contentAlignment = Alignment.Center) {
                     netThumb(id)?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
@@ -84,43 +84,15 @@ fun YtGrid(entries: List<String>) {
             }
         }
     }
-    play?.let { id -> YtPlayer(id) { play = null } }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-fun YtPlayer(videoId: String, close: () -> Unit) {
-    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            androidx.compose.ui.viewinterop.AndroidView(factory = { c ->
-                WebView(c).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.mediaPlaybackRequiresUserGesture = false
-                    settings.javaScriptCanOpenWindowsAutomatically = true
-                    webChromeClient = android.webkit.WebChromeClient()
-                    // Официальный IFrame Player API с заданным origin — иначе встроенный плеер даёт «ошибка 152»
-                    val html = """
-                        <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-                        <style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#p{width:100%;height:100%}</style></head>
-                        <body><div id="p"></div>
-                        <script src="https://www.youtube.com/iframe_api"></script>
-                        <script>
-                        function onYouTubeIframeAPIReady(){
-                          new YT.Player('p',{videoId:'$videoId',width:'100%',height:'100%',
-                            playerVars:{autoplay:1,playsinline:1,rel:0,fs:1,controls:1,modestbranding:1,origin:'https://www.youtube.com'},
-                            events:{onReady:function(e){e.target.playVideo();}}});
-                        }
-                        </script></body></html>""".trimIndent()
-                    loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
-                }
-            }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-            Box(Modifier.align(Alignment.TopEnd).padding(14.dp).size(40.dp).clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f)).clickable { close() }, contentAlignment = Alignment.Center) {
-                Text("✕", style = body(20, color = Color.White))
-            }
-        }
-    }
+/** Открыть видео в приложении YouTube, если не вышло — в браузере. */
+fun openYtVideo(ctx: android.content.Context, id: String) {
+    val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("vnd.youtube:$id"))
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    val web = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/watch?v=$id"))
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { ctx.startActivity(app) }.onFailure { runCatching { ctx.startActivity(web) } }
 }
 
 @Composable
