@@ -3,7 +3,15 @@ def path_of(x):
     if isinstance(x, dict): return x.get("value") or x.get("path") or x.get("name")
     return x
 t0 = time.time()
-src = "agent_android/app/src/main/res/drawable-nodpi/ic_launcher_art.png"
+import urllib.request
+tree = json.load(urllib.request.urlopen("https://huggingface.co/api/spaces/tencent/Hunyuan3D-2/tree/main/assets/example_images"))
+imgs = sorted(x["path"] for x in tree if x["path"].lower().endswith((".png", ".jpg", ".jpeg", ".webp")))
+note("examples", ", ".join(imgs[:40]))
+pick = os.environ.get("PICK", "")
+chosen = next((p for p in imgs if pick and pick in p), imgs[len(imgs)//3] if imgs else None)
+src = "out/input" + chosen[chosen.rfind("."):]
+urllib.request.urlretrieve("https://huggingface.co/spaces/tencent/Hunyuan3D-2/resolve/main/" + chosen, src)
+note("input", chosen)
 textured = True
 try:
     r = c.predict(None, handle_file(src), None, None, None, None, 30, 5.0, 1234, 256, True, 8000, False, api_name="/generation_all")
