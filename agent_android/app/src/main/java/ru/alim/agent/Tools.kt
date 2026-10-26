@@ -240,7 +240,7 @@ object Tools {
             if (launch(ctx, i)) "открыл ${found.first}" else "не открылось"
         },
 
-        Tool("web_open", "{\"query\": \"…\"} или {\"url\": \"https://…\"} — открыть поиск Яндекса или сайт в браузере") t@{ ctx, a ->
+        Tool("web_open", "{\"query\": \"…\"} или {\"url\": \"https://…\"} — открыть сайт в браузере Алиму. ТОЛЬКО если он прямо попросил «открой». Для поиска информации не используй — читай сам через web_read/web_page") t@{ ctx, a ->
             val url = a.optString("url").takeIf { it.startsWith("http") }
                 ?: a.optString("query").takeIf { it.isNotBlank() }?.let { "https://yandex.ru/search/?text=" + URLEncoder.encode(it, "UTF-8") }
                 ?: return@t "нужен url или query"

@@ -597,7 +597,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
             Section("Модели", "${Agent.short(fast)} · ${Agent.short(smart)} · фон ${Agent.short(bgm)}") {
                 if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
-                Text("Модели Яндекса бесплатны (цена 0) и идут без VPN. Цена — ₽ за 1000 токенов.", style = body(12, color = Muted))
+                Text("Выбери модель для каждой роли. Яндекс — бесплатно и без VPN, Google — бесплатно с VPN, Claude — платно, но самый толковый.", style = body(12, color = Muted), lineHeight = 16.sp)
                 ModelEditor("Чат — обычные сообщения и простые просьбы", "fast", fast, fastIn, fastOut,
                     { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
                 ModelEditor("Руки — сложные дела (Ozon, много шагов)", "smart", smart, smartIn, smartOut,
@@ -767,17 +767,14 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
                 }
             }
         }
-        OutlinedTextField(model, onModel, Modifier.fillMaxWidth(), label = { Text("Модель") }, singleLine = true,
-            textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors())
-        if (Llm.isGoogle(model)) Text("Google AI: бесплатно, нужен VPN. Без VPN или сверх лимита ответит Claude Haiku.", style = body(12, color = Muted))
-        if (slot != "bg" && !Llm.isGoogle(model)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(pin, onIn, Modifier.weight(1f), label = { Text("вход ₽/1K") }, singleLine = true,
-                textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-            OutlinedTextField(pout, onOut, Modifier.weight(1f), label = { Text("выход ₽/1K") }, singleLine = true,
-                textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        val note = when {
+            Llm.isGoogle(model) -> "бесплатно · нужен VPN · сверх лимита ответит Claude Haiku"
+            Llm.isYandex(model) -> "бесплатно · без VPN"
+            else -> "платно · с баланса gptunnel"
         }
+        Text(note, style = body(12, color = Muted))
+        if (slot == "smart" && !model.contains("claude", true))
+            Text("Для сложных дел лучше Claude Sonnet — бесплатные модели могут недоделывать длинные задачи.", style = body(12, color = Amber), lineHeight = 16.sp)
     }
 }
 
