@@ -461,7 +461,7 @@ fun RulesScreen(back: () -> Unit) {
 // ————————————————— Подключения —————————————————
 
 @Composable
-fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openVk: () -> Unit, openMusic: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openMusic: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var fast by remember { mutableStateOf(Prefs.fastModel) }
@@ -572,11 +572,6 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 BigButton(if (Tg.state == Tg.St.READY) "Открыть" else "Подключить Telegram", openTg, bg = if (Tg.state == Tg.St.READY) Card else Teal, fg = if (Tg.state == Tg.St.READY) Ink else Bg, border = if (Tg.state == Tg.St.READY) Line else null)
             }
 
-            Section("ВКонтакте", if (Vk.ready) "подключён" else "не подключён", statusColor = if (Vk.ready) Muted else Amber) {
-                Text("Лента, стены людей и сообществ. Писать и личные сообщения — ограничение ВК.", style = body(12, color = Muted))
-                BigButton(if (Vk.ready) "Открыть" else "Подключить ВКонтакте", openVk, bg = if (Vk.ready) Card else Teal, fg = if (Vk.ready) Ink else Bg, border = if (Vk.ready) Line else null)
-            }
-
             Section("Яндекс Музыка", if (YaMusic.ready) "подключена" else "не подключена", statusColor = if (YaMusic.ready) Muted else Amber) {
                 Text("Поиск, плейлисты и воспроизведение в приложении Яндекс Музыки.", style = body(12, color = Muted))
                 BigButton(if (YaMusic.ready) "Открыть" else "Подключить Музыку", openMusic, bg = if (YaMusic.ready) Card else Teal, fg = if (YaMusic.ready) Ink else Bg, border = if (YaMusic.ready) Line else null)
@@ -601,6 +596,10 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 "SMS: отправка" to granted(Manifest.permission.SEND_SMS),
                 "SMS: чтение" to granted(Manifest.permission.READ_SMS),
                 "Журнал звонков" to granted(Manifest.permission.READ_CALL_LOG),
+                "SIM / связь" to granted(Manifest.permission.READ_PHONE_STATE),
+                "Геолокация" to granted(Manifest.permission.ACCESS_FINE_LOCATION),
+                "Календарь" to granted(Manifest.permission.WRITE_CALENDAR),
+                "Запись контактов" to granted(Manifest.permission.WRITE_CONTACTS),
                 "Фото" to granted(if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE),
                 "Уведомления" to (NotifStore.accessGranted(ctx) && t >= 0),
             )

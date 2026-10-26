@@ -34,6 +34,8 @@ object Prefs {
     var replyKnown: Boolean get() = b("rk", false); set(v) = putB("rk", v)
     /** Зачитывать текстовые ответы вслух (голосовые Артура — отдельно). В переписке по умолчанию выключено. */
     var speak: Boolean get() = b("speak_chat", false); set(v) = putB("speak_chat", v)
+    var notes: List<String> get() = runCatching { org.json.JSONArray(s("notes", "[]")).let { a -> (0 until a.length()).map { a.optString(it) } } }.getOrDefault(emptyList())
+        set(v) = put("notes", org.json.JSONArray(v).toString())
     var askedPerms: Boolean get() = b("asked", false); set(v) = putB("asked", v)
     var monitorOn: Boolean get() = b("mon", true); set(v) = putB("mon", v)
     /** Распознавание и озвучка: "android" или "yandex" (SpeechKit). */

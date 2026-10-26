@@ -51,11 +51,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Task, Tg, Vk, Music, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
+enum class Scr { Home, Task, Tg, Music, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_CALL_LOG)
+        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.READ_PHONE_STATE, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.WRITE_CALENDAR, Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CONTACTS)
     if (Build.VERSION.SDK_INT >= 33) { l += Manifest.permission.READ_MEDIA_IMAGES; l += Manifest.permission.POST_NOTIFICATIONS }
     else l += Manifest.permission.READ_EXTERNAL_STORAGE
     return l.toTypedArray()
@@ -120,13 +122,12 @@ fun App(voice: Voice) {
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen(home)
                 Scr.Tg -> TgScreen(home)
-                Scr.Vk -> VkScreen(home)
                 Scr.Music -> MusicScreen(home)
                 Scr.Initiative -> InitiativeScreen(home)
                 Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen(home)
-                Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Vk }, { scr = Scr.Music })
+                Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music })
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
                 Scr.Memory -> MemoryScreen(home)
                 Scr.Digest -> DigestScreen(home)

@@ -110,15 +110,18 @@ object Tools {
             if (!ok) "не получилось открыть звонилку" else if (direct) "звоню" else "открыл набор номера, осталось нажать вызов"
         },
 
-        Tool("sms_send", "{\"number\": \"+7978…\", \"name\": \"Саша\", \"text\": \"…\"} — отправить SMS",
+        Tool("sms_send", "{\"number\": \"+7978…\", \"name\": \"Саша\", \"text\": \"…\", \"sim\": \"1|2|оператор, необяз.\"} — отправить SMS. Две SIM и sim не указан — спроси у Алима, с какой",
             confirm = { a -> "SMS ${a.optString("name").ifBlank { a.optString("number") }}:\n«${a.optString("text")}»" }) t@{ ctx, a ->
             if (!has(ctx, Manifest.permission.SEND_SMS)) return@t "нет разрешения на SMS"
             val n = digits(a.optString("number")); val text = a.optString("text")
             if (n.length < 3 || text.isBlank()) return@t "нужны номер и текст"
-            val sm: SmsManager = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(SmsManager::class.java)
+            Device.simChoice(ctx, a.optString("sim"))?.let { return@t it }
+            val subId = Device.pickSim(ctx, a.optString("sim"))
+            val base: SmsManager = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(SmsManager::class.java)
                 else @Suppress("DEPRECATION") SmsManager.getDefault()
+            val sm = if (subId != null) runCatching { base.createForSubscriptionId(subId) }.getOrDefault(base) else base
             sm.sendMultipartTextMessage(n, null, sm.divideMessage(text), null, null)
-            "отправлено"
+            "отправлено" + (Device.sims(ctx).firstOrNull { it.subId == subId }?.let { " (${it.carrier})" } ?: "")
         },
 
         Tool("photos_find", "{\"from\": \"2026-06-13\", \"to\": \"2026-06-13\", \"camera_only\": true} — найти фото за даты (to можно не указывать)") t@{ ctx, a ->
@@ -342,12 +345,15 @@ object Tools {
             "За $days дн.: состоявшихся $cnt, средняя длительность ${avg / 60} мин ${avg % 60} сек.\n" + rows.take(25).joinToString("\n")
         },
 
-        Tool("ussd", "{\"code\": \"*100#\"} — USSD-запрос оператору (баланс, тариф, остатки); ответ оператора придёт текстом",
+        Tool("ussd", "{\"code\": \"*100#\", \"sim\": \"1|2|оператор, необяз.\"} — USSD-запрос оператору (баланс, тариф, остатки). Две SIM и sim не указан — спроси у Алима, с какой",
             confirm = { a -> "Отправить оператору запрос ${a.optString("code")}?" }) t@{ ctx, a ->
             if (!has(ctx, Manifest.permission.CALL_PHONE)) return@t "нет разрешения на звонки — оно нужно для USSD"
             val code = a.optString("code").trim()
             if (!code.matches(Regex("[*#0-9]{3,30}"))) return@t "код должен быть вида *100#"
-            val tm = ctx.getSystemService(TelephonyManager::class.java) ?: return@t "нет связи"
+            Device.simChoice(ctx, a.optString("sim"))?.let { return@t it }
+            val subId = Device.pickSim(ctx, a.optString("sim"))
+            val tmBase = ctx.getSystemService(TelephonyManager::class.java) ?: return@t "нет связи"
+            val tm = if (subId != null) runCatching { tmBase.createForSubscriptionId(subId) }.getOrDefault(tmBase) else tmBase
             withContext(Dispatchers.Main) {
                 withTimeoutOrNull(40_000) {
                     suspendCancellableCoroutine<String> { cont ->
@@ -368,15 +374,6 @@ object Tools {
             }
         },
 
-        Tool("vk_feed", "{\"count\": 15} — лента новостей ВКонтакте Алима") t@{ _, _ ->
-            if (!Vk.ready) return@t "ВК не подключён — Алим включит его в ⋮ → Настройки → ВКонтакте"
-            Vk.feed()
-        },
-        Tool("vk_wall", "{\"who\": \"durov или адрес группы\", \"count\": 10} — стена человека или сообщества в ВК") t@{ _, a ->
-            if (!Vk.ready) return@t "ВК не подключён"
-            val w = a.optString("who").trim(); if (w.isEmpty()) return@t "чья стена?"
-            Vk.wall(w, a.optInt("count", 10))
-        },
         Tool("music_search", "{\"query\": \"Баста\"} — найти треки/альбом в Яндекс Музыке") t@{ _, a ->
             if (!YaMusic.ready) return@t "Яндекс Музыка не подключена — ⋮ → Настройки → Яндекс Музыка"
             val q = a.optString("query").trim(); if (q.isEmpty()) return@t "что искать?"
@@ -391,6 +388,41 @@ object Tools {
             if (!YaMusic.ready) return@t "Яндекс Музыка не подключена"
             YaMusic.myPlaylists()
         },
+
+        Tool("event_create", "{\"title\": \"встреча с Егором\", \"when\": \"завтра 15:00\", \"duration_min\": 60, \"place\": \"\"} — создать событие в календаре Алима",
+            confirm = { a -> "В календарь: «${a.optString("title")}» на ${a.optString("when")}?" }) t@{ ctx, a ->
+            val title = a.optString("title").trim(); if (title.isEmpty()) return@t "что за событие?"
+            val start = Device.parseWhen(a.optString("when")) ?: return@t "не понял время — скажи как «завтра 15:00»"
+            Device.createEvent(ctx, title, start, start + a.optInt("duration_min", 60) * 60_000L, a.optString("place"))
+        },
+        Tool("event_list", "{\"day\": \"today|tomorrow|ГГГГ-ММ-ДД\"} — события календаря на день («что у меня завтра»)") t@{ ctx, a ->
+            val c = java.util.Calendar.getInstance()
+            when (a.optString("day").lowercase()) { "tomorrow", "завтра" -> c.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                "today", "сегодня", "" -> {}
+                else -> runCatching { c.time = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(a.optString("day"))!! } }
+            c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0)
+            val start = c.timeInMillis
+            Device.readEvents(ctx, start, start + 86_400_000L)
+        },
+        Tool("my_location", "{} — где Алим сейчас (GPS): город и координаты. Для «погода где я», «маршрут отсюда»") t@{ ctx, _ ->
+            val loc = Device.location(ctx) ?: return@t "нет доступа к геолокации или координат — выдай разрешение в «Подключениях» и включи геолокацию"
+            "ты сейчас: ${loc.second.ifBlank { "координаты ${"%.4f".format(loc.first.first)}, ${"%.4f".format(loc.first.second)}" }} (${"%.5f".format(loc.first.first)}, ${"%.5f".format(loc.first.second)})"
+        },
+        Tool("contact_add", "{\"name\": \"Вася\", \"number\": \"+7978…\"} — сохранить номер в контакты",
+            confirm = { a -> "Сохранить контакт «${a.optString("name")}» — ${a.optString("number")}?" }) t@{ ctx, a ->
+            val name = a.optString("name").trim(); val num = a.optString("number").trim()
+            if (name.isEmpty() || num.length < 3) return@t "нужны имя и номер"
+            Device.addContact(ctx, name, num)
+        },
+        Tool("flashlight", "{\"on\": true} — включить/выключить фонарик") t@{ ctx, a -> Device.flashlight(ctx, a.optBoolean("on", true)) },
+        Tool("phone_volume", "{\"percent\": 60} — громкость 0-100%") t@{ ctx, a -> Device.volume(ctx, a.optInt("percent", 50)) },
+        Tool("phone_ringer", "{\"mode\": \"normal|vibrate|silent\"} — режим звонка") t@{ ctx, a -> Device.ringer(ctx, a.optString("mode", "normal")) },
+        Tool("do_not_disturb", "{\"on\": true} — режим «Не беспокоить»") t@{ ctx, a -> Device.dnd(ctx, a.optBoolean("on", true)) },
+        Tool("battery", "{} — заряд батареи и состояние") t@{ ctx, _ -> Device.battery(ctx) },
+        Tool("power_saver", "{} — открыть настройки энергосбережения (включить его сам Android не даёт)") t@{ ctx, _ -> Device.openBatterySettings(ctx) },
+        Tool("note_add", "{\"text\": \"купить хлеб\"} — добавить заметку/напоминание в список") t@{ _, a -> Device.noteAdd(a.optString("text")) },
+        Tool("note_list", "{} — показать список заметок") t@{ _, _ -> Device.noteList() },
+        Tool("note_done", "{\"which\": \"1 или текст\"} — убрать заметку из списка") t@{ _, a -> Device.noteDone(a.optString("which")) },
 
         Tool("gh_build", "{} — статус последней сборки приложения «Пилот» на GitHub (идёт / успешно / упала)") t@{ _, _ ->
             Git.lastBuild()

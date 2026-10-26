@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
         Agent.app = applicationContext
         Chat.init(this)
         Online.init(this)
-        Vk.init(this); YaMusic.init(this)
+        YaMusic.init(this)
         Fonts.load(assets)
         voice = Voice(this)
         Agent.onSpeak = { voice.say(it) }
