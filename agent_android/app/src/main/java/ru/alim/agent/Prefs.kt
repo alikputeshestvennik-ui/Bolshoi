@@ -64,7 +64,8 @@ object Prefs {
     var lastDigest: String get() = s("ld", ""); set(v) = put("ld", v)
     var monitorStatus: String get() = s("ms", ""); set(v) = put("ms", v)
     // ——— Оформление и характер ———
-    var theme: String get() = s("theme", "mint"); set(v) = put("theme", v)
+    var theme: String get() = s("theme", "cockpit"); set(v) = put("theme", v)
+    var cockpitTheme: Boolean get() = b("cockpit_theme", false); set(v) = putB("cockpit_theme", v)
     /** Подложка: "pattern" — узор темы, "photo" — картинка из файла wallpaper.jpg. */
     var wallpaper: String get() = s("wall", "pattern"); set(v) = put("wall", v)
     var wallDim: Int get() = sp.getInt("wdim", 25); set(v) = sp.edit().putInt("wdim", v).apply()

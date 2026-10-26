@@ -18,6 +18,13 @@ class Pal(
 
 object Th {
     val all = listOf(
+        Pal("cockpit", "Кабина", true,
+            bg = Color(0xFF0B1422), card = Color(0xFF13233A), line = Color(0xFF243A55), ink = Color(0xFFEAF2FB), muted = Color(0xFF9DB2C8),
+            accent = Color(0xFF6CC6EE), onAccent = Color(0xFF06121F), violet = Color(0xFF8B9CFF), amber = Color(0xFFF2C58A), danger = Color(0xFFFF9A8F),
+            wall = listOf(Color(0xFF0B1422), Color(0xFF173149), Color(0xFF0A1420)),
+            dots = listOf(Color(0x00000000), Color(0x00000000), Color(0x00000000)),
+            inBubble = Color(0xF0142740), outBubble = Color(0xFF2A5079), outInk = Color(0xFFF2F8FF), outMeta = Color(0xFFB7CDE6), meta = Color(0xFF8DA3BA),
+            glass = Color(0x8A0F1C2E), glassLine = Color(0x26FFFFFF), online = Color(0xFF5FE3B0)),
         Pal("mint", "Мята", false,
             bg = Color(0xFFF3F6F5), card = Color(0xFFFFFFFF), line = Color(0xFFDCE3E0), ink = Color(0xFF14201C), muted = Color(0xFF5F6E69),
             accent = Color(0xFF0E8C77), onAccent = Color.White, violet = Color(0xFF6D5BD0), amber = Color(0xFFB45309), danger = Color(0xFFC62828),
@@ -51,7 +58,12 @@ object Th {
     var c by mutableStateOf(all[0])
         private set
 
-    fun load() { c = all.firstOrNull { it.id == Prefs.theme } ?: all[0] }
+    fun load() {
+        // переход на «Кабину» один раз — дальше Алим может выбрать любую тему сам
+        if (!Prefs.cockpitTheme) { Prefs.cockpitTheme = true; Prefs.theme = "cockpit" }
+        c = all.firstOrNull { it.id == Prefs.theme } ?: all[0]
+    }
+    val cockpit: Boolean get() = c.id == "cockpit"
     fun set(id: String) { Prefs.theme = id; load() }
 }
 

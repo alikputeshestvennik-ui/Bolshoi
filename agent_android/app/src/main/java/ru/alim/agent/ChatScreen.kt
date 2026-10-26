@@ -1,5 +1,7 @@
 package ru.alim.agent
 
+import androidx.compose.foundation.layout.requiredSize
+
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -316,7 +318,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     var dx by remember { mutableFloatStateOf(0f) }
     val anim by animateFloatAsState(dx, label = "swipe")
     var menu by remember { mutableStateOf(false) }
-    val shape = if (m.me) RoundedCornerShape(18.dp, 18.dp, 5.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 5.dp)
+    val shape = if (Th.cockpit) RoundedCornerShape(18.dp) else if (m.me) RoundedCornerShape(18.dp, 18.dp, 5.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 5.dp)
     val bg = if (m.me) Th.c.outBubble else Th.c.inBubble
     val ink = if (m.me) Th.c.outInk else Th.c.ink
     val meta = if (m.me) Th.c.outMeta else Th.c.meta
@@ -608,7 +610,9 @@ fun Wallpaper() {
     val photo = Prefs.wallpaper == "photo"
     val ver = WallState.version
     val bmp = remember(photo, ver) { if (photo) loadBitmap(java.io.File(ctx.filesDir, "wallpaper.jpg").path, 1600) else null }
-    if (bmp != null) {
+    if (bmp == null && Th.cockpit) {
+        CockpitSky(Sky.glowCalm, Modifier.fillMaxSize())
+    } else if (bmp != null) {
         Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxSize().background((if (p.dark) Color.Black else Color.White).copy(alpha = Prefs.wallDim / 100f)))
     } else {
@@ -664,7 +668,8 @@ fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false, f: Friend
     val path = f.avatar
     val bmp = remember(path, ver) { if (path.isNotBlank()) loadBitmap(path, 400) else null }
     Box(Modifier.size(size)) {
-        Box(Modifier.fillMaxSize().clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
+        if (f.id == Friends.MAIN) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CopilotOrb(0, size * 1.3f, Modifier.requiredSize(size * 1.3f)) }
+        else Box(Modifier.fillMaxSize().clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
             if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(f.name.take(1).uppercase(), style = body((size.value * 0.42f).toInt(), FontWeight.Bold, OnAccent))
         }
