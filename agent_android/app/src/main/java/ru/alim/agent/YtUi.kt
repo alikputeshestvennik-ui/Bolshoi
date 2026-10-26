@@ -97,12 +97,21 @@ fun YtPlayer(videoId: String, close: () -> Unit) {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    webChromeClient = android.webkit.WebChromeClient()
+                    // Официальный IFrame Player API с заданным origin — иначе встроенный плеер даёт «ошибка 152»
                     val html = """
-                        <html><body style="margin:0;background:#000">
-                        <iframe width="100%" height="100%" style="position:fixed;top:0;left:0;bottom:0;right:0"
-                        src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&rel=0"
-                        frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
-                        </body></html>""".trimIndent()
+                        <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+                        <style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#p{width:100%;height:100%}</style></head>
+                        <body><div id="p"></div>
+                        <script src="https://www.youtube.com/iframe_api"></script>
+                        <script>
+                        function onYouTubeIframeAPIReady(){
+                          new YT.Player('p',{videoId:'$videoId',width:'100%',height:'100%',
+                            playerVars:{autoplay:1,playsinline:1,rel:0,fs:1,controls:1,modestbranding:1,origin:'https://www.youtube.com'},
+                            events:{onReady:function(e){e.target.playVideo();}}});
+                        }
+                        </script></body></html>""".trimIndent()
                     loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
                 }
             }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
