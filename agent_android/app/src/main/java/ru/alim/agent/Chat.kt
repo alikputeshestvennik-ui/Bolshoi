@@ -347,7 +347,7 @@ class ChatStore(val fid: String) {
 
     private fun dispatch(m: Msg) {
         val c = core
-        if (c.busy) { if (m.id !in queue) queue += m.id; return }
+        if (c.busy || c.fastBusy) { if (m.id !in queue) queue += m.id; return }
         if (m.note && m.from.isNotBlank()) {
             delegatedFor = m.from
             c.delegated = true
@@ -363,7 +363,67 @@ class ChatStore(val fid: String) {
             if (m.voice.isNotBlank()) append("\n(это было голосовое сообщение)")
         }
         update(m.id) { it.copy(status = "read") }
-        c.followUp(prompt)
+        // Быстрая полоса: простую болтовню отвечаем сразу лёгкой моделью с потоковым выводом, минуя агента.
+        if (Prefs.fastLane && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
+        else c.followUp(prompt)
+    }
+
+    /** Быстрый системный промпт классификатора-собеседника. */
+    private fun fastSystem(): String =
+        "Ты — Пилот, личный ассистент Алима и близкий друг. По-русски, на «ты», коротко, живо и по-доброму.\n" +
+        "Тебе дают последние реплики и новое сообщение Алима. Реши:\n" +
+        "• Если это простая болтовня, приветствие, благодарность, эмоция, шутка, уточнение по недавнему разговору, просьба переформулировать/объяснить словами или совет, не требующий свежих данных и действий — ответь САМ, коротко и тепло.\n" +
+        "• Если нужны ДЕЙСТВИЯ или свежие данные: поиск в интернете, новости, погода, цены, кто-то «сейчас» занимает должность, Telegram, YouTube, музыка, звонки/SMS/USSD, деньги, календарь, контакты, заметки, файлы, фото, покупки, карты/маршрут, запись в память, GitHub/сборка — ответь РОВНО «#task» и больше НИЧЕГО.\n" +
+        "• Сомневаешься — «#task». Никогда не выдумывай факты, которые стоило бы проверить."
+
+    /** Стримим простой ответ; если модель говорит #task (или ошибка) — запускаем полноценного агента. */
+    private fun tryFastLane(c: Agent.Core, prompt: String) {
+        c.fastBusy = true
+        io.launch {
+            val req = JSONArray()
+                .put(JSONObject().put("role", "system").put("content", fastSystem()))
+                .put(JSONObject().put("role", "user").put("content", recentForPrompt(10) + "\n\nСейчас Алим пишет: " + prompt))
+            val bubbleId = newId()
+            var mode = 0 // 0 — ещё не решили, 1 — отвечаем сами, 2 — задача для агента
+            val sb = StringBuilder()
+            val ok = runCatching {
+                Llm.stream(Prefs.bg, req, 600) { d ->
+                    if (mode == 2) return@stream
+                    sb.append(d)
+                    if (mode == 0) {
+                        val st = sb.toString().trimStart()
+                        if (st.isEmpty()) return@stream
+                        if (st.startsWith("#task", true)) { mode = 2; return@stream }
+                        if (st.length < 5 && "#task".startsWith(st, true)) return@stream // ещё не ясно, ждём
+                        mode = 1
+                        add(Msg(bubbleId, false, st, System.currentTimeMillis(), status = "read"))
+                    } else {
+                        update(bubbleId) { it.copy(text = it.text + d) }
+                    }
+                }
+            }.isSuccess
+            withContext(Dispatchers.Main) {
+                c.fastBusy = false
+                if (mode == 1) {
+                    // ответили сами
+                    msgs.firstOrNull { it.id == bubbleId }?.let { notifyIfAway(it) }
+                    if (ok && Prefs.speak) Agent.onSpeak?.invoke(sb.toString())
+                    drainQueue()
+                } else {
+                    // задача, пусто или ошибка — отдаём полноценному агенту
+                    c.followUp(prompt)
+                }
+            }
+        }
+    }
+
+    /** Запустить следующее сообщение из очереди (как после обычного ответа). */
+    private fun drainQueue() {
+        main.postDelayed({
+            val next = queue.firstOrNull() ?: return@postDelayed
+            queue.removeAt(0)
+            msgs.firstOrNull { it.id == next }?.let { dispatch(it) }
+        }, 300)
     }
 
     /** Связь вернулась — отправляем то, что Алим написал без сети. */

@@ -199,6 +199,46 @@ object Llm {
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), apiCost)
     }
 
+    /**
+     * Потоковый ответ (SSE) — для «быстрой полосы»: текст приходит по кусочкам через onDelta.
+     * Возвращает полный собранный текст. Бросает исключение при ошибке сети/провайдера — вызывающий откатится на агента.
+     */
+    fun stream(model: String, messages: JSONArray, maxTokens: Int, onDelta: (String) -> Unit): String {
+        return if (isGoogle(model)) {
+            val k = Call.key
+            if (k.isBlank()) error("нет ключа Google")
+            streamSse("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                "Bearer $k", model.removePrefix("google:"), messages, maxTokens, onDelta)
+        } else {
+            if (key.isBlank()) error("нет ключа gptunnel")
+            streamSse("$BASE/chat/completions", if (bearer) "Bearer $key" else key, model, messages, maxTokens, onDelta)
+        }
+    }
+
+    private fun streamSse(url: String, auth: String, id: String, messages: JSONArray, maxTokens: Int, onDelta: (String) -> Unit): String {
+        val body = JSONObject().put("model", id).put("temperature", 0.4).put("max_tokens", maxTokens)
+            .put("stream", true).put("messages", messages)
+        val req = Request.Builder().url(url).header("Authorization", auth)
+            .post(body.toString().toRequestBody(JSON)).build()
+        val sb = StringBuilder()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) error("stream ${resp.code}")
+            val src = resp.body?.source() ?: error("пустой поток")
+            while (!src.exhausted()) {
+                val line = src.readUtf8Line() ?: break
+                if (!line.startsWith("data:")) continue
+                val data = line.substring(5).trim()
+                if (data.isEmpty()) continue
+                if (data == "[DONE]") break
+                val delta = runCatching {
+                    JSONObject(data).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")?.optString("content").orEmpty()
+                }.getOrDefault("")
+                if (delta.isNotEmpty()) { sb.append(delta); onDelta(delta) }
+            }
+        }
+        return sb.toString()
+    }
+
     /** Баланс личного счёта gptunnel в рублях (GET /v1/balance?useWalletBalance=true). */
     fun balance(): Double {
         if (key.isBlank()) error("нет ключа")

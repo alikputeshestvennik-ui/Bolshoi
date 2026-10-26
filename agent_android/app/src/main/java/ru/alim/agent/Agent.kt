@@ -121,6 +121,8 @@ object Agent {
         private var lastEnded = 0L
 
         val busy: Boolean get() = phase == Phase.WORKING || phase == Phase.CONFIRM
+        /** Быстрая полоса сейчас обрабатывает сообщение (стримит простой ответ до запуска агента). */
+        @Volatile var fastBusy = false
 
         fun start(text: String) {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
