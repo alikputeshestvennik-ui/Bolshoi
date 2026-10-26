@@ -44,14 +44,14 @@ object Haptics {
         runCatching { v.vibrate(VibrationEffect.createOneShot(ms, amp)) }
     }
 
-    /** Отрыв — короткий щелчок тумблера: передал управление. */
-    fun takeoff(ctx: Context) = one(ctx, 18, 150)
+    /** Отрыв — чёткий щелчок тумблера: передал управление. */
+    fun takeoff(ctx: Context) = one(ctx, 45, 255)
     /** Запрос капитану — мягкая двойная нотка. */
-    fun ask(ctx: Context) = wave(ctx, longArrayOf(0, 16, 90, 16), intArrayOf(0, 120, 0, 160))
-    /** Посадка — нарастающая отдача и мягкое касание. */
-    fun landing(ctx: Context) = wave(ctx, longArrayOf(0, 22, 40, 34), intArrayOf(0, 90, 0, 190))
+    fun ask(ctx: Context) = wave(ctx, longArrayOf(0, 35, 110, 45), intArrayOf(0, 200, 0, 255))
+    /** Посадка — нарастающая отдача и касание земли. */
+    fun landing(ctx: Context) = wave(ctx, longArrayOf(0, 30, 50, 70), intArrayOf(0, 140, 0, 255))
     /** Лёгкий тик для мелких подтверждений. */
-    fun tick(ctx: Context) = one(ctx, 12, 90)
+    fun tick(ctx: Context) = one(ctx, 20, 160)
 }
 
 /** Палитра кабины — рассвет над морем. Не зависит от темы чата: задача всегда «в кабине». */
@@ -66,23 +66,37 @@ object Sky {
     val inkMuted = Color(0xFF9DB2C8)
 }
 
-/** Фон кабины: небо сверху, тёплая полоса горизонта по состоянию, море снизу — тихо дышит. */
+/** Фон кабины: небо, тёплая полоса горизонта по состоянию, море. В полёте небо «летит» и горизонт пульсирует. */
 @Composable
-fun CockpitSky(glow: Color, modifier: Modifier = Modifier) {
+fun CockpitSky(glow: Color, modifier: Modifier = Modifier, working: Boolean = false) {
     val t = rememberInfiniteTransition(label = "sky")
-    val shift by t.animateFloat(0f, 1f,
-        infiniteRepeatable(tween(7000, easing = LinearEasing), RepeatMode.Reverse), label = "shift")
+    val shift by t.animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = LinearEasing), RepeatMode.Reverse), label = "shift")
+    val fly by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart), label = "fly")
+    val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
     Canvas(modifier) {
-        val h = size.height
+        val w = size.width; val h = size.height
         val horizon = h * (0.58f + 0.03f * shift)
-        drawRect(Brush.verticalGradient(0f to Sky.top, 0.5f to Sky.mid, 1f to Sky.mid, endY = horizon), size = androidx.compose.ui.geometry.Size(size.width, horizon))
+        val glowA = if (working) 0.55f + 0.35f * pulse else 0.55f
+        drawRect(Brush.verticalGradient(0f to Sky.top, 0.5f to Sky.mid, 1f to Sky.mid, endY = horizon), size = androidx.compose.ui.geometry.Size(w, horizon))
+        // «полёт»: световые штрихи уходят к горизонту (ощущение движения вперёд)
+        if (working) {
+            val streaks = 7
+            for (i in 0 until streaks) {
+                val p = (fly + i.toFloat() / streaks) % 1f
+                val y = h * 0.1f + (horizon - h * 0.1f) * p       // сверху вниз, к горизонту
+                val a = (1f - p) * 0.22f
+                val half = w * (0.12f + 0.3f * p)                  // к горизонту штрихи длиннее
+                val cx = w * (if (i % 2 == 0) 0.32f else 0.7f)
+                drawRect(glow.copy(alpha = a), topLeft = Offset(cx - half, y), size = androidx.compose.ui.geometry.Size(half * 2, 1.6f))
+            }
+        }
         // тёплая/холодная полоса у самого горизонта
-        drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to glow.copy(alpha = 0.55f), startY = horizon - h * 0.16f, endY = horizon),
-            topLeft = Offset(0f, horizon - h * 0.16f), size = androidx.compose.ui.geometry.Size(size.width, h * 0.16f))
+        drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to glow.copy(alpha = glowA), startY = horizon - h * 0.16f, endY = horizon),
+            topLeft = Offset(0f, horizon - h * 0.16f), size = androidx.compose.ui.geometry.Size(w, h * 0.16f))
         // море
         drawRect(Brush.verticalGradient(0f to glow.copy(alpha = 0.18f), 0.25f to Sky.sea, 1f to Sky.top, startY = horizon, endY = h),
-            topLeft = Offset(0f, horizon), size = androidx.compose.ui.geometry.Size(size.width, h - horizon))
-        // сама линия горизонта — тонкий свет
-        drawRect(glow.copy(alpha = 0.8f), topLeft = Offset(0f, horizon - 1.2f), size = androidx.compose.ui.geometry.Size(size.width, 2.4f))
+            topLeft = Offset(0f, horizon), size = androidx.compose.ui.geometry.Size(w, h - horizon))
+        // линия горизонта — тонкий свет, в полёте ярче пульсом
+        drawRect(glow.copy(alpha = if (working) 0.7f + 0.3f * pulse else 0.8f), topLeft = Offset(0f, horizon - 1.2f), size = androidx.compose.ui.geometry.Size(w, 2.4f))
     }
 }

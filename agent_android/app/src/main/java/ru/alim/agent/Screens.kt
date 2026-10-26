@@ -8,6 +8,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -223,12 +228,17 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
         else -> if (Agent.failed) Sky.glowAsk else Sky.glowCalm
     }
 
+    val bobT = rememberInfiniteTransition(label = "bob")
+    val bob by bobT.animateFloat(-1f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing), RepeatMode.Reverse), label = "bobv")
+
     Screen(Agent.task, back) {
         Box(Modifier.fillMaxWidth().height(148.dp).clip(RoundedCornerShape(22.dp))
             .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 44.dp.toPx() }) {
-            CockpitSky(glow, Modifier.matchParentSize())
+            CockpitSky(glow, Modifier.matchParentSize(), working = running)
             Row(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 96.dp, voice.level, voice.speaking)
+                Box(Modifier.graphicsLayer { if (running) translationY = bob * 6.dp.toPx() }) {
+                    Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 96.dp, voice.level, voice.speaking)
+                }
                 HGap(14)
                 Column {
                     Label(when (phase) {
