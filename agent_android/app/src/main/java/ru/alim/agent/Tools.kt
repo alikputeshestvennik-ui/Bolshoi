@@ -473,6 +473,17 @@ object Tools {
             text
         },
 
+        Tool("flights", "{\"from\": \"Сочи\", \"to\": \"Стамбул\", \"date\": \"2026-11-22\", \"return_date\": \"\", \"direct\": false} — авиабилеты через API Авиасейлса: рейсы и цены на дату (ГГГГ-ММ-ДД) или на месяц (ГГГГ-ММ). Города пиши по-русски, коды подберутся сами. return_date — только если просят туда-обратно. direct=true — только прямые") t@{ _, a ->
+            val from = a.optString("from").trim(); val to = a.optString("to").trim(); val date = a.optString("date").trim()
+            if (from.isEmpty() || to.isEmpty()) return@t "откуда и куда?"
+            if (date.isEmpty()) return@t "на какую дату? спроси у Алима"
+            Avia.search(from, to, date, a.optString("return_date").trim(), a.optBoolean("direct", false))
+        },
+
+        Tool("flights_open", "{\"n\": 1} — открыть рейс номер n из последнего поиска flights в приложении Авиасейлса (там покупка). Только по просьбе «открой»") t@{ ctx, a ->
+            Avia.open(ctx, a.optInt("n", 1))
+        },
+
         Tool("yt_new", "{\"days\": 7, \"favs\": true} — ПОКАЗАТЬ новые видео из подписок YouTube Алима за N дней (по умолчанию 7). favs=true — только любимые каналы (если выбраны), иначе по всем подпискам. Видео играют прямо в чате. Нужен его Google-аккаунт и VPN") t@{ _, a ->
             if (!YtMe.ready) return@t "YouTube не подключён — открой настройки → YouTube и войди в Google-аккаунт"
             val vids = withContext(Dispatchers.IO) { runCatching { YtMe.newFromSubs(a.optInt("days", 7), a.optBoolean("favs", true)) }.getOrElse { return@withContext null } }

@@ -29,6 +29,7 @@ android {
         buildConfigField("String", "TG_API_HASH", secret("TG_API_HASH"))
         buildConfigField("String", "GH_PAT", secret("GH_PAT"))
         buildConfigField("String", "YT_CLIENT_ID", secret("YT_CLIENT_ID"))
+        buildConfigField("String", "TRAVELPAYOUTS_TOKEN", secret("TRAVELPAYOUTS_TOKEN"))
         buildConfigField("String", "YT_CLIENT_SECRET", secret("YT_CLIENT_SECRET"))
         buildConfigField("String", "VK_APP_ID", secret("VK_APP_ID"))
         buildConfigField("String", "VK_SECURE_KEY", secret("VK_SECURE_KEY"))
