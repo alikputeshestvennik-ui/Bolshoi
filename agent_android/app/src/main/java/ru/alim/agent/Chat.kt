@@ -370,13 +370,35 @@ class ChatStore(val fid: String) {
 
     /** Быстрый системный промпт классификатора-собеседника. */
     private fun fastSystem(): String =
-        "Ты — Пилот, личный ассистент Алима и близкий друг. По-русски, на «ты», коротко, живо и по-доброму.\n" +
-        "Тебе дают последние реплики и новое сообщение Алима. Реши:\n" +
-        "• Если это простая болтовня, приветствие, благодарность, эмоция, шутка, уточнение по недавнему разговору, просьба переформулировать/объяснить словами или совет, не требующий свежих данных и действий — ответь САМ, коротко и тепло.\n" +
-        "• Если нужны ДЕЙСТВИЯ или свежие данные: поиск в интернете, новости, погода, цены, кто-то «сейчас» занимает должность, Telegram, YouTube, музыка, звонки/SMS/USSD, деньги, календарь, контакты, заметки, файлы, фото, покупки, карты/маршрут, запись в память, GitHub/сборка — ответь РОВНО «#task» и больше НИЧЕГО.\n" +
-        "• Сомневаешься — «#task». Никогда не выдумывай факты, которые стоило бы проверить."
+        "Ты — Пилот, личный ассистент Алима и его близкий друг. По-русски, на «ты».\n" +
+        "Тебе дают последние реплики и новое сообщение Алима.\n" +
+        "Сначала реши, нужны ли ДЕЙСТВИЯ или свежие данные: поиск в интернете, новости, погода, цены, кто «сейчас» на должности, Telegram, YouTube, музыка, звонки/SMS/USSD, деньги, календарь, контакты, заметки, файлы, фото, покупки, карты/маршрут, запись в память, GitHub/сборка. Если да — ответь РОВНО «#task» и больше НИЧЕГО.\n" +
+        "Иначе (болтовня, приветствие, эмоция, шутка, мнение, вопрос по нашему разговору, просьба переформулировать или объяснить словами) — ответь САМ.\n" +
+        "Правила ответа: отвечай по сути ИМЕННО того, что он написал. Коротко, живо, по-дружески. НЕ сыпь дежурными фразами, не повторяй приветствие, если уже здоровались, не отвечай шаблоном вроде «чем займёмся». Если он пишет про тебя или приложение (например, хочет отключить) — отреагируй по-человечески на это, а не общими словами. Не выдумывай факты, которые стоило бы проверить, — для них «#task»."
 
-    /** Стримим простой ответ; если модель говорит #task (или ошибка) — запускаем полноценного агента. */
+    /** Дежурный отказ лёгкой модели (у Яндекса бывает) — тогда отдаём агенту, он перебросит на Claude. */
+    private fun looksRefusal(t: String): Boolean {
+        if (t.length >= 240) return false
+        val l = t.lowercase().replace('ё', 'е')
+        return listOf("не могу обсуждать", "не могу помочь с этим", "давайте поговорим о чем-нибудь",
+            "не могу ответить на этот", "обсудить эту тему", "я не могу говорить").any { l.contains(it) }
+    }
+
+    /** Разобрать ответ лёгкой модели: #task/отказ — в агента, иначе показать как реплику Пилота. */
+    private fun handleFast(c: Agent.Core, prompt: String, bubbleId: Long, text: String, streamedShown: Boolean) {
+        val t = text.trimStart()
+        if (t.isBlank() || t.startsWith("#task", true) || looksRefusal(t)) {
+            if (streamedShown) delete(listOf(bubbleId)) // убрать показанный пузырь, ответит агент
+            c.followUp(prompt); return
+        }
+        if (streamedShown) update(bubbleId) { it.copy(text = t) }
+        else add(Msg(bubbleId, false, t, System.currentTimeMillis(), status = "read"))
+        msgs.firstOrNull { it.id == bubbleId }?.let { notifyIfAway(it) }
+        if (Prefs.speak) Agent.onSpeak?.invoke(t)
+        drainQueue()
+    }
+
+    /** Стримим простой ответ лёгкой моделью; #task/ошибка — запускаем полноценного агента. */
     private fun tryFastLane(c: Agent.Core, prompt: String) {
         c.fastBusy = true
         io.launch {
@@ -384,10 +406,10 @@ class ChatStore(val fid: String) {
                 .put(JSONObject().put("role", "system").put("content", fastSystem()))
                 .put(JSONObject().put("role", "user").put("content", recentForPrompt(10) + "\n\nСейчас Алим пишет: " + prompt))
             val bubbleId = newId()
-            var mode = 0 // 0 — ещё не решили, 1 — отвечаем сами, 2 — задача для агента
+            var mode = 0 // 0 — ещё не решили, 1 — отвечаем сами (пузырь показан), 2 — задача
             val sb = StringBuilder()
-            val ok = runCatching {
-                Llm.stream(Prefs.bg, req, 600) { d ->
+            runCatching {
+                Llm.stream(Prefs.laneModel, req, 600) { d ->
                     if (mode == 2) return@stream
                     sb.append(d)
                     if (mode == 0) {
@@ -397,21 +419,18 @@ class ChatStore(val fid: String) {
                         if (st.length < 5 && "#task".startsWith(st, true)) return@stream // ещё не ясно, ждём
                         mode = 1
                         add(Msg(bubbleId, false, st, System.currentTimeMillis(), status = "read"))
-                    } else {
-                        update(bubbleId) { it.copy(text = it.text + d) }
-                    }
+                    } else update(bubbleId) { it.copy(text = it.text + d) }
                 }
-            }.isSuccess
+            }
+            // стрим ничего не дал (не поддержан/ошибся до первого слова) — один обычный вызов той же модели
+            val fallbackTxt = if (mode == 0) runCatching { Llm.chat(Prefs.laneModel, req, 600, json = false).text }.getOrNull() else null
             withContext(Dispatchers.Main) {
                 c.fastBusy = false
-                if (mode == 1) {
-                    // ответили сами
-                    msgs.firstOrNull { it.id == bubbleId }?.let { notifyIfAway(it) }
-                    if (ok && Prefs.speak) Agent.onSpeak?.invoke(sb.toString())
-                    drainQueue()
-                } else {
-                    // задача, пусто или ошибка — отдаём полноценному агенту
-                    c.followUp(prompt)
+                when {
+                    mode == 1 -> handleFast(c, prompt, bubbleId, sb.toString(), true)
+                    mode == 2 -> c.followUp(prompt)
+                    fallbackTxt != null -> handleFast(c, prompt, bubbleId, fallbackTxt, false)
+                    else -> c.followUp(prompt)
                 }
             }
         }

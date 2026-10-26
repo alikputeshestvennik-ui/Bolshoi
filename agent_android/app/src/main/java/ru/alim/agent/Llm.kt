@@ -204,14 +204,26 @@ object Llm {
      * Возвращает полный собранный текст. Бросает исключение при ошибке сети/провайдера — вызывающий откатится на агента.
      */
     fun stream(model: String, messages: JSONArray, maxTokens: Int, onDelta: (String) -> Unit): String {
-        return if (isGoogle(model)) {
-            val k = Call.key
-            if (k.isBlank()) error("нет ключа Google")
-            streamSse("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                "Bearer $k", model.removePrefix("google:"), messages, maxTokens, onDelta)
-        } else {
-            if (key.isBlank()) error("нет ключа gptunnel")
-            streamSse("$BASE/chat/completions", if (bearer) "Bearer $key" else key, model, messages, maxTokens, onDelta)
+        return when {
+            isYandex(model) -> {
+                val k = YaCloud.llmKey
+                if (k.isBlank()) error("нет ключа Yandex")
+                val uri = if (model.startsWith("gpt://")) model else {
+                    val f = YaCloud.folder; if (f.isBlank()) error("нет ID каталога Yandex")
+                    "gpt://$f/${model.removePrefix("yandex:").removePrefix("yc:")}"
+                }
+                streamSse("https://llm.api.cloud.yandex.net/v1/chat/completions", "Api-Key $k", uri, messages, maxTokens, onDelta)
+            }
+            isGoogle(model) -> {
+                val k = Call.key
+                if (k.isBlank()) error("нет ключа Google")
+                streamSse("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                    "Bearer $k", model.removePrefix("google:"), messages, maxTokens, onDelta)
+            }
+            else -> {
+                if (key.isBlank()) error("нет ключа gptunnel")
+                streamSse("$BASE/chat/completions", if (bearer) "Bearer $key" else key, model, messages, maxTokens, onDelta)
+            }
         }
     }
 

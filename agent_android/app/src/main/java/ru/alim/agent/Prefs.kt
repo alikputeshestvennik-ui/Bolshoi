@@ -22,6 +22,8 @@ object Prefs {
     var fastModel: String get() = s("fm", "claude-5.5-haiku"); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
     var fastLane: Boolean get() = b("fastlane", true); set(v) = putB("fastlane", v)
+    /** Модель для быстрой полосы (по умолчанию — Alice AI Flash Яндекса: бесплатно, без VPN, хорошо по-русски). */
+    var laneModel: String get() = s("lane", "yc:aliceai-llm-flash"); set(v) = put("lane", v.trim())
     var smartModel: String get() = s("sm", "claude-5.5-sonnet"); set(v) = put("sm", v.trim())
     var fastIn: String get() = s("fi", "0.03"); set(v) = put("fi", v.trim())
     var fastOut: String get() = s("fo", "0.15"); set(v) = put("fo", v.trim())

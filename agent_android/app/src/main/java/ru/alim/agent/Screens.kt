@@ -526,9 +526,13 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Быстрые ответы", style = body(15, FontWeight.SemiBold))
-                        Text("Простую болтовню Пилот отвечает сразу фоновой моделью, с печатью по словам. Дела по-прежнему идёт делать агент.", style = body(12, color = Muted), lineHeight = 16.sp)
+                        Text("Простую болтовню Пилот отвечает сразу лёгкой моделью, с печатью по словам. Дела по-прежнему делает агент.", style = body(12, color = Muted), lineHeight = 16.sp)
                     }
                     Toggle(fl) { fl = it; Prefs.fastLane = it }
+                }
+                if (fl) {
+                    var lane by remember { mutableStateOf(Prefs.laneModel) }
+                    ModelEditor("Быстрая полоса — простая болтовня", "lane", lane, "0", "0", { lane = it; Prefs.laneModel = it }, {}, {})
                 }
                 Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
                     style = body(12, color = Muted), lineHeight = 17.sp)
