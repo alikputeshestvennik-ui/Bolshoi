@@ -28,6 +28,8 @@ android {
         buildConfigField("String", "TG_API_ID", secret("TG_API_ID"))
         buildConfigField("String", "TG_API_HASH", secret("TG_API_HASH"))
         buildConfigField("String", "GH_PAT", secret("GH_PAT"))
+        buildConfigField("String", "YT_CLIENT_ID", secret("YT_CLIENT_ID"))
+        buildConfigField("String", "YT_CLIENT_SECRET", secret("YT_CLIENT_SECRET"))
         buildConfigField("String", "VK_APP_ID", secret("VK_APP_ID"))
         buildConfigField("String", "VK_SECURE_KEY", secret("VK_SECURE_KEY"))
         ndk { abiFilters += "arm64-v8a" }   // TDLib собрана под arm64 (Flip7)

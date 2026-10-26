@@ -473,6 +473,45 @@ object Tools {
             text
         },
 
+        Tool("yt_new", "{\"days\": 7, \"favs\": true} — ПОКАЗАТЬ новые видео из подписок YouTube Алима за N дней (по умолчанию 7). favs=true — только любимые каналы (если выбраны), иначе по всем подпискам. Видео играют прямо в чате. Нужен его Google-аккаунт и VPN") t@{ _, a ->
+            if (!YtMe.ready) return@t "YouTube не подключён — открой настройки → YouTube и войди в Google-аккаунт"
+            val vids = withContext(Dispatchers.IO) { runCatching { YtMe.newFromSubs(a.optInt("days", 7), a.optBoolean("favs", true)) }.getOrElse { return@withContext null } }
+                ?: return@t "не вышло получить видео (проверь VPN)"
+            if (vids.isEmpty()) return@t "новых видео за этот период не нашёл"
+            withContext(Dispatchers.Main) { Agent.cur().ytVideos.clear(); Agent.cur().ytVideos.addAll(vids.map { "${it.id}\t${it.title}\t${it.channel}" }) }
+            "нашёл ${vids.size} видео из подписок:\n" + vids.joinToString("\n") { "• ${it.channel}: ${it.title}" }
+        },
+
+        Tool("yt_liked", "{\"count\": 20} — ПОКАЗАТЬ видео, которые Алим лайкнул на YouTube. Играют прямо в чате") t@{ _, a ->
+            if (!YtMe.ready) return@t "YouTube не подключён — открой настройки → YouTube и войди"
+            val vids = withContext(Dispatchers.IO) { runCatching { YtMe.liked(a.optInt("count", 20)) }.getOrElse { return@withContext null } }
+                ?: return@t "не вышло получить лайкнутые (проверь VPN)"
+            if (vids.isEmpty()) return@t "лайкнутых видео не нашёл"
+            withContext(Dispatchers.Main) { Agent.cur().ytVideos.clear(); Agent.cur().ytVideos.addAll(vids.map { "${it.id}\t${it.title}\t${it.channel}" }) }
+            "твои лайкнутые видео (${vids.size}):\n" + vids.joinToString("\n") { "• ${it.channel}: ${it.title}" }
+        },
+
+        Tool("yt_playlists", "{} — показать названия плейлистов Алима на YouTube") t@{ _, _ ->
+            if (!YtMe.ready) return@t "YouTube не подключён"
+            val pl = withContext(Dispatchers.IO) { runCatching { YtMe.playlists() }.getOrElse { return@withContext null } } ?: return@t "не вышло (проверь VPN)"
+            if (pl.isEmpty()) return@t "плейлистов нет" else "Твои плейлисты:\n" + pl.joinToString("\n") { "• ${it.title}" }
+        },
+
+        Tool("yt_playlist_add", "{\"video\": \"ID_или_название\", \"playlist\": \"Посмотреть позже\"} — добавить видео в плейлист Алима на YouTube. Если видео недавно показывали в чате — бери его ID из списка; иначе спроси, какое именно") t@{ _, a ->
+            if (!YtMe.ready) return@t "YouTube не подключён"
+            var video = a.optString("video").trim()
+            val pl = a.optString("playlist").trim(); if (pl.isEmpty()) return@t "в какой плейлист добавить?"
+            if (video.isEmpty()) return@t "какое видео добавить? назови или дай ссылку"
+            // если дали ссылку — вытащим id
+            Regex("(?:v=|youtu\\.be/|embed/)([\\w-]{11})").find(video)?.let { video = it.groupValues[1] }
+            // если это не 11-символьный id, попробуем найти среди показанных видео по названию
+            if (!Regex("^[\\w-]{11}$").matches(video)) {
+                val found = Agent.cur().ytVideos.map { it.split('\t') }.firstOrNull { it.getOrNull(1)?.contains(video, true) == true }?.getOrNull(0)
+                if (found != null) video = found else return@t "не понял, какое видео — дай ссылку или точное название из показанных"
+            }
+            withContext(Dispatchers.IO) { runCatching { YtMe.addToPlaylist(pl, video) }.getOrElse { "не вышло: ${it.message}" } }
+        },
+
         Tool("tg_channel", "{\"username\": \"ник_канала\"} — последние посты ОТКРЫТОГО Telegram-канала (ник без @). Ник не знаешь — найди через web_search") t@{ _, a ->
             val u = a.optString("username").trim().removePrefix("@").removePrefix("https://").removePrefix("t.me/").substringBefore('/').substringBefore('?')
             if (u.isEmpty()) return@t "нужен ник канала"

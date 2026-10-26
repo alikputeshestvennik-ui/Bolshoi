@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         Chat.init(this)
         Online.init(this)
         YaMusic.init(this)
+        YtMe.init(this)
         Fonts.load(assets)
         voice = Voice(this)
         Agent.onSpeak = { voice.say(it) }

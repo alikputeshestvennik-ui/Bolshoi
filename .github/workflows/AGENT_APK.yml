@@ -83,6 +83,8 @@ jobs:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           GH_PAT: ${{ secrets.GH_PAT }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           VK_APP_ID: ${{ secrets.VK_APP_ID }}
           VK_SECURE_KEY: ${{ secrets.VK_SECURE_KEY }}
         shell: bash

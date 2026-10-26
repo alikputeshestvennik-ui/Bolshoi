@@ -252,6 +252,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                 }
             }
             if (Agent.photos.isNotEmpty()) item { PhotoGrid(Agent.photos.toList()) }
+            if (Agent.ytVideos.isNotEmpty()) item { YtGrid(Agent.ytVideos.toList()) }
             if (Agent.products.isNotEmpty()) item { ProductCards(Agent.products.toList()) }
             if (Agent.files.isNotEmpty()) item { FileCards(Agent.files.toList()) }
             if (phase == Agent.Phase.DONE) item {
@@ -461,7 +462,7 @@ fun RulesScreen(back: () -> Unit) {
 // ————————————————— Подключения —————————————————
 
 @Composable
-fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openMusic: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openMusic: () -> Unit, openYt: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var fast by remember { mutableStateOf(Prefs.fastModel) }
@@ -575,6 +576,12 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
             Section("Яндекс Музыка", if (YaMusic.ready) "подключена" else "не подключена", statusColor = if (YaMusic.ready) Muted else Amber) {
                 Text("Поиск, плейлисты и воспроизведение в приложении Яндекс Музыки.", style = body(12, color = Muted))
                 BigButton(if (YaMusic.ready) "Открыть" else "Подключить Музыку", openMusic, bg = if (YaMusic.ready) Card else Teal, fg = if (YaMusic.ready) Ink else Bg, border = if (YaMusic.ready) Line else null)
+            }
+
+            Section("YouTube", if (YtMe.ready) (YtMe.me.ifBlank { "подключён" }) else if (YtMe.configured) "не подключён" else "нет ключей",
+                statusColor = if (YtMe.ready) Muted else Amber) {
+                Text("Новое из подписок, твои лайки и добавление в плейлисты — прямо в чате, без ухода в приложение YouTube. Нужен VPN.", style = body(12, color = Muted))
+                BigButton(if (YtMe.ready) "Открыть" else "Подключить YouTube", openYt, bg = if (YtMe.ready) Card else Teal, fg = if (YtMe.ready) Ink else Bg, border = if (YtMe.ready) Line else null)
             }
 
             Section("Поиск в интернете", if (YaSearch.ready) "Яндекс Поиск" else "запасной: DuckDuckGo",

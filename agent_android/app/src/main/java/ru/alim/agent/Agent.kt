@@ -44,7 +44,7 @@ object Agent {
     /** Итог задачи — уходит в переписку сообщением Артура. */
     class Done(val ok: Boolean, val text: String, val buttons: List<String>, val products: List<Shop.Item>,
                val files: List<Docs.FileRef>, val photos: List<Long>, val steps: List<String>, val secs: Long,
-               val tgPhotos: List<String> = emptyList())
+               val tgPhotos: List<String> = emptyList(), val ytVideos: List<String> = emptyList())
 
     lateinit var app: Context
     var onSpeak: ((String) -> Unit)? = null
@@ -60,6 +60,7 @@ object Agent {
     val task get() = main.task
     val steps get() = main.steps
     val photos get() = main.photos
+    val ytVideos get() = main.ytVideos
     val products get() = main.products
     val files get() = main.files
     val pending get() = main.pending
@@ -88,6 +89,7 @@ object Agent {
         /** Фото, которые агент показывает на экране задачи. */
         val photos = mutableStateListOf<Long>()
         val tgPhotos = mutableStateListOf<String>()
+        val ytVideos = mutableStateListOf<String>()
         /** Товары, найденные в этой задаче, — карточками на экране. */
         val products = mutableStateListOf<Shop.Item>()
         /** Файлы Word/Excel, сделанные в этой задаче. */
@@ -126,7 +128,7 @@ object Agent {
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList()
             startedAt = System.currentTimeMillis(); endedAt = 0L
             model = fast(); phase = Phase.WORKING
-            lastMsgs = null; photos.clear(); tgPhotos.clear(); products.clear(); files.clear()
+            lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             job = scope.launch(RunCtx(this)) { loop(t, null, false) }
         }
 
@@ -137,7 +139,7 @@ object Agent {
             val base = lastMsgs
             if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList()
-            photos.clear(); tgPhotos.clear(); products.clear(); files.clear()
+            photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             startedAt = System.currentTimeMillis(); endedAt = 0L
             model = if (lastSmart) smart() else fast(); phase = Phase.WORKING
             job = scope.launch(RunCtx(this)) { loop(t, base, lastSmart) }
@@ -159,7 +161,7 @@ object Agent {
         /** Открыть прошлую задачу из истории: шаги, ответ, товары. Можно продолжить разговор. */
         fun showPast(r: TaskRec) {
             if (busy) return
-            task = r.title; steps.clear(); photos.clear(); tgPhotos.clear(); products.clear(); files.clear(); pending = null
+            task = r.title; steps.clear(); photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear(); pending = null
             r.log.lines().filter { it.isNotBlank() }.forEach { l ->
                 steps.add(Step(l.substringBefore('\t')).also { it.done = true; it.detail = l.substringAfter('\t', "").replace("⏎", "\n") })
             }
@@ -200,7 +202,8 @@ object Agent {
             append("- Нарисовать картинку, обои, иллюстрацию — image_generate (Alice AI ART), промпт подробный, по-русски. Отправляй картинку (photos_send) ТОЛЬКО если Алим сам попросил отправить.\n")
             append("- Во вложениях могут быть файлы и фото Алима: их содержимое приходит в сообщении. Пересылай (attachment_send) только по прямой просьбе «отправь/перешли» — не предлагай поделиться сам.\n")
             append("- «Найди такое же / что это / где купить» с фото — ищи по строке «Для поиска» из описания (shop_search, web_search, maps_search).\n")
-            append("- YouTube: ролики — youtube_search (свежие — period week/today), открыть — youtube_open. Интересы Алима бери из ПАМЯТИ.\n")
+            append("- YouTube (поиск по всему): ролики — youtube_search (свежие — period week/today), открыть — youtube_open. Интересы Алима бери из ПАМЯТИ.\n")
+            append("- Личный YouTube Алима (его аккаунт): новое из подписок — yt_new (days, favs=true это любимые каналы), его лайки — yt_liked, плейлисты — yt_playlists, добавить видео в плейлист — yt_playlist_add. Видео играют прямо в чате, приложение YouTube НЕ открывай. Если не подключён — скажи открыть настройки → YouTube.\n")
             append("- Маршрут, «как доехать», «сколько ехать» — maps_route (по умолчанию на машине, «на автобусе» — mt, «пешком» — pd). Места на карте — maps_search.\n")
             append("- Документ, список, письмо, договор — file_create type docx; таблица, бюджет, учёт, расчёт — type xlsx с формулами. Поправить файл — file_read, затем file_create с изменениями. Не вставляй содержимое файла в ответ — карточка будет на экране.\n")
             append("- Приложения: найти или обновить — play_open. Фильмы и сериалы KION — kion_open.\n")
@@ -344,7 +347,7 @@ object Agent {
             }
             val cb = onFinish
             if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
-                steps.map { it.text }, (endedAt - startedAt) / 1000, tgPhotos.toList()))
+                steps.map { it.text }, (endedAt - startedAt) / 1000, tgPhotos.toList(), ytVideos.toList()))
             else if (ok && Prefs.speak) onSpeak?.invoke(text)
         }
 
