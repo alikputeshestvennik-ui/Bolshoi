@@ -86,6 +86,19 @@ fun App(voice: Voice) {
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
+    // Задача ощущается как рейс: отрыв (уходим из чата в кабину) → запрос → посадка, с тихим вибро.
+    var prevPhase by remember { mutableStateOf(Agent.Phase.IDLE) }
+    LaunchedEffect(phase) {
+        when {
+            phase == Agent.Phase.WORKING && prevPhase != Agent.Phase.WORKING -> {
+                Haptics.takeoff(uiCtx)
+                if (scr == Scr.Home) { taskBack = Scr.Home; scr = Scr.Task }
+            }
+            phase == Agent.Phase.CONFIRM && prevPhase != Agent.Phase.CONFIRM -> Haptics.ask(uiCtx)
+            phase == Agent.Phase.DONE && prevPhase == Agent.Phase.WORKING -> Haptics.landing(uiCtx)
+        }
+        prevPhase = phase
+    }
     LaunchedEffect(open) {
         if (open == "digest") { scr = Scr.Digest; Nav.open = "" }
         if (open.startsWith("chat:")) { scr = Scr.Home; Nav.open = "" }

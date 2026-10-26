@@ -6,10 +6,14 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -210,20 +214,32 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
         now = System.currentTimeMillis()
     }
     val secs = (((if (Agent.endedAt > 0) Agent.endedAt else now) - Agent.startedAt) / 1000).coerceAtLeast(0)
+    // отрыв: кабина поднимается при входе
+    val enter = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { enter.animateTo(1f, tween(480, easing = EaseOutCubic)) }
+    val glow = when (phase) {
+        Agent.Phase.WORKING -> Sky.glowWork
+        Agent.Phase.CONFIRM -> Sky.glowAsk
+        else -> if (Agent.failed) Sky.glowAsk else Sky.glowCalm
+    }
 
     Screen(Agent.task, back) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 112.dp, voice.level, voice.speaking)
-            HGap(14)
-            Column {
-                Label(when (phase) {
-                    Agent.Phase.WORKING -> "Думаю…"
-                    Agent.Phase.CONFIRM -> "Нужно твоё ОК"
-                    else -> if (Agent.failed) "Не вышло" else "Готово"
-                }, pal.accent)
-                Gap(4)
-                Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                Text("время", style = body(12, color = Muted))
+        Box(Modifier.fillMaxWidth().height(148.dp).clip(RoundedCornerShape(22.dp))
+            .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 44.dp.toPx() }) {
+            CockpitSky(glow, Modifier.matchParentSize())
+            Row(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Guardian(pal, when (phase) { Agent.Phase.WORKING -> 1; Agent.Phase.CONFIRM -> 2; else -> 0 }, 96.dp, voice.level, voice.speaking)
+                HGap(14)
+                Column {
+                    Label(when (phase) {
+                        Agent.Phase.WORKING -> "в полёте"
+                        Agent.Phase.CONFIRM -> "нужно твоё ОК"
+                        else -> if (Agent.failed) "не долетели" else "горизонт чистый"
+                    }, color = if (phase == Agent.Phase.WORKING) Color(0xFFBFC9FF) else if (phase == Agent.Phase.CONFIRM) Color(0xFFF2C58A) else Sky.inkMuted)
+                    Gap(4)
+                    Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Sky.ink))
+                    Text(if (Agent.busy) "Пилот ведёт рейс" else "время в пути", style = body(12, color = Sky.inkMuted))
+                }
             }
         }
 
@@ -533,6 +549,14 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 if (fl) {
                     var lane by remember { mutableStateOf(Prefs.laneModel) }
                     ModelEditor("Быстрая полоса — простая болтовня", "lane", lane, "0", "0", { lane = it; Prefs.laneModel = it }, {}, {})
+                }
+                var hap by remember { mutableStateOf(Prefs.haptics) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Вибро-отклик задачи", style = body(15, FontWeight.SemiBold))
+                        Text("Тихий тактильный отклик на отрыв, запрос и посадку рейса.", style = body(12, color = Muted), lineHeight = 16.sp)
+                    }
+                    Toggle(hap) { hap = it; Prefs.haptics = it }
                 }
                 Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
                     style = body(12, color = Muted), lineHeight = 17.sp)
