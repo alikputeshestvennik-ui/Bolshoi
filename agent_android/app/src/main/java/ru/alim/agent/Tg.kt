@@ -344,6 +344,42 @@ object Tg {
     }
 
     /** При открытии приложения: кратко показать новое в Telegram (вместо постоянных пушей). */
+    /**
+     * Новые ЛИЧНЫЕ сообщения, которые ещё не показывались в Пилоте. Группы и каналы не трогаем.
+     * Помним последний показанный id по каждому чату; после переустановки берём только свежее (за 2 суток), без простыни старья.
+     */
+    private val privMutex = kotlinx.coroutines.sync.Mutex()
+    suspend fun newPrivate(): String? = privMutex.withLockOrNull {
+        if (state != St.READY) return@withLockOrNull null
+        call<TdApi.Ok>(TdApi.LoadChats(TdApi.ChatListMain(), 50))
+        val ids = call<TdApi.Chats>(TdApi.GetChats(TdApi.ChatListMain(), 50))?.chatIds?.toList().orEmpty()
+        val shown = runCatching { org.json.JSONObject(Prefs.tgShown) }.getOrDefault(org.json.JSONObject())
+        val fresh = System.currentTimeMillis() / 1000 - 2 * 86400
+        val out = StringBuilder(); var n = 0
+        for (id in ids) {
+            if (id == SERVICE_CHAT) continue
+            val chat = call<TdApi.Chat>(TdApi.GetChat(id)) ?: continue
+            if (chat.type !is TdApi.ChatTypePrivate) continue
+            val last = chat.lastMessage ?: continue
+            if (last.isOutgoing || chat.unreadCount == 0) continue
+            val seen = shown.optLong(id.toString(), 0L)
+            if (last.id <= seen) continue
+            if (seen == 0L && last.date < fresh) { shown.put(id.toString(), last.id); continue }
+            shown.put(id.toString(), last.id)
+            out.append("• ${chat.title}")
+            if (chat.unreadCount > 1) out.append(" (${chat.unreadCount})")
+            out.append(": ${contentText(last.content).replace('\n', ' ').take(140)}\n")
+            if (++n >= 10) break
+        }
+        Prefs.tgShown = shown.toString()
+        out.toString().trim().ifBlank { null }
+    }
+
+    private suspend inline fun <T> kotlinx.coroutines.sync.Mutex.withLockOrNull(block: () -> T?): T? {
+        if (!tryLock()) return null
+        try { return block() } finally { unlock() }
+    }
+
     suspend fun openSummary(): String? {
         if (state != St.READY) return null
         val s = overview(limit = 8, onlyUnread = true)

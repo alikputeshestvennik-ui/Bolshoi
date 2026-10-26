@@ -1,5 +1,7 @@
 package ru.alim.agent
 
+import kotlinx.coroutines.launch
+
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -71,17 +73,20 @@ fun App(voice: Voice) {
     LaunchedEffect(Unit) {
         if (!Prefs.askedPerms) { Prefs.askedPerms = true; perms.launch(neededPerms()) }
     }
-    // при открытии приложения — коротко показать новое в Telegram (один раз за запуск)
+    // при каждом возвращении в приложение — только новые ЛИЧНЫЕ сообщения Telegram, которые ещё не показывали
     val tgCtx = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) {
-        if (Tg.configured && !Tg.shownOnOpen) {
-            Tg.start(tgCtx)
-            var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)
-            if (!Tg.shownOnOpen) {
-                Tg.shownOnOpen = true
-                runCatching { Tg.openSummary() }.getOrNull()?.let { Chat.main.note("📨 Новое в Telegram:\n$it") }
+    val tgScope = androidx.compose.runtime.rememberCoroutineScope()
+    val life = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(life) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured) tgScope.launch {
+                Tg.start(tgCtx)
+                var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)
+                runCatching { Tg.newPrivate() }.getOrNull()?.let { Chat.main.note("💬 Личные в Telegram:\n$it") }
             }
         }
+        life.lifecycle.addObserver(obs)
+        onDispose { life.lifecycle.removeObserver(obs) }
     }
     val phase = Agent.phase
     val open = Nav.open

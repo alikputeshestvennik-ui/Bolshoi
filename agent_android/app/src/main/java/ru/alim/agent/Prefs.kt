@@ -65,6 +65,8 @@ object Prefs {
     var monitorStatus: String get() = s("ms", ""); set(v) = put("ms", v)
     // ——— Оформление и характер ———
     var theme: String get() = s("theme", "cockpit"); set(v) = put("theme", v)
+    /** Последний показанный id сообщения по каждому личному чату Telegram: {"chatId": msgId}. */
+    var tgShown: String get() = s("tg_shown", "{}"); set(v) = put("tg_shown", v)
     var cockpitTheme: Boolean get() = b("cockpit_theme", false); set(v) = putB("cockpit_theme", v)
     /** Подложка: "pattern" — узор темы, "photo" — картинка из файла wallpaper.jpg. */
     var wallpaper: String get() = s("wall", "pattern"); set(v) = put("wall", v)
