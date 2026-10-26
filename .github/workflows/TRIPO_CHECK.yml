@@ -1,0 +1,17 @@
+name: Tripo balance check
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Balance
+        env:
+          KEY: ${{ secrets.TRIPO_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "НЕТ СЕКРЕТА TRIPO_API_KEY"; exit 1; fi
+          echo "== баланс =="
+          curl -s -H "Authorization: Bearer $KEY" https://openapi.tripo3d.ai/v3/account/balance
+          echo
+          echo "== расход =="
+          curl -s -H "Authorization: Bearer $KEY" https://openapi.tripo3d.ai/v3/account/usage | head -c 600
+          echo
