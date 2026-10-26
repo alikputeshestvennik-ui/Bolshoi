@@ -188,7 +188,8 @@ class NotifListener : NotificationListenerService() {
 
 /** Уведомления остальных приложений — в ленту событий (без системных, текущих и служебных). */
 private val SKIP_PKG = setOf("android", "com.android.systemui", "com.android.providers.downloads", "com.samsung.android.lool",
-    "com.google.android.gms", "com.android.vending", "com.sec.android.app.launcher")
+    "com.google.android.gms", "com.android.vending", "com.sec.android.app.launcher",
+    "com.anthropic.claude")  // Claude — Алим и так видит его уведомления
 private val SKIP_CAT = setOf(Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_PROGRESS, Notification.CATEGORY_SERVICE,
     Notification.CATEGORY_SYSTEM, Notification.CATEGORY_NAVIGATION, Notification.CATEGORY_STATUS)
 
