@@ -1,0 +1,30 @@
+name: HF 3D check
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          T = os.environ.get("HF_TOKEN", "")
+          def get(u, auth=True):
+              r = urllib.request.Request(u, headers={"Authorization": f"Bearer {T}"} if auth and T else {})
+              try: return json.load(urllib.request.urlopen(r, timeout=30))
+              except Exception as e: return {"err": str(e)[:120]}
+          def note(t, m): print(f"::notice title={t}::{m[:900]}")
+          w = get("https://huggingface.co/api/whoami-v2")
+          note("token", f"user={w.get('name')} type={w.get('type')} err={w.get('err')}")
+          for q in ["trellis", "hunyuan3d", "image to 3d"]:
+              lst = get(f"https://huggingface.co/api/spaces?search={q.replace(' ','%20')}&sort=likes&limit=6", auth=False)
+              rows = []
+              for s in (lst if isinstance(lst, list) else []):
+                  d = get(f"https://huggingface.co/api/spaces/{s['id']}")
+                  rt = d.get("runtime") or {}
+                  hw = (rt.get("hardware") or {}).get("current")
+                  rows.append(f"{s['id']} [{s.get('likes')}] {rt.get('stage')} {hw} sdk={d.get('sdk')}")
+              note("q_" + q.replace(' ','_'), " | ".join(rows) or str(lst)[:200])
+          PY
