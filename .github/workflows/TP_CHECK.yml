@@ -1,0 +1,17 @@
+name: Travelpayouts check
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prices
+        env:
+          TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::error::нет секрета TRAVELPAYOUTS_TOKEN"; exit 1; fi
+          R=$(curl -s "https://api.travelpayouts.com/aviasales/v3/prices_for_dates?origin=AER&destination=IST&departure_at=2026-11-22&currency=rub&one_way=true&sorting=price&limit=5&token=$TOKEN" | tr -d '\n' | head -c 900)
+          echo "::notice title=date::$R"
+          M=$(curl -s "https://api.travelpayouts.com/aviasales/v3/prices_for_dates?origin=AER&destination=IST&departure_at=2026-11&currency=rub&one_way=true&sorting=price&limit=3&token=$TOKEN" | tr -d '\n' | head -c 700)
+          echo "::notice title=month::$M"
+          A=$(curl -s "https://autocomplete.travelpayouts.com/places2?term=%D0%A1%D0%BE%D1%87%D0%B8&locale=ru&types%5B%5D=city&types%5B%5D=airport" | tr -d '\n' | head -c 500)
+          echo "::notice title=auto::$A"
