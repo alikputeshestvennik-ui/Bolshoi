@@ -18,24 +18,9 @@ jobs:
           MODE: ${{ inputs.mode }}
           SPACE: ${{ inputs.space }}
         run: |
-          mkdir -p out
-          python3 - <<'PY'
-          import os, io, contextlib, time, shutil, json
-          from gradio_client import Client, handle_file
-          T=os.environ["HF_TOKEN"]; S=os.environ["SPACE"]; M=os.environ["MODE"]
-          c = Client(S, hf_token=T)
-          if M == "api":
-              buf = io.StringIO()
-              with contextlib.redirect_stdout(buf): c.view_api(all_endpoints=True)
-              open("out/api_" + S.replace("/","_") + ".txt","w").write(buf.getvalue())
-          else:
-              img = handle_file("agent_android/app/src/main/res/drawable-nodpi/ic_launcher_art.png")
-              t0 = time.time()
-              code = open("gen.py").read() if os.path.exists("gen.py") else ""
-              exec(open(".github/hf_gen.py").read())
-              open("out/time.txt","w").write(f"{time.time()-t0:.0f} sec")
-          PY
+          python3 .github/hf_try.py
       - name: Push results
+        if: always()
         run: |
           git config user.name "pilot-bot"; git config user.email "bot@users.noreply.github.com"
           git fetch origin hf-results || true
