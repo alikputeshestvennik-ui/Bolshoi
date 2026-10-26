@@ -4,7 +4,7 @@ os.makedirs("out", exist_ok=True)
 def note(t, m): print(f"::notice title={t}::{str(m)[:900]}")
 try:
     from gradio_client import Client, handle_file
-    c = Client(S, hf_token=T or None)
+    c = Client(S, token=T or None)
     if M == "api":
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf): c.view_api(all_endpoints=True)
