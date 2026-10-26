@@ -21,7 +21,9 @@ object Avia {
     val ready: Boolean get() = token.isNotBlank()
 
     /** Ссылки на последние найденные рейсы — чтобы открыть «второй» в приложении Авиасейлса. */
-    @Volatile var lastLinks: List<String> = emptyList(); private set
+    var lastLinks: List<String>
+        get() = Prefs.aviaLinks.split('\n').filter { it.isNotBlank() }
+        private set(v) { Prefs.aviaLinks = v.joinToString("\n") }
 
     private fun get(url: String): String =
         http.newCall(Request.Builder().url(url).header("Accept-Encoding", "identity").build()).execute().use { r ->

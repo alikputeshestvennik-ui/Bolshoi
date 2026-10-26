@@ -242,6 +242,7 @@ object Chat {
     // главный — для утра, итога дня, важного, подборок
     val msgs get() = main.msgs
     fun botSays(text: String, buttons: List<String> = emptyList(), items: String = "", voice: Pair<String, Int>? = null) = main.botSays(text, buttons, items, voice)
+    fun userEcho(text: String) = main.userEcho(text)
     fun recentForPrompt(n: Int = 12) = main.recentForPrompt(n)
     fun flushPending() { Friends.list.forEach { of(it.id).flushPending() } }
 
@@ -340,6 +341,12 @@ class ChatStore(val fid: String) {
         val m = Msg(newId(), false, "$who просит: $task", System.currentTimeMillis(), note = true, from = fromFid)
         add(m)
         dispatch(m)
+    }
+
+    /** Команда Алима из экрана задачи — только записать в ленту (выполняет её сам агент). */
+    fun userEcho(text: String) {
+        if (text.isBlank()) return
+        add(Msg(newId(), true, text.trim(), System.currentTimeMillis(), status = "read"))
     }
 
     /** Служебная строка посередине ленты. */

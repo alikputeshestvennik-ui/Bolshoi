@@ -352,14 +352,14 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                     OutlinedTextField(reply, { reply = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Дать команду Пилоту…", style = body(15, color = Muted)) },
                         textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Agent.followUp(reply); reply = "" } }))
+                        keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Chat.userEcho(reply); Agent.followUp(reply); reply = "" } }))
                     HGap(8)
-                    if (reply.isNotBlank() || Attach.pending.isNotEmpty()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Agent.followUp(reply); reply = "" }, 52.dp)
+                    if (reply.isNotBlank() || Attach.pending.isNotEmpty()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Chat.userEcho(reply); Agent.followUp(reply); reply = "" }, 52.dp)
                     else Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(if (voice.listening) Danger else Sky.glowCalm)
                         .clickable(onClickLabel = "Ответить голосом") {
                             hint = null
                             if (voice.listening) voice.stopListen()
-                            else voice.listen(onText = { Agent.followUp(it) }, onError = { hint = it })
+                            else voice.listen(onText = { Chat.userEcho(it); Agent.followUp(it) }, onError = { hint = it })
                         }, contentAlignment = Alignment.Center) { MicIcon(Sky.ink, 26.dp) }
                 }
             }
