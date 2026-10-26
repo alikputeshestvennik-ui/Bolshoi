@@ -104,6 +104,16 @@ object Monitor {
         return "разобрано ${batch.size}, важных ${urgent.size}${if (facts.isNotEmpty()) ", фактов ${facts.size}" else ""}"
     }
 
+    /** Одна проверка за раз: если система запустила несколько копий (после обновления, догоняя пропуски) — лишние пропускаем. */
+    val runLock = kotlinx.coroutines.sync.Mutex()
+
+    /** Забронировать сегодняшний итог: true — этот запуск пишет итог, остальные уже не будут. */
+    @Synchronized fun claimDigest(force: Boolean): Boolean {
+        if (!force && !digestDue()) return false
+        Prefs.lastDigest = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        return true
+    }
+
     fun digestDue(): Boolean {
         val c = Calendar.getInstance()
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.time)
@@ -191,12 +201,15 @@ class MonitorWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         Prefs.init(ctx)
         val forceDigest = inputData.getBoolean("digest", false)
         if (!Prefs.monitorOn && !forceDigest) return@withContext Result.success()
+        if (!Monitor.runLock.tryLock()) return@withContext Result.success()
+        try {
         val log = ArrayList<String>()
         log += Monitor.pullMail(ctx)
         log += runCatching { Monitor.triage(ctx) }.getOrElse { "разбор: ${it.message?.take(120)}" }
-        if (forceDigest || Monitor.digestDue()) log += runCatching { Monitor.digest(ctx) }.getOrElse { "итог: ${it.message?.take(120)}" }
+        if (Monitor.claimDigest(forceDigest)) log += runCatching { Monitor.digest(ctx) }.getOrElse { Prefs.lastDigest = ""; "итог: ${it.message?.take(120)}" }
         log += runCatching { Proactive.tick(ctx) }.getOrElse { "сам: ${it.message?.take(80)}" }
         Prefs.monitorStatus = SimpleDateFormat("d MMM HH:mm", Locale("ru")).format(Date()) + " — " + log.joinToString(" · ")
+        } finally { Monitor.runLock.unlock() }
         Result.success()
     }
 }
