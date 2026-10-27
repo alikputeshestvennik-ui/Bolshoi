@@ -364,6 +364,8 @@ object Flight3D {
     var failed by mutableStateOf(false)
     /** Сцена хоть раз дорисовала кадр в этом запуске. */
     var ok by mutableStateOf(false)
+    /** Что сцена сообщила о себе (размер, GPU, ошибки) — показывается в настройках. */
+    var info by mutableStateOf("")
     /** Вызывается при старте приложения: если прошлый запуск 3D не дошёл до «готово» — значит упали, выключаем 3D. */
     fun checkCrash() {
         if (Prefs.flight3dStarting) { Prefs.flight3dStarting = false; Prefs.flight3d = false; failed = true }
@@ -378,6 +380,7 @@ private class FlightBridge {
     @android.webkit.JavascriptInterface fun onLift() { h.post { liftCb() } }
     @android.webkit.JavascriptInterface fun onTouch() { h.post { touchCb() } }
     @android.webkit.JavascriptInterface fun fail() { h.post { Flight3D.fallback() } }
+    @android.webkit.JavascriptInterface fun diag(m: String) { h.post { Flight3D.info = (Flight3D.info + "\n" + m).trim().takeLast(400) } }
 }
 
 @android.annotation.SuppressLint("SetJavaScriptEnabled")

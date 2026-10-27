@@ -339,7 +339,7 @@ object Agent {
                 if (final != null && usedWeb) {
                     if (!out.contains("по данным на", true))
                         out += "\n🕓 по данным на " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
-                    if (Regex("свет|электр|отключени|веерн", RegexOption.IGNORE_CASE).containsMatchIn(text) &&
+                    if (Regex("отключени\\w*\\s+(свет|электр)|электроэнерг|электричеств|веерн|(нет|без|будет|дадут|включат|отключат)\\s+свет|свет\\w*\\s+(будет|когда|дадут|включат|отключат|нет)|график\\w*\\s+отключ", RegexOption.IGNORE_CASE).containsMatchIn(text) &&
                         !Memory.forPrompt(Agent.app, 300).contains("очеред", true) && !out.contains("очеред", true))
                         out += "\nКакая у тебя очередь отключений или район? Запомню — буду говорить, когда свет именно у тебя."
                     if (lastButtons.none { it.startsWith("Подробн", true) }) lastButtons = (lastButtons + "Подробнее").take(3)

@@ -3,14 +3,17 @@
  * Обратно: PilotBridge.ready(), onLift() — отрыв, onTouch() — касание полосы, fail() — нет WebGL. */
 (function () {
   "use strict";
-  var B = window.PilotBridge || { ready: function () {}, onLift: function () {}, onTouch: function () {}, fail: function () {} };
+  var B = window.PilotBridge || { ready: function () {}, onLift: function () {}, onTouch: function () {}, fail: function () {}, diag: function () {} };
   function call(fn) { try { B[fn](); } catch (e) {} }
+  function diag(m) { try { B.diag(String(m)); } catch (e) {} }
+  window.addEventListener("error", function (e) { diag("js: " + (e.message || e) + " @" + (e.lineno || "?")); });
 
   var renderer;
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "low-power" });
     if (!renderer.getContext()) throw new Error("no webgl");
-  } catch (e) { call("fail"); return; }
+  } catch (e) { diag("webgl: " + e); call("fail"); return; }
+  renderer.domElement.addEventListener("webglcontextlost", function (e) { e.preventDefault(); diag("context lost"); call("fail"); }, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -342,7 +345,7 @@
   placeAirport(120);
   applyLook();
 
-  var last = performance.now(), acc = 0, readySent = false;
+  var last = performance.now(), acc = 0, readySent = false, lastW = 0, lastH = 0;
   function frame(now) {
     requestAnimationFrame(frame);
     var dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -365,7 +368,25 @@
     if (rain.visible) { rain.position.set(0, sim.alt - 10 + ((sim.clock * 60) % 25), camZ); }
     // стоянка — 30 кадров/с, полёт — каждый кадр
     acc += dt;
-    if (sim.st !== "PARKED" || acc >= 0.033) { acc = 0; renderer.render(scene, cam); if (!readySent) { readySent = true; call("ready"); } }
+    // размер окна мог прийти позже (WebView создаётся до раскладки) — подстраиваемся каждый кадр
+    var W = window.innerWidth, H = window.innerHeight;
+    if (W > 0 && H > 0 && (W !== lastW || H !== lastH)) { lastW = W; lastH = H; resize(); }
+    if (W === 0 || H === 0) return;
+    if (sim.st !== "PARKED" || acc >= 0.033) {
+      acc = 0; renderer.render(scene, cam);
+      if (!readySent) {
+        readySent = true;
+        var info = W + "x" + H + " dpr " + (window.devicePixelRatio || 1);
+        try {
+          var gl = renderer.getContext(), px = new Uint8Array(4);
+          gl.readPixels(gl.drawingBufferWidth >> 1, gl.drawingBufferHeight >> 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          var ext = gl.getExtension("WEBGL_debug_renderer_info");
+          info += " buf " + gl.drawingBufferWidth + "x" + gl.drawingBufferHeight + " px " + px[0] + "," + px[1] + "," + px[2] +
+            (ext ? " gpu " + gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : "");
+        } catch (e) { info += " read: " + e; }
+        diag(info); call("ready");
+      }
+    }
   }
   requestAnimationFrame(frame);
 })();

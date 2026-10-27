@@ -657,6 +657,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                     Toggle(f3) { f3 = it; Prefs.flight3d = it; if (it) Flight3D.failed = false }
                 }
+                if (Flight3D.info.isNotBlank()) Text("3D: " + Flight3D.info, style = body(11, color = Muted), lineHeight = 14.sp)
                 Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
                     style = body(12, color = Muted), lineHeight = 17.sp)
                 BigButton("Проверить связь", {
