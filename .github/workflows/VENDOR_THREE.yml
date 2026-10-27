@@ -1,0 +1,19 @@
+name: Vendor three.js
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: agent-v1 }
+      - run: |
+          mkdir -p agent_android/app/src/main/assets/flight
+          curl -sSfL https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js -o agent_android/app/src/main/assets/flight/three.min.js
+          ls -la agent_android/app/src/main/assets/flight
+          head -c 120 agent_android/app/src/main/assets/flight/three.min.js; echo
+          git config user.name "pilot-bot"; git config user.email "bot@users.noreply.github.com"
+          git add agent_android/app/src/main/assets/flight/three.min.js
+          git commit -m "three.js r149 для 3D-сцены полёта (локально, без интернета)" || true
+          git push origin HEAD:agent-v1
