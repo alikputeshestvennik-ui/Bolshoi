@@ -81,7 +81,11 @@ object YaSearch {
             val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(d)?.groupValues?.get(1)?.let { strip(it) }.orEmpty()
             val passages = Regex("<passage>(.*?)</passage>", RegexOption.DOT_MATCHES_ALL).findAll(d).map { strip(it.groupValues[1]) }.toList()
             val headline = Regex("<headline>(.*?)</headline>", RegexOption.DOT_MATCHES_ALL).find(d)?.groupValues?.get(1)?.let { strip(it) }
-            "$title — $url\n${(passages.joinToString(" … ").ifBlank { headline.orEmpty() }).take(300)}"
+            val mod = Regex("<modtime>(\\d{8}T\\d{6})</modtime>").find(d)?.groupValues?.get(1)?.let { m ->
+                runCatching { java.time.LocalDateTime.parse(m, java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss"))
+                    .atZone(java.time.ZoneOffset.UTC).toInstant().toEpochMilli() }.getOrNull() }
+            "$title — $url" + (mod?.let { " [обновлено ${SrcTime.label(it)}]" } ?: "") +
+                "\n${(passages.joinToString(" … ").ifBlank { headline.orEmpty() }).take(300)}"
         }.toList()
     }
 }

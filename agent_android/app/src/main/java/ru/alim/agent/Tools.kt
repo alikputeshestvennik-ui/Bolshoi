@@ -529,11 +529,12 @@ object Tools {
             val html = httpGet("https://t.me/s/$u")
             val posts = Regex("<div class=\"tgme_widget_message_text[^\"]*\"[^>]*>(.*?)</div>", RegexOption.DOT_MATCHES_ALL)
                 .findAll(html).map { clean(it.groupValues[1]) }.filter { it.isNotBlank() }.toList()
-            val dates = Regex("<time datetime=\"([^\"]+)\"").findAll(html).map { it.groupValues[1].take(16).replace('T', ' ') }.toList()
+            val dates = Regex("<time datetime=\"([^\"]+)\"").findAll(html).map { SrcTime.iso(it.groupValues[1]) }.toList()
             if (posts.isEmpty()) return@t "канал @$u не найден, закрыт или без текстовых постов"
             posts.takeLast(3).mapIndexed { i, p ->
                 val d = dates.getOrNull(dates.size - (posts.takeLast(3).size - i))
-                "${d ?: ""} ${p.take(1200)}"
+                SrcTime.note(d)
+                "[${d?.let { SrcTime.label(it) } ?: "без даты"}] ${p.take(1200)}"
             }.joinToString("\n---\n", "Последние посты @$u (последний внизу):\n")
         },
 
@@ -552,8 +553,10 @@ object Tools {
             val url = a.optString("url").trim()
             if (!url.startsWith("http")) return@t "нужна ссылка"
             val html = httpGet(url)
+            val pub = SrcTime.fromHtml(html); SrcTime.note(pub)
             val body = html.replace(Regex("<(script|style|noscript)[^>]*>.*?</\\1>", RegexOption.DOT_MATCHES_ALL), " ")
-            clean(body).replace(Regex("\\s{2,}"), " ").take(4000).ifBlank { "страница пустая" }
+            (pub?.let { "[Опубликовано: ${SrcTime.label(it)}]\n" } ?: "[Дата публикации не указана]\n") +
+                clean(body).replace(Regex("\\s{2,}"), " ").take(4000).ifBlank { "страница пустая" }
         },
 
         Tool("yoomoney_balance", "{} — баланс кошелька ЮMoney") { ctx, _ -> Yoo.balance(ctx) },
@@ -1004,5 +1007,35 @@ object Tools {
         0 -> "ясно"; 1, 2 -> "переменная облачность"; 3 -> "пасмурно"; 45, 48 -> "туман"
         in 51..57 -> "морось"; in 61..67 -> "дождь"; in 71..77 -> "снег"; in 80..82 -> "ливень"
         in 85..86 -> "снегопад"; in 95..99 -> "гроза"; else -> "погода $w"
+    }
+}
+
+
+/** Время публикации того, что прочитал агент (статьи, посты) — чтобы «данные от» было временем источника, а не «сейчас». */
+object SrcTime {
+    @Volatile var newest: Long = 0
+    fun reset() { newest = 0 }
+    private val fmt get() = java.text.SimpleDateFormat("d.MM HH:mm", java.util.Locale.US)
+    fun label(ms: Long): String = fmt.format(java.util.Date(ms))
+    fun note(ms: Long?) { if (ms != null && ms > 0 && ms <= System.currentTimeMillis() + 3_600_000) { if (ms > newest) newest = ms } }
+    /** ISO-8601 («2026-10-27T15:20:00+00:00», «…Z», «2026-10-27») → мс. */
+    fun iso(s: String?): Long? {
+        val t = s?.trim()?.takeIf { it.length >= 10 } ?: return null
+        return runCatching { java.time.OffsetDateTime.parse(t).toInstant().toEpochMilli() }.getOrNull()
+            ?: runCatching { java.time.ZonedDateTime.parse(t).toInstant().toEpochMilli() }.getOrNull()
+            ?: runCatching { java.time.LocalDateTime.parse(t.take(19)).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
+            ?: runCatching { java.time.LocalDate.parse(t.take(10)).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
+    }
+    /** Дата публикации из HTML: meta article:published_time / datePublished / <time datetime>. */
+    fun fromHtml(html: String): Long? {
+        val pats = listOf(
+            "property=[\"'](?:article:published_time|og:published_time)[\"'][^>]*content=[\"']([^\"']+)",
+            "content=[\"']([^\"']+)[\"'][^>]*property=[\"'](?:article:published_time|og:published_time)",
+            "itemprop=[\"']datePublished[\"'][^>]*(?:content|datetime)=[\"']([^\"']+)",
+            "\"datePublished\"\\s*:\\s*\"([^\"]+)\"",
+            "name=[\"'](?:pubdate|publish-date|date)[\"'][^>]*content=[\"']([^\"']+)",
+            "<time[^>]*datetime=[\"']([^\"']+)")
+        for (p in pats) Regex(p, RegexOption.IGNORE_CASE).find(html)?.let { m -> iso(m.groupValues[1])?.let { return it } }
+        return null
     }
 }
