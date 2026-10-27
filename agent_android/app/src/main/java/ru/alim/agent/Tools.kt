@@ -798,7 +798,12 @@ object Tools {
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
             val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, Docs.xlsx(a))
                 else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
-            withContext(Dispatchers.Main) { Agent.cur().files.add(0, ref) }
+            withContext(Dispatchers.Main) {
+                // пересобрал тот же файл в этой задаче — старую карточку убираем, остаётся одна, свежая
+                val base = ref.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "")
+                Agent.cur().files.removeAll { it.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "") == base }
+                Agent.cur().files.add(0, ref)
+            }
             "создал «${ref.name}» в Загрузки/Свои — карточка на экране, нажатием открывается, там же «Отправить»."
         },
 

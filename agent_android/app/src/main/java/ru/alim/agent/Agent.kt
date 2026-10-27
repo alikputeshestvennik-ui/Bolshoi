@@ -144,7 +144,9 @@ object Agent {
             photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             startedAt = System.currentTimeMillis(); endedAt = 0L
             model = if (lastSmart) smart() else fast(); phase = Phase.WORKING
-            job = scope.launch(RunCtx(this)) { loop(t, base, lastSmart) }
+            val hard = lastSmart || looksHard(t)
+            if (hard) model = smart()
+            job = scope.launch(RunCtx(this)) { loop(t, base, hard) }
         }
 
         val canFollowUp: Boolean get() = lastMsgs != null && phase == Phase.DONE
@@ -361,7 +363,7 @@ object Agent {
                 // после поиска в интернете — железно: время данных и кнопка «Подробнее» (модели их часто забывают)
                 val usedWeb = listOf("web_search", "web_read", "web_page").any { (calls[it] ?: 0) > 0 }
                 if (final != null && usedWeb) {
-                    if (!Regex("по данным на|данные от|опубликован|проверено в", RegexOption.IGNORE_CASE).containsMatchIn(out))
+                    if (!Regex("по данным на|данные на|данные от|датирован|опубликован|проверено в|🕓|🕐|⏰", RegexOption.IGNORE_CASE).containsMatchIn(out))
                         out += if (SrcTime.newest > 0) "\n🕓 данные от " + SrcTime.label(SrcTime.newest)
                                else "\n🕓 проверено в " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + " (дата у источника не указана)"
                     if (Regex("отключени\\w*\\s+(свет|электр)|электроэнерг|электричеств|веерн|(нет|без|будет|дадут|включат|отключат)\\s+свет|свет\\w*\\s+(будет|когда|дадут|включат|отключат|нет)|график\\w*\\s+отключ", RegexOption.IGNORE_CASE).containsMatchIn(text) &&

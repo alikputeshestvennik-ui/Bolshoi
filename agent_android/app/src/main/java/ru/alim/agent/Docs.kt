@@ -113,9 +113,11 @@ object Docs {
             val name = esc(sh.optString("name", "Лист${si + 1}").take(31).replace(Regex("[\\[\\]:*?/\\\\]"), " "))
             val data = StringBuilder()
             var maxCols = 0
+            val widths = HashMap<Int, Int>()
             for (r in 0 until rows.length()) {
                 val row = rows.optJSONArray(r) ?: continue
                 maxCols = maxOf(maxCols, row.length())
+                for (c in 0 until row.length()) { val v = row.opt(c); if (v != null && v != JSONObject.NULL && !v.toString().startsWith("=")) widths[c] = maxOf(widths[c] ?: 0, v.toString().length) }
                 data.append("<row r=\"${r + 1}\">")
                 for (c in 0 until row.length()) {
                     val ref = "${col(c)}${r + 1}"
@@ -133,7 +135,11 @@ object Docs {
                 }
                 data.append("</row>")
             }
-            val cols = if (maxCols > 0) "<cols><col min=\"1\" max=\"$maxCols\" width=\"18\" customWidth=\"1\"/></cols>" else ""
+            // ширина колонок по содержимому — чтобы текст не обрезался (в пределах 8…60 знаков)
+            val cols = if (maxCols > 0) "<cols>" + (0 until maxCols).joinToString("") { c ->
+                val w = ((widths[c] ?: 8) * 1.1 + 2).coerceIn(8.0, 60.0)
+                "<col min=\"${c + 1}\" max=\"${c + 1}\" width=\"${"%.1f".format(java.util.Locale.US, w)}\" customWidth=\"1\"/>"
+            } + "</cols>" else ""
             parts["xl/worksheets/sheet${si + 1}.xml"] = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">" +
                 "$cols<sheetData>$data</sheetData></worksheet>"
             wbSheets.append("<sheet name=\"$name\" sheetId=\"${si + 1}\" r:id=\"rId${si + 1}\"/>")
