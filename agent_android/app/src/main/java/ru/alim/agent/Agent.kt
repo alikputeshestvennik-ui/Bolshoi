@@ -273,7 +273,7 @@ object Agent {
             var smart = smartStart
             var final: String? = null
             val calls = HashMap<String, Int>()
-            SrcTime.reset()
+            SrcTime.reset(); Tools.taskVideos.clear()
             try {
                 var i = 0
                 while (i < 14 && final == null) {
@@ -345,6 +345,19 @@ object Agent {
                 }
                 lastSmart = smart
                 var out = final ?: "Слишком много шагов — остановился. Попробуй сформулировать проще."
+                // подборка из нескольких поисков YouTube: карточками показываем выбранные ролики, а не последний поиск
+                if (final != null && Tools.taskVideos.isNotEmpty()) {
+                    val hay = buildString {
+                        append(out.lowercase())
+                        for (k in 0 until msgs.length()) msgs.optJSONObject(k)?.takeIf { it.optString("role") == "assistant" }?.let { append(' ').append(it.optString("content").lowercase()) }
+                    }
+                    fun key(t: String) = t.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim().take(16)
+                    val all = Tools.taskVideos.flatten().distinctBy { it.id }
+                    val hayN = hay.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ")
+                    var pick = all.filter { v -> key(v.title).length >= 8 && hayN.contains(key(v.title)) }
+                    if (pick.isEmpty() && Tools.taskVideos.size > 1) pick = Tools.taskVideos.mapNotNull { it.firstOrNull() }.distinctBy { it.id }
+                    if (pick.isNotEmpty() && pick.size < all.size) { products.clear(); products.addAll(pick.map { it.item() }) }
+                }
                 // после поиска в интернете — железно: время данных и кнопка «Подробнее» (модели их часто забывают)
                 val usedWeb = listOf("web_search", "web_read", "web_page").any { (calls[it] ?: 0) > 0 }
                 if (final != null && usedWeb) {

@@ -58,6 +58,8 @@ object Tools {
     val lastShop = ArrayList<Shop.Item>()
     /** Ролики из последнего поиска YouTube. */
     val lastVideos = ArrayList<YouTube.Video>()
+    /** Все поиски YouTube за текущую задачу — в конце на экране оставляем только выбранные ролики. */
+    val taskVideos = ArrayList<List<YouTube.Video>>()
     private val ru = Locale("ru")
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).callTimeout(25, TimeUnit.SECONDS).build()
 
@@ -750,7 +752,7 @@ object Tools {
             if (q.isEmpty()) return@t "нужен запрос"
             val l = YouTube.search(q, a.optString("period"))
             if (l.isEmpty()) return@t "ничего не нашёл"
-            lastVideos.clear(); lastVideos += l
+            lastVideos.clear(); lastVideos += l; taskVideos += l
             withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(l.map { it.item() }) }
             "Нашёл ${l.size}:\n" + YouTube.format(l) + "\nКарточки на экране. Открыть ролик — youtube_open с номером."
         },
