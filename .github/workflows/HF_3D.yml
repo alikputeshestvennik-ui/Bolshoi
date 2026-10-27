@@ -22,9 +22,9 @@ jobs:
           PROMPT: ${{ inputs.prompt }}
           SKIP: ${{ inputs.skip }}
         run: |
-          if [ "$MODE" = "view" ]; then git fetch origin hf-results && git checkout origin/hf-results -- out; fi
+          if [ "$MODE" = "view" ]; then git fetch origin hf-results:hfres && git checkout hfres -- out; fi
           if [ "$MODE" = "make" ] || [ "$MODE" = "view" ]; then npm i --no-audit --no-fund three@0.160.0 >/dev/null 2>&1; pip install -q playwright && python3 -m playwright install --with-deps chromium >/dev/null 2>&1; fi
-          if [ "$MODE" = "view" ]; then python3 .github/hf_view/shot.py; exit 0; fi
+          if [ "$MODE" = "view" ]; then python3 .github/hf_view/shot.py > /tmp/v.log 2>&1 || echo "::notice title=viewfail::$(tail -c 800 /tmp/v.log | tr '\n' ' ')"; exit 0; fi
           if [ "$MODE" = "probe" ]; then python3 .github/hf_probe.py; elif [ "$MODE" = "make" ]; then python3 .github/hf_make.py; python3 .github/hf_view/shot.py || true; else python3 .github/hf_try.py; fi
       - name: Push results
         if: always()
