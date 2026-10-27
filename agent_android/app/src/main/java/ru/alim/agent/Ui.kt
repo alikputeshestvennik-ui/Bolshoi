@@ -135,6 +135,14 @@ fun App(voice: Voice) {
         Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Task) Modifier else Modifier.systemBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
+            // одна сцена полёта под чатом и задачей: из чата в задачу — тот же самолёт на той же полосе
+            if ((scr == Scr.Home || scr == Scr.Task) && Th.cockpit && Prefs.wallpaper != "photo") {
+                val sctx = androidx.compose.ui.platform.LocalContext.current
+                val onTask = scr == Scr.Task
+                FlightScene(flying = onTask && FlightBus.flying, glow = if (onTask) FlightBus.glow else Sky.glowCalm,
+                    modifier = Modifier.fillMaxSize(), flash = if (onTask) FlightBus.flash else 0f,
+                    onLift = { Haptics.tick(sctx) }, onTouch = { FlightBus.touchN++ })
+            }
             when (scr) {
                 Scr.Home -> ChatScreen(Friends.MAIN, go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)

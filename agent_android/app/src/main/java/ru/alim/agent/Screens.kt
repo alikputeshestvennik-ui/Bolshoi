@@ -226,7 +226,8 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val cardY = remember { Animatable(0f) }      // итог выезжает снизу
     var touchdown by remember { mutableStateOf(false) }
     var approaching by remember { mutableStateOf(false) }   // ответ готов, самолёт заходит на посадку
-    var touchN by remember { mutableStateOf(0) }            // счётчик касаний полосы (из сцены)
+    val touch0 = remember { FlightBus.touchN }
+    val touchN = FlightBus.touchN - touch0                  // касания полосы за время этого экрана (сцена общая, в Ui)
     val tctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(phase) {
         val landed = phase == Agent.Phase.DONE && prevPhase == Agent.Phase.WORKING
@@ -261,9 +262,10 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val pulse by bobT.animateFloat(0.35f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
     val glassBg = Color(0x17FFFFFF); val glassLine = Color(0x2EFFFFFF); val panel = Color(0xE6102034)
 
+    val flyNow = phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM
+    androidx.compose.runtime.SideEffect { FlightBus.flying = flyNow; FlightBus.glow = glow; FlightBus.flash = flash }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { FlightBus.flying = false; FlightBus.flash = 0f } }
     Box(Modifier.fillMaxSize()) {
-        FlightScene(flying = phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM, glow = glow, modifier = Modifier.fillMaxSize(), flash = flash,
-            onLift = { Haptics.tick(tctx) }, onTouch = { touchN++ })
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp)
             .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 36.dp.toPx() },
             verticalArrangement = Arrangement.spacedBy(12.dp)) {

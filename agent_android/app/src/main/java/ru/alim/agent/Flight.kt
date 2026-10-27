@@ -380,6 +380,16 @@ fun FlightScene(flying: Boolean, glow: Color, modifier: Modifier = Modifier, fla
     FlightScene3D(flying, glow, modifier, onLift, onTouch)
 }
 
+/** Общая сцена под чатом и экраном задачи (одна на всё приложение — переходы без склеек). */
+object FlightBus {
+    /** Экран задачи просит лететь. */
+    var flying by mutableStateOf(false)
+    var glow by mutableStateOf(Color(0xFF3E6D92))
+    var flash by mutableStateOf(0f)
+    /** Счётчик касаний полосы — экран задачи запускает по нему эффекты посадки. */
+    var touchN by mutableStateOf(0)
+}
+
 /** Доля разрешения экрана для 3D: ~0.6 — чётко и легко для батареи (сглаживание 4× поверх). */
 private const val GL_RES = 0.6f
 

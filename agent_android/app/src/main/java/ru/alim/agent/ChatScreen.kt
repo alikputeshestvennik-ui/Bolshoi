@@ -131,7 +131,9 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
-    Box(Modifier.fillMaxSize().background(Th.c.bg)) {
+    // в кабине без фото-обоев фон рисует общая сцена полёта под экраном (Ui) — здесь прозрачно
+    val skyBehind = Th.cockpit && Prefs.wallpaper != "photo"
+    Box(Modifier.fillMaxSize().then(if (skyBehind) Modifier else Modifier.background(Th.c.bg))) {
         // ——— фон и лента (под стеклом) ———
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
             Wallpaper()
@@ -611,7 +613,7 @@ fun Wallpaper() {
     val ver = WallState.version
     val bmp = remember(photo, ver) { if (photo) loadBitmap(java.io.File(ctx.filesDir, "wallpaper.jpg").path, 1600) else null }
     if (bmp == null && Th.cockpit) {
-        FlightScene2D(flying = false, glow = Sky.glowCalm, modifier = Modifier.fillMaxSize())
+        // небо рисует общая сцена в Ui
     } else if (bmp != null) {
         Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxSize().background((if (p.dark) Color.Black else Color.White).copy(alpha = Prefs.wallDim / 100f)))

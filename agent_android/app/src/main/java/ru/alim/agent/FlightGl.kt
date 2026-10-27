@@ -67,7 +67,7 @@ class FlightGl : GLSurfaceView.Renderer {
     private val ROAD_X = floatArrayOf(-330f, 420f)
     private val RW_LEN = 900f; private val RW_W = 45f
     private var airZ = 120f
-    private val EYE = 5.5f; private val CRUISE_ALT = 250f; private val PARK_YAW = -0.6f
+    private val EYE = 5.5f; private val CRUISE_ALT = 250f; private val PARK_YAW = 0f   // стоим вдоль полосы — как в чате, без резкой смены ракурса
     private var camZ = 0f
     private val SUN = norm(-0.45f, 0.22f, -1f)
 
@@ -94,6 +94,11 @@ class FlightGl : GLSurfaceView.Renderer {
     private val geo = Geo(); private val pts = Geo()
 
     private var last = 0L
+    // заход на посадку: путь задаётся напрямую (кубическая кривая), чтобы аэропорт появлялся далеко, в дымке
+    private val APP_T = 8f; private val APP_D = 1500f
+    private var appZ0 = 0f
+    // аэропорт проявляется из дымки; прежний остаётся на месте, пока не уйдёт из вида
+    private var airFade = 1f; private var oldAirZ = Float.NaN
 
     // ===================== GLSurfaceView.Renderer =====================
 
@@ -140,7 +145,7 @@ class FlightGl : GLSurfaceView.Renderer {
             // на стоянке хватит ~30 кадров/с — бережём батарею
             if (st == St.PARKED) {
                 val spent = (System.nanoTime() - now) / 1_000_000
-                if (spent < 30) Thread.sleep(30 - spent)
+                if (spent < 40) Thread.sleep(40 - spent)
             }
         } catch (e: InterruptedException) {
         } catch (e: Throwable) { die("frame: ${e.message}") }
@@ -181,30 +186,39 @@ class FlightGl : GLSurfaceView.Renderer {
                 if (!flying) { st = St.LANDING; t = 0f; beginLanding() }
             }
             St.LANDING -> {
-                if (t < 5.5f) {
-                    val q = t / 5.5f
-                    speed = lerp(v0, 72f, q)
+                if (t < APP_T) {
+                    val q = t / APP_T
+                    // кривая Эрмита: старт со скоростью v0, касание на 72 м/с, ровно через APP_D метров
+                    val m0 = v0 * APP_T / APP_D; val m1 = 72f * APP_T / APP_D
+                    val q2 = q * q; val q3 = q2 * q
+                    val f = (q3 - 2 * q2 + q) * m0 + (-2 * q3 + 3 * q2) + (q3 - q2) * m1
+                    val zNew = appZ0 - APP_D * f
+                    speed = (camZ - zNew) / max(dt, 1e-4f)
+                    camZ = zNew
                     alt = startAlt + (EYE - startAlt) * (1 - (1 - q).pow(2.2f))
                     pitch = if (q < 0.82f) -0.06f * sin(PI.toFloat() * q / 0.82f) else 0.05f * sin(PI.toFloat() * (q - 0.82f) / 0.18f)
                     roll = if (q < 0.7f) 0.03f * sin(PI.toFloat() * q) else 0f
                 } else {
                     if (!touched) { touched = true; onTouch() }
-                    val u = min(1f, (t - 5.5f) / 3.6f)
+                    val u = min(1f, (t - APP_T) / 3.6f)
                     yaw = PARK_YAW * ease((u - 0.55f) / 0.45f)
                     speed = 72f * (1 - u).pow(1.7f)
-                    alt = EYE + (if (u < 0.25f) 0.35f * max(0f, sin(u * 22)) * (1 - u) * (1 - u) else 0f)
+                    alt = EYE + (if (u < 0.12f) 0.25f * sin(u / 0.12f * PI.toFloat()) else 0f)
                     pitch = 0f; roll = 0f
                     if (u >= 1f) { st = St.PARKED; t = 0f; speed = 0f }
                 }
             }
         }
-        camZ -= speed * dt
+        if (!(st == St.LANDING && t < APP_T)) camZ -= speed * dt
+        if (airFade < 1f) airFade = min(1f, airFade + dt / 2.2f)
+        if (!oldAirZ.isNaN() && camZ < oldAirZ - RW_LEN - 1500) oldAirZ = Float.NaN
     }
 
     private fun beginLanding() {
-        touched = false; startAlt = alt; v0 = max(speed, 80f)
-        val dist = (v0 + 72f) / 2 * 5.5f
-        placeAirport(camZ - dist + 300)
+        touched = false; startAlt = alt; v0 = max(speed, 80f); appZ0 = camZ
+        if (camZ > airZ - RW_LEN - 1500) oldAirZ = airZ      // старый ещё виден — пусть остаётся
+        airFade = 0f
+        placeAirport(camZ - APP_D + 300)                      // касание — в 300 м за порогом
     }
 
     private fun placeAirport(z: Float) { airZ = z; refillOverlapping() }
@@ -388,7 +402,8 @@ class FlightGl : GLSurfaceView.Renderer {
         // камера: порядок поворотов YXZ, как в three.js
         Matrix.setIdentityM(camW, 0)
         Matrix.translateM(camW, 0, 0f, alt, camZ)
-        val basePitch = if (st == St.PARKED) -0.03f else if (alt > 60) -0.11f else -0.04f
+        // наклон взгляда плавно зависит от высоты (раньше был скачок на 60 м — картинка «повторялась»)
+        val basePitch = -0.03f - 0.08f * ease((alt - EYE) / 150f)
         Matrix.rotateM(camW, 0, deg(yaw), 0f, 1f, 0f)
         Matrix.rotateM(camW, 0, deg(pitch + basePitch), 1f, 0f, 0f)
         Matrix.rotateM(camW, 0, deg(roll), 0f, 0f, 1f)
@@ -422,12 +437,14 @@ class FlightGl : GLSurfaceView.Renderer {
         G.glEnable(G.GL_DEPTH_TEST); G.glDepthFunc(G.GL_LEQUAL); G.glDepthMask(true); G.glDisable(G.GL_BLEND)
         litBegin()
         for (c in chunks) if (c.k != null) drawLit(c.geo, 0f, 0f, 0f, ZERO, 1f)
-        drawLit(air, 0f, 0f, airZ, ZERO, 1f)
-        drawLit(glass, 0f, 0f, airZ, glassEm, 1f)
+        if (!oldAirZ.isNaN()) { drawLit(air, 0f, 0f, oldAirZ, ZERO, 1f); drawLit(glass, 0f, 0f, oldAirZ, glassEm, 1f) }
+        drawLit(air, 0f, 0f, airZ, ZERO, 1f, airFade)
+        drawLit(glass, 0f, 0f, airZ, glassEm, 1f, airFade)
 
         // огни: ядра ламп
         G.glEnable(G.GL_BLEND); G.glBlendFunc(G.GL_ONE, G.GL_ONE_MINUS_SRC_ALPHA)
-        drawPts(cores, 0f, airZ, true, bufH / 2f, 1.5f, 1f, true, true)
+        if (!oldAirZ.isNaN()) drawPts(cores, 0f, oldAirZ, true, bufH / 2f, 1.5f, 1f, true, true)
+        drawPts(cores, 0f, airZ, true, bufH / 2f, 1.5f, airFade, true, true)
 
         // облака (полупрозрачные, дальние сначала)
         G.glBlendFunc(G.GL_SRC_ALPHA, G.GL_ONE_MINUS_SRC_ALPHA)
@@ -437,7 +454,8 @@ class FlightGl : GLSurfaceView.Renderer {
         // ореолы и окна — сложение света
         G.glDepthMask(false); G.glBlendFunc(G.GL_ONE, G.GL_ONE)
         if (winA > 0f) for (c in chunks) if (c.k != null) drawPts(c.wins, 0f, 0f, true, bufH / 2f, 1f, winA, false, true)
-        drawPts(halos, 0f, airZ, true, bufH / 2f, 1f, haloA, false, true)
+        if (!oldAirZ.isNaN()) drawPts(halos, 0f, oldAirZ, true, bufH / 2f, 1f, haloA, false, true)
+        drawPts(halos, 0f, airZ, true, bufH / 2f, 1f, haloA * airFade, false, true)
 
         // дождь
         if (wxRain) {
@@ -461,9 +479,10 @@ class FlightGl : GLSurfaceView.Renderer {
         v3(progLit, "uFog", fogC); G.glUniform1f(u(progLit, "uFogN"), fogN); G.glUniform1f(u(progLit, "uFogF"), fogF)
     }
 
-    private fun drawLit(v: Vbo, x: Float, y: Float, z: Float, em: FloatArray, alpha: Float) {
+    private fun drawLit(v: Vbo, x: Float, y: Float, z: Float, em: FloatArray, alpha: Float, fade: Float = 1f) {
         if (v.id == 0 || v.count == 0) return
         G.glUniform3f(u(progLit, "uOff"), x, y, z); v3(progLit, "uEmis", em); G.glUniform1f(u(progLit, "uAlpha"), alpha)
+        G.glUniform1f(u(progLit, "uFade"), fade)
         bind(v)
         for (i in 0..2) G.glEnableVertexAttribArray(i)
         G.glVertexAttribPointer(0, 3, G.GL_FLOAT, false, 36, 0)
@@ -652,14 +671,14 @@ void main(){ vec3 w = aP + uOff; vN = aN; vC = aC; vD = length(w - uCam); gl_Pos
         private const val LIT_FS = """#version 300 es
 precision highp float;
 uniform vec3 uSky; uniform vec3 uGround; uniform vec3 uSunDir; uniform vec3 uSunCol; uniform vec3 uFog; uniform vec3 uEmis;
-uniform float uFogN; uniform float uFogF; uniform float uAlpha;
+uniform float uFogN; uniform float uFogF; uniform float uAlpha; uniform float uFade;
 in vec3 vN; in vec3 vC; in float vD; out vec4 o;
 void main(){
   vec3 n = normalize(vN);
   vec3 li = mix(uGround, uSky, n.y * 0.5 + 0.5) + uSunCol * max(dot(n, uSunDir), 0.0);
   vec3 c = vC * li + uEmis;
   float f = clamp((vD - uFogN) / (uFogF - uFogN), 0.0, 1.0);
-  o = vec4(mix(c, uFog, f), uAlpha);
+  o = vec4(mix(c, uFog, max(f, 1.0 - uFade)), uAlpha);
 }"""
 
         private const val PTS_VS = """#version 300 es
