@@ -1,0 +1,25 @@
+{
+ "prompt": "cute cartoon red fox toy, full body, standing",
+ "results": {
+  "stabilityai/stable-fast-3d": {
+   "ok": false,
+   "sec": 2,
+   "err": "AppError('The upstream Gradio app has raised an exception but has not enabled verbose error reporting. To enable, set show_error=True in launch().')"
+  },
+  "microsoft/TRELLIS.2": {
+   "ok": true,
+   "sec": 44,
+   "kb": 6970
+  },
+  "trellis-community/TRELLIS": {
+   "ok": true,
+   "sec": 24,
+   "kb": 1364
+  },
+  "VAST-AI/TripoSG": {
+   "ok": false,
+   "sec": 2,
+   "err": "AppError('You have exceeded your free ZeroGPU quota (60s requested vs. 0s left). Try again in 0:00:00. Subscribe to Hugging Face PRO to get 25 min of ZeroGPU quota a day - https://huggingface.co/subscribe/pro?from=ZeroGPU')"
+  }
+ }
+}
