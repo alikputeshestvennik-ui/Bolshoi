@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#e9edf2">
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const f = q.get('f'), az = parseFloat(q.get('az') || '0.6');
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(700, 700); r.outputColorSpace = THREE.SRGBColorSpace; document.body.appendChild(r.domElement);
+const s = new THREE.Scene(); s.background = new THREE.Color(0xe9edf2);
+s.add(new THREE.HemisphereLight(0xffffff, 0x8888a0, 2.2));
+const d = new THREE.DirectionalLight(0xffffff, 1.6); d.position.set(2, 3, 4); s.add(d);
+const cam = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
+new GLTFLoader().load(f, g => {
+  const o = g.scene; const b = new THREE.Box3().setFromObject(o);
+  const c = b.getCenter(new THREE.Vector3()); const sz = b.getSize(new THREE.Vector3()).length();
+  o.position.sub(c); s.add(o);
+  cam.position.set(Math.sin(az) * sz * 1.4, sz * 0.3, Math.cos(az) * sz * 1.4); cam.lookAt(0, 0, 0);
+  r.render(s, cam); document.title = 'ok'; window.done = true;
+}, undefined, e => { document.title = 'ERR ' + e; window.done = true; });
+</script></body></html>
