@@ -3,6 +3,8 @@ from gradio_client import Client, handle_file
 T = os.environ.get("HF_TOKEN", "") or None
 P = os.environ.get("PROMPT", "").strip() or "cute cartoon red fox toy, full body, standing"
 ONLY = os.environ.get("SPACE", "").strip()
+if ONLY in ("all", "tencent/Hunyuan3D-2"): ONLY = ""
+SKIP = [x for x in os.environ.get("SKIP", "").split(",") if x]
 os.makedirs("out/make", exist_ok=True)
 def note(t, m): print(f"::notice title={t}::{str(m)[:900]}")
 def pth(x):
@@ -21,7 +23,7 @@ else:
                   0, True, 1024, 1024, 4, api_name="/infer")
     shutil.copy(pth(r), src); note("flux", f"{time.time()-t0:.0f}s")
 def run(name, fn):
-    if ONLY and ONLY not in name: return
+    if (ONLY and ONLY not in name) or any(k in name for k in SKIP): return
     t = time.time()
     try:
         out = fn()
@@ -61,8 +63,8 @@ def triposg():
     mesh = c.predict(image=handle_file(pth(seg)), seed=0, num_inference_steps=50, guidance_scale=7.0, simplify=True, target_face_num=100000, api_name="/image_to_3d")
     r = c.predict(image=handle_file(src), mesh_path=pth(mesh), seed=0, api_name="/run_texture")
     return pth(r)
-for n, f in [("microsoft/TRELLIS.2", trellis2), ("trellis-community/TRELLIS", trellis), ("tencent/Hunyuan3D-2.1", hunyuan21),
-             ("stabilityai/stable-fast-3d", sf3d), ("VAST-AI/TripoSG", triposg)]:
+for n, f in [("stabilityai/stable-fast-3d", sf3d), ("microsoft/TRELLIS.2", trellis2), ("trellis-community/TRELLIS", trellis),
+             ("VAST-AI/TripoSG", triposg), ("tencent/Hunyuan3D-2.1", hunyuan21)]:
     run(n, f)
 json.dump({"prompt": P, "results": res}, open("out/make/results.json", "w"), ensure_ascii=False, indent=1)
 # превью: рендер каждой модели с цветами текстуры

@@ -5,6 +5,7 @@ on:
       mode: { description: "api|gen|probe|make", default: "api" }
       space: { description: "space id", default: "tencent/Hunyuan3D-2" }
       prompt: { description: "text prompt or image url", default: "" }
+      skip: { description: "comma list to skip", default: "" }
 permissions:
   contents: write
 jobs:
@@ -19,6 +20,7 @@ jobs:
           MODE: ${{ inputs.mode }}
           SPACE: ${{ inputs.space }}
           PROMPT: ${{ inputs.prompt }}
+          SKIP: ${{ inputs.skip }}
         run: |
           if [ "$MODE" = "probe" ]; then python3 .github/hf_probe.py; elif [ "$MODE" = "make" ]; then python3 .github/hf_make.py; else python3 .github/hf_try.py; fi
       - name: Push results
