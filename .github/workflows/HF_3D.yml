@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -q gradio_client
+      - run: pip install -q gradio_client trimesh matplotlib numpy pillow
       - name: Work
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
