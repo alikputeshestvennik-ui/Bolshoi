@@ -8,15 +8,27 @@
   function diag(m) { try { B.diag(String(m)); } catch (e) {} }
   window.addEventListener("error", function (e) { diag("js: " + (e.message || e) + " @" + (e.lineno || "?")); });
 
-  var renderer;
+  // режим вывода: 0 — обычный, 1 — без сглаживания, 2 — через копию в 2D-холст (обход сбоев композиции WebGL на некоторых GPU)
+  var MODE = parseInt((location.search.match(/[?&]m=(\d)/) || [0, "2"])[1], 10);
+  var renderer, out = null, octx = null;
   try {
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "low-power" });
+    renderer = new THREE.WebGLRenderer({ antialias: MODE === 0, powerPreference: "low-power", preserveDrawingBuffer: MODE >= 1 });
     if (!renderer.getContext()) throw new Error("no webgl");
   } catch (e) { diag("webgl: " + e); call("fail"); return; }
   renderer.domElement.addEventListener("webglcontextlost", function (e) { e.preventDefault(); diag("context lost"); call("fail"); }, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+  if (MODE === 2) {
+    out = document.createElement("canvas"); octx = out.getContext("2d", { alpha: false });
+    document.body.appendChild(out);
+  } else document.body.appendChild(renderer.domElement);
+  function syncOut() {
+    if (!out) return;
+    var cw = renderer.domElement.width, ch = renderer.domElement.height;
+    if (out.width !== cw || out.height !== ch) { out.width = cw; out.height = ch; }
+    out.style.width = window.innerWidth + "px"; out.style.height = window.innerHeight + "px";
+  }
+  function present() { if (octx) { syncOut(); octx.drawImage(renderer.domElement, 0, 0); } }
 
   // ——— случайность с зерном ———
   function rng(seed) { var a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -373,10 +385,10 @@
     if (W > 0 && H > 0 && (W !== lastW || H !== lastH)) { lastW = W; lastH = H; resize(); }
     if (W === 0 || H === 0) return;
     if (sim.st !== "PARKED" || acc >= 0.033) {
-      acc = 0; renderer.render(scene, cam);
+      acc = 0; renderer.render(scene, cam); present();
       if (!readySent) {
         readySent = true;
-        var info = W + "x" + H + " dpr " + (window.devicePixelRatio || 1);
+        var info = "m" + MODE + " " + W + "x" + H + " dpr " + (window.devicePixelRatio || 1);
         try {
           var gl = renderer.getContext(), px = new Uint8Array(4);
           gl.readPixels(gl.drawingBufferWidth >> 1, gl.drawingBufferHeight >> 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);

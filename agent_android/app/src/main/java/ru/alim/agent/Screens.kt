@@ -657,6 +657,16 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                     Toggle(f3) { f3 = it; Prefs.flight3d = it; if (it) Flight3D.failed = false }
                 }
+                if (f3) {
+                    var md by remember { mutableStateOf(Prefs.flight3dMode) }
+                    Text("Способ вывода 3D — если на экране задачи пусто, попробуй другой:", style = body(12, color = Muted), lineHeight = 16.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Через копию", "Без сглаживания", "Обычный").forEachIndexed { i, t ->
+                            val m = listOf(2, 1, 0)[i]
+                            Chip((if (md == m) "● " else "") + t) { md = m; Prefs.flight3dMode = m; Flight3D.mode = m; Flight3D.info = ""; Flight3D.ok = false }
+                        }
+                    }
+                }
                 if (Flight3D.info.isNotBlank()) Text("3D: " + Flight3D.info, style = body(11, color = Muted), lineHeight = 14.sp)
                 Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
                     style = body(12, color = Muted), lineHeight = 17.sp)

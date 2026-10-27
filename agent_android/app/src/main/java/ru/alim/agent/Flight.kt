@@ -366,6 +366,8 @@ object Flight3D {
     var ok by mutableStateOf(false)
     /** Что сцена сообщила о себе (размер, GPU, ошибки) — показывается в настройках. */
     var info by mutableStateOf("")
+    /** Текущий способ вывода (смена в настройках пересоздаёт сцену). */
+    var mode by mutableStateOf(-1)
     /** Вызывается при старте приложения: если прошлый запуск 3D не дошёл до «готово» — значит упали, выключаем 3D. */
     fun checkCrash() {
         if (Prefs.flight3dStarting) { Prefs.flight3dStarting = false; Prefs.flight3d = false; failed = true }
@@ -388,6 +390,12 @@ private class FlightBridge {
 fun FlightScene(flying: Boolean, glow: Color, modifier: Modifier = Modifier, flash: Float = 0f,
                 onLift: () -> Unit = {}, onTouch: () -> Unit = {}) {
     if (Flight3D.failed || !Prefs.flight3d) { FlightScene2D(flying, glow, modifier, flash, onLift, onTouch); return }
+    androidx.compose.runtime.key(Flight3D.mode) { FlightScene3D(flying, glow, modifier, onLift, onTouch) }
+}
+
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun FlightScene3D(flying: Boolean, glow: Color, modifier: Modifier, onLift: () -> Unit, onTouch: () -> Unit) {
     val lift by rememberUpdatedState(onLift)
     val touch by rememberUpdatedState(onTouch)
     var ready by remember { mutableStateOf(false) }
@@ -431,7 +439,7 @@ fun FlightScene(flying: Boolean, glow: Color, modifier: Modifier = Modifier, fla
                             Flight3D.fallback(); return true
                         }
                     }
-                    loadUrl("file:///android_asset/flight/index.html")
+                    loadUrl("file:///android_asset/flight/index.html?m=" + Prefs.flight3dMode)
                     web = this
                 }
             } catch (t: Throwable) {
