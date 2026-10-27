@@ -181,4 +181,8 @@ object Journal {
     fun startOfMonth(): Long = cal().apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
 }
 
-fun rub(v: Double): String = if (v < 10) String.format(java.util.Locale("ru"), "%.2f ₽", v) else String.format(java.util.Locale("ru"), "%.0f ₽", v)
+fun rub(v: Double): String = when {
+    v < 10 -> String.format(java.util.Locale("ru"), "%.2f ₽", v)
+    v < 100 -> String.format(java.util.Locale("ru"), "%.1f ₽", v)
+    else -> String.format(java.util.Locale("ru"), "%.0f ₽", v)
+}
