@@ -362,6 +362,8 @@ private fun DrawScope.drawClouds(sim: FlightSim, wx: SkyWeather.W, f: Float, cx:
 /** Настоящая 3D-сцена (three.js во встроенном WebView). Не потянул WebGL или упал — сам переключается на плоскую FlightScene2D. */
 object Flight3D {
     var failed by mutableStateOf(false)
+    /** Сцена хоть раз дорисовала кадр в этом запуске. */
+    var ok by mutableStateOf(false)
     /** Вызывается при старте приложения: если прошлый запуск 3D не дошёл до «готово» — значит упали, выключаем 3D. */
     fun checkCrash() {
         if (Prefs.flight3dStarting) { Prefs.flight3dStarting = false; Prefs.flight3d = false; failed = true }
@@ -372,7 +374,7 @@ object Flight3D {
 private class FlightBridge {
     private val h = android.os.Handler(android.os.Looper.getMainLooper())
     var liftCb: () -> Unit = {}; var touchCb: () -> Unit = {}; var readyCb: () -> Unit = {}
-    @android.webkit.JavascriptInterface fun ready() { h.post { Prefs.flight3dStarting = false; readyCb() } }
+    @android.webkit.JavascriptInterface fun ready() { h.post { Prefs.flight3dStarting = false; Flight3D.ok = true; readyCb() } }
     @android.webkit.JavascriptInterface fun onLift() { h.post { liftCb() } }
     @android.webkit.JavascriptInterface fun onTouch() { h.post { touchCb() } }
     @android.webkit.JavascriptInterface fun fail() { h.post { Flight3D.fallback() } }

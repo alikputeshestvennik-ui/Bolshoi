@@ -221,7 +221,7 @@ object Tools {
             if (launch(ctx, i)) "таймер запущен" else "часы не открылись"
         },
 
-        Tool("weather", "{\"place\": \"Ялта\"} — погода сейчас и на 3 дня (место можно не указывать)") { _, a ->
+        Tool("weather", "{\"place\": \"Ялта\"} — погода сейчас и на 7 дней (место можно не указывать)") { _, a ->
             val place = a.optString("place").ifBlank { Prefs.homeCity }
             runCatching { weather(place) }.getOrElse { e1 ->
                 runCatching { wttr(place) }.getOrElse { e2 -> "погода не пришла: open-meteo — ${e1.message}; wttr.in — ${e2.message}" }
@@ -964,7 +964,7 @@ object Tools {
         val f = http.newCall(Request.Builder().url("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
             "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation" +
             "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code" +
-            "&timezone=auto&forecast_days=3&wind_speed_unit=ms").build()).execute().use { it.body?.string().orEmpty() }
+            "&timezone=auto&forecast_days=7&wind_speed_unit=ms").build()).execute().use { it.body?.string().orEmpty() }
         val j = JSONObject(f)
         val c = j.optJSONObject("current") ?: return "погода не пришла"
         val d = j.optJSONObject("daily")
@@ -978,7 +978,8 @@ object Tools {
             }
         }
         return "${p.optString("name")}: сейчас ${c.optDouble("temperature_2m").toInt()}° (ощущается ${c.optDouble("apparent_temperature").toInt()}°), " +
-            "${code(c.optInt("weather_code"))}, ветер ${c.optDouble("wind_speed_10m").toInt()} м/с$days"
+            "${code(c.optInt("weather_code"))}, ветер ${c.optDouble("wind_speed_10m").toInt()} м/с$days" +
+            "\n(источник: Open-Meteo, данные на " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + ")"
     }
 
     /** Запасной источник погоды: wttr.in. */

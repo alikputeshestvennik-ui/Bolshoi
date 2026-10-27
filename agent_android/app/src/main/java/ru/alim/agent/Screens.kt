@@ -647,7 +647,12 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("3D-полёт", style = body(15, FontWeight.SemiBold))
-                        Text(if (Flight3D.failed && !f3) "Выключил сам: в прошлый раз сцена упала. Можно попробовать снова." else "Объёмный взлёт и посадка на экране задачи. Выключено — плоская сцена.",
+                        Text(when {
+                            Flight3D.failed && !f3 -> "Выключил сам: в прошлый раз сцена упала. Можно попробовать снова."
+                            Flight3D.failed -> "Сейчас: плоская сцена — 3D на этом запуске не поднялось."
+                            Flight3D.ok -> "Сейчас: 3D работает ✓"
+                            else -> "Объёмный взлёт и посадка на экране задачи. Выключено — плоская сцена."
+                        },
                             style = body(12, color = Muted), lineHeight = 16.sp)
                     }
                     Toggle(f3) { f3 = it; Prefs.flight3d = it; if (it) Flight3D.failed = false }
