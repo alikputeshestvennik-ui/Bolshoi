@@ -359,15 +359,13 @@ private fun DrawScope.drawClouds(sim: FlightSim, wx: SkyWeather.W, f: Float, cx:
 }
 
 
-/** Настоящая 3D-сцена (three.js во встроенном WebView). Не потянул WebGL или упал — сам переключается на плоскую FlightScene2D. */
+/** Настоящая 3D-сцена (нативный OpenGL ES, FlightGl). Не поднялась или упала — сама переключается на плоскую FlightScene2D. */
 object Flight3D {
     var failed by mutableStateOf(false)
     /** Сцена хоть раз дорисовала кадр в этом запуске. */
     var ok by mutableStateOf(false)
-    /** Что сцена сообщила о себе (размер, GPU, ошибки) — показывается в настройках. */
+    /** Что сцена сообщила о себе (видеочип, размер, ошибки) — показывается в настройках. */
     var info by mutableStateOf("")
-    /** Текущий способ вывода (смена в настройках пересоздаёт сцену). */
-    var mode by mutableStateOf(-1)
     /** Вызывается при старте приложения: если прошлый запуск 3D не дошёл до «готово» — значит упали, выключаем 3D. */
     fun checkCrash() {
         if (Prefs.flight3dStarting) { Prefs.flight3dStarting = false; Prefs.flight3d = false; failed = true }
@@ -375,49 +373,41 @@ object Flight3D {
     fun fallback() { Prefs.flight3dStarting = false; failed = true }
 }
 
-private class FlightBridge {
-    private val h = android.os.Handler(android.os.Looper.getMainLooper())
-    var liftCb: () -> Unit = {}; var touchCb: () -> Unit = {}; var readyCb: () -> Unit = {}
-    @android.webkit.JavascriptInterface fun ready() { h.post { Prefs.flight3dStarting = false; Flight3D.ok = true; readyCb() } }
-    @android.webkit.JavascriptInterface fun onLift() { h.post { liftCb() } }
-    @android.webkit.JavascriptInterface fun onTouch() { h.post { touchCb() } }
-    @android.webkit.JavascriptInterface fun fail() { h.post { Flight3D.fallback() } }
-    @android.webkit.JavascriptInterface fun diag(m: String) { h.post { Flight3D.info = (Flight3D.info + "\n" + m).trim().takeLast(400) } }
-}
-
-@android.annotation.SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun FlightScene(flying: Boolean, glow: Color, modifier: Modifier = Modifier, flash: Float = 0f,
                 onLift: () -> Unit = {}, onTouch: () -> Unit = {}) {
     if (Flight3D.failed || !Prefs.flight3d) { FlightScene2D(flying, glow, modifier, flash, onLift, onTouch); return }
-    androidx.compose.runtime.key(Flight3D.mode) { FlightScene3D(flying, glow, modifier, onLift, onTouch) }
+    FlightScene3D(flying, glow, modifier, onLift, onTouch)
 }
 
-@android.annotation.SuppressLint("SetJavaScriptEnabled")
+/** Доля разрешения экрана для 3D: ~0.6 — чётко и легко для батареи (сглаживание 4× поверх). */
+private const val GL_RES = 0.6f
+
 @Composable
 private fun FlightScene3D(flying: Boolean, glow: Color, modifier: Modifier, onLift: () -> Unit, onTouch: () -> Unit) {
     val lift by rememberUpdatedState(onLift)
     val touch by rememberUpdatedState(onTouch)
     var ready by remember { mutableStateOf(false) }
-    var web by remember { mutableStateOf<android.webkit.WebView?>(null) }
-    val bridge = remember { FlightBridge() }
-    bridge.liftCb = { lift() }; bridge.touchCb = { touch() }; bridge.readyCb = { ready = true }
-    // сцена не поднялась за 12 с — тихо уходим на плоскую
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(12_000); if (!ready) Flight3D.fallback() }
+    val main = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+    val ren = remember { FlightGl() }
+    ren.onLift = { main.post { lift() } }
+    ren.onTouch = { main.post { touch() } }
+    ren.onReady = { info -> main.post { ready = true; Prefs.flight3dStarting = false; Flight3D.ok = true; Flight3D.info = info } }
+    ren.onFail = { m -> main.post { Flight3D.info = m; Flight3D.fallback() } }
+    // сцена не поднялась за 10 с — тихо уходим на плоскую
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(10_000); if (!ready) { if (Flight3D.info.isBlank()) Flight3D.info = "не дождался первого кадра"; Flight3D.fallback() } }
     val wx = SkyWeather.now
-    fun js(code: String) { runCatching { web?.evaluateJavascript(code, null) } }
-    LaunchedEffect(ready, flying) { if (ready) js("setFlying($flying)") }
-    LaunchedEffect(ready, wx) { if (ready) js("setWeather(${wx.cloud}, ${wx.rain}, ${wx.day})") }
-    LaunchedEffect(ready, SkyDrift.vx, SkyDrift.vz) { if (ready) js("setDrift(${SkyDrift.vx * 9f}, ${SkyDrift.vz * 9f})") }
-    LaunchedEffect(ready, glow) {
-        if (ready) js("setGlow('#" + String.format(java.util.Locale.US, "%06X", 0xFFFFFF and glow.toArgb()) + "')")
-    }
+    ren.flying = flying
+    LaunchedEffect(wx) { ren.setWeather(wx.cloud, wx.rain, wx.day) }
+    LaunchedEffect(SkyDrift.vx, SkyDrift.vz) { ren.driftX = SkyDrift.vx * 9f; ren.driftZ = SkyDrift.vz * 9f }
+    LaunchedEffect(glow) { ren.setGlow(glow.red, glow.green, glow.blue) }
+    var view by remember { mutableStateOf<android.opengl.GLSurfaceView?>(null) }
     val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(owner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
             when (e) {
-                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> runCatching { web?.onPause() }
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> runCatching { web?.onResume() }
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> runCatching { view?.onPause() }
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> runCatching { view?.onResume() }
                 else -> {}
             }
         }
@@ -428,27 +418,26 @@ private fun FlightScene3D(flying: Boolean, glow: Color, modifier: Modifier, onLi
         factory = { c ->
             try {
                 Prefs.flight3dStarting = true
-                android.webkit.WebView(c).apply {
-                    settings.javaScriptEnabled = true
-                    settings.allowFileAccess = true
-                    setBackgroundColor(0xFF0B1422.toInt())
-                    isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false
-                    addJavascriptInterface(bridge, "PilotBridge")
-                    webViewClient = object : android.webkit.WebViewClient() {
-                        override fun onRenderProcessGone(view: android.webkit.WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
-                            Flight3D.fallback(); return true
-                        }
+                ren.dpr = c.resources.displayMetrics.density * GL_RES
+                android.opengl.GLSurfaceView(c).apply {
+                    setEGLContextClientVersion(3)
+                    setEGLConfigChooser(FlightEglChooser())
+                    preserveEGLContextOnPause = true
+                    setRenderer(ren)
+                    renderMode = android.opengl.GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                    // рисуем в уменьшенный буфер — система сама растянет на экран
+                    addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ ->
+                        val w = r - l; val h = b - t
+                        if (w > 0 && h > 0) (v as android.opengl.GLSurfaceView).holder.setFixedSize((w * GL_RES).toInt(), (h * GL_RES).toInt())
                     }
-                    loadUrl("file:///android_asset/flight/index.html?m=" + Prefs.flight3dMode)
-                    web = this
+                    view = this
                 }
             } catch (t: Throwable) {
-                Flight3D.fallback(); android.view.View(c)
+                Flight3D.info = "старт: ${t.message}"; Flight3D.fallback(); android.view.View(c)
             }
         },
         onRelease = { v ->
-            web = null
-            if (v is android.webkit.WebView) runCatching { v.stopLoading(); v.removeJavascriptInterface("PilotBridge"); v.destroy() }
+            view = null
             if (!ready) Prefs.flight3dStarting = false
         },
         modifier = modifier)
