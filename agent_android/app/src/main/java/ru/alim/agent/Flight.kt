@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -175,7 +176,7 @@ private class FlightSim {
  * flying=false — самолёт стоит на полосе, плывут облака; flying=true — разбег, отрыв, полёт; снова false — посадка.
  */
 @Composable
-fun FlightScene(flying: Boolean, glow: Color, modifier: Modifier = Modifier, flash: Float = 0f,
+fun FlightScene2D(flying: Boolean, glow: Color, modifier: Modifier = Modifier, flash: Float = 0f,
                 onLift: () -> Unit = {}, onTouch: () -> Unit = {}) {
     val sim = remember { FlightSim() }
     var tick by remember { mutableIntStateOf(0) }
@@ -355,4 +356,65 @@ private fun DrawScope.drawClouds(sim: FlightSim, wx: SkyWeather.W, f: Float, cx:
             drawCircle(Brush.radialGradient(listOf(base.copy(alpha = a), base.copy(alpha = 0f)), Offset(sx + ox, sy + oy), rr), rr, Offset(sx + ox, sy + oy))
         }
     }
+}
+
+
+/** Настоящая 3D-сцена (three.js во встроенном WebView). Не потянул WebGL — сам переключается на плоскую FlightScene2D. */
+object Flight3D { var failed by mutableStateOf(false) }
+
+private class FlightBridge {
+    private val h = android.os.Handler(android.os.Looper.getMainLooper())
+    var liftCb: () -> Unit = {}; var touchCb: () -> Unit = {}; var readyCb: () -> Unit = {}
+    @android.webkit.JavascriptInterface fun ready() { h.post { readyCb() } }
+    @android.webkit.JavascriptInterface fun onLift() { h.post { liftCb() } }
+    @android.webkit.JavascriptInterface fun onTouch() { h.post { touchCb() } }
+    @android.webkit.JavascriptInterface fun fail() { h.post { Flight3D.failed = true } }
+}
+
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun FlightScene(flying: Boolean, glow: Color, modifier: Modifier = Modifier, flash: Float = 0f,
+                onLift: () -> Unit = {}, onTouch: () -> Unit = {}) {
+    if (Flight3D.failed) { FlightScene2D(flying, glow, modifier, flash, onLift, onTouch); return }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val lift by rememberUpdatedState(onLift)
+    val touch by rememberUpdatedState(onTouch)
+    var ready by remember { mutableStateOf(false) }
+    val bridge = remember { FlightBridge() }
+    bridge.liftCb = { lift() }; bridge.touchCb = { touch() }; bridge.readyCb = { ready = true }
+    val web = remember {
+        android.webkit.WebView(ctx).apply {
+            settings.javaScriptEnabled = true
+            settings.allowFileAccess = true
+            setBackgroundColor(0xFF0B1422.toInt())
+            isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false
+            addJavascriptInterface(bridge, "PilotBridge")
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun onRenderProcessGone(view: android.webkit.WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                    Flight3D.failed = true; return true
+                }
+            }
+            loadUrl("file:///android_asset/flight/index.html")
+        }
+    }
+    val wx = SkyWeather.now
+    LaunchedEffect(ready, flying) { if (ready) web.evaluateJavascript("setFlying($flying)", null) }
+    LaunchedEffect(ready, wx) { if (ready) web.evaluateJavascript("setWeather(${wx.cloud}, ${wx.rain}, ${wx.day})", null) }
+    LaunchedEffect(ready, SkyDrift.vx, SkyDrift.vz) { if (ready) web.evaluateJavascript("setDrift(${SkyDrift.vx * 9f}, ${SkyDrift.vz * 9f})", null) }
+    LaunchedEffect(ready, glow) {
+        if (ready) web.evaluateJavascript("setGlow('#" + String.format(java.util.Locale.US, "%06X", 0xFFFFFF and glow.toArgb()) + "')", null)
+    }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> web.onPause()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> web.onResume()
+                else -> {}
+            }
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs); web.destroy() }
+    }
+    androidx.compose.ui.viewinterop.AndroidView(factory = { web }, modifier = modifier)
 }
