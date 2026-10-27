@@ -26,6 +26,10 @@ object Prefs {
     var laneModel: String get() = s("lane", "yc:aliceai-llm-flash"); set(v) = put("lane", v.trim())
     /** Тактильные отклики кабины (отрыв/запрос/посадка задачи). */
     var haptics: Boolean get() = b("haptics", true); set(v) = putB("haptics", v)
+    /** Объёмная 3D-сцена полёта на экране задачи (WebView + WebGL). */
+    var flight3d: Boolean get() = b("flight3d", true); set(v) = putB("flight3d", v)
+    /** Страховка: ставится перед запуском 3D и снимается, когда сцена готова. Осталась после падения — 3D отключается. */
+    var flight3dStarting: Boolean get() = b("f3d_start", false); set(v) = sp.edit().putBoolean("f3d_start", v).commit().let {}
     var smartModel: String get() = s("sm", "claude-5.5-sonnet"); set(v) = put("sm", v.trim())
     var fastIn: String get() = s("fi", "0.03"); set(v) = put("fi", v.trim())
     var fastOut: String get() = s("fo", "0.15"); set(v) = put("fo", v.trim())

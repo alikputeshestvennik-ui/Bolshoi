@@ -643,6 +643,15 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                     Toggle(hap) { hap = it; Prefs.haptics = it }
                 }
+                var f3 by remember { mutableStateOf(Prefs.flight3d) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("3D-полёт", style = body(15, FontWeight.SemiBold))
+                        Text(if (Flight3D.failed && !f3) "Выключил сам: в прошлый раз сцена упала. Можно попробовать снова." else "Объёмный взлёт и посадка на экране задачи. Выключено — плоская сцена.",
+                            style = body(12, color = Muted), lineHeight = 16.sp)
+                    }
+                    Toggle(f3) { f3 = it; Prefs.flight3d = it; if (it) Flight3D.failed = false }
+                }
                 Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
                     style = body(12, color = Muted), lineHeight = 17.sp)
                 BigButton("Проверить связь", {

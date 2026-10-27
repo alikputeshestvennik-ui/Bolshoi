@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         Prefs.init(this)
         SkyWeather.load()
+        Flight3D.checkCrash()
         Th.load()
         Agent.app = applicationContext
         Chat.init(this)
