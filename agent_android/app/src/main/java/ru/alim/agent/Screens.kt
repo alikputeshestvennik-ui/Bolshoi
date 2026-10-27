@@ -347,6 +347,16 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                         Text(md(Agent.result), style = body(16, color = Sky.ink), lineHeight = 22.sp)
                     }
                 }
+                if (phase == Agent.Phase.DONE && Agent.main.lastButtons.isNotEmpty()) item {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Agent.main.lastButtons.forEach { b ->
+                            Box(Modifier.clip(RoundedCornerShape(18.dp)).background(glassBg).border(1.dp, glow.copy(alpha = 0.7f), RoundedCornerShape(18.dp))
+                                .clickable { Chat.userEcho(b); Agent.followUp(b) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                                Text(b, style = body(14, FontWeight.SemiBold, Sky.ink))
+                            }
+                        }
+                    }
+                }
             }
 
             if (Agent.canFollowUp) {

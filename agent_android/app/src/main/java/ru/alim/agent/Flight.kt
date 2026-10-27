@@ -227,50 +227,59 @@ private fun DrawScope.drawFlight(sim: FlightSim, wx: SkyWeather.W, glow: Color, 
 
     // ——— земля ———
     if (hy < h) {
-        drawRect(Brush.verticalGradient(0f to lerp(Color(0xFF243B47), glow, 0.25f), 0.25f to Color(0xFF1A2E2A), 1f to Color(0xFF0C1A16), startY = hy, endY = h),
-            topLeft = Offset(0f, hy), size = Size(w, h - hy))
         val alt = sim.alt
-        val cell = 14f
+        val zn = 2f                                   // ближняя плоскость отсечения (мир)
+        val baseNear = if (night) Color(0xFF0F2026) else Color(0xFF1F3A2A)
+        val baseFar = if (night) lerp(Color(0xFF1B3346), glow, 0.25f) else lerp(Color(0xFF5E7A86), glow, 0.2f)
+        drawRect(Brush.verticalGradient(0f to baseFar, 0.35f to lerp(baseFar, baseNear, 0.6f), 1f to baseNear, startY = hy, endY = h),
+            topLeft = Offset(0f, hy), size = Size(w, h - hy))
+        val cell = 14f; val gap = 0.7f
         val path = Path()
-        val k0 = floor((sim.s + 0.6f) / cell).toInt()
-        val fields = if (night) listOf(0xFF0E1D18, 0xFF132320, 0xFF101A1F, 0xFF16241C, 0xFF0F1F24) else listOf(0xFF2E4A34, 0xFF3A5437, 0xFF4A5A38, 0xFF2C4540, 0xFF55603F, 0xFF34503F)
-        // клетки полей от ближних к дальним
-        for (row in 0 until 45) {
+        val k0 = floor((sim.s + zn) / cell).toInt()
+        val fields = if (night) listOf(0xFF1E3A3F, 0xFF24433C, 0xFF1C3446, 0xFF2A4638, 0xFF213D4A, 0xFF2D4A42)
+                     else listOf(0xFF3F6B45, 0xFF4E7A47, 0xFF7A8450, 0xFF3A6458, 0xFF8C8656, 0xFF587F4C, 0xFF9C9460)
+        val road = if (night) Color(0xFF141C26) else Color(0xFF3A3F45)
+        fun quad(x1: Float, x2: Float, za: Float, zb: Float, col: Color) {
+            if (zb <= zn) return
+            val z1 = max(za, zn)
+            val y1 = hy + f * alt / z1; val y2 = hy + f * alt / zb
+            if (y2 > h + 2f || y1 - y2 < 0.4f) return
+            path.reset()
+            path.moveTo(cx + f * x1 / z1, y1); path.lineTo(cx + f * x2 / z1, y1)
+            path.lineTo(cx + f * x2 / zb, y2); path.lineTo(cx + f * x1 / zb, y2); path.close()
+            drawPath(path, col)
+        }
+        for (row in 0 until 48) {
             val k = k0 + row
             val z1 = k * cell - sim.s; val z2 = z1 + cell
-            if (z2 <= 0.6f) continue
-            val za = max(z1, 0.6f)
-            val y1 = hy + f * alt / za; val y2 = hy + f * alt / z2
-            if (y1 - y2 < 0.7f) break
-            if (y2 > h) continue
-            val cols = 9
-            for (c in -cols until cols) {
+            if (z2 <= zn) continue
+            if (hy + f * alt / max(z1, zn) - (hy + f * alt / z2) < 0.6f) break
+            val roadRow = Math.floorMod(k, 7) == 0
+            for (c in -10 until 10) {
                 val x1 = c * cell; val x2 = x1 + cell
+                if (roadRow) { quad(x1, x2, z1 + 4f, z1 + 7f, road); continue }
+                if (Math.floorMod(c, 6) == 2) { quad(x1 + 5f, x1 + 8f, z1, z2, road); continue }
                 val hc = hash(k, c)
-                val col = Color(fields[(hc and 0x7fffffff) % fields.size])
-                path.reset()
-                path.moveTo(cx + f * x1 / za, y1); path.lineTo(cx + f * x2 / za, y1)
-                path.lineTo(cx + f * x2 / z2, y2); path.lineTo(cx + f * x1 / z2, y2); path.close()
-                drawPath(path, col)
-                // огоньки посёлков ночью / домики днём
-                if ((hc ushr 8) % 9 == 0) {
-                    val lx = cx + f * (x1 + cell * 0.5f) / ((za + z2) / 2f); val ly = (y1 + y2) / 2f
-                    val rr = max(0.8f, f * 0.35f / ((za + z2) / 2f))
-                    drawCircle(if (night) Color(0xFFFFD58A).copy(alpha = 0.85f) else Color(0xFFE9E2D0).copy(alpha = 0.7f), rr, Offset(lx, ly))
+                quad(x1 + gap, x2 - gap, z1 + gap, z2 - gap, Color(fields[(hc and 0x7fffffff) % fields.size]))
+                // посёлки: ночью тёплые огни, днём светлые крыши
+                if ((hc ushr 9) % 7 == 0) for (j in 0 until 3) {
+                    val lx0 = x1 + 3f + ((hc ushr (j * 3)) and 7) * 1.1f; val lz = z1 + 3f + ((hc ushr (j * 5 + 2)) and 7) * 1.1f
+                    if (lz <= zn) continue
+                    val lx = cx + f * lx0 / lz; val ly = hy + f * alt / lz
+                    if (ly > h || lx < -10f || lx > w + 10f) continue
+                    val rr = max(1.1f, f * 0.45f / lz)
+                    if (night) {
+                        drawCircle(Color(0xFFFFC46B).copy(alpha = 0.25f), rr * 3.2f, Offset(lx, ly))
+                        drawCircle(Color(0xFFFFE2A8), rr, Offset(lx, ly))
+                    } else drawCircle(Color(0xFFEDE6D6).copy(alpha = 0.85f), rr * 1.2f, Offset(lx, ly))
                 }
             }
         }
-        // дорога вдоль полёта
-        run {
-            val rx1 = 40f; val rx2 = 46f; val zn = 0.6f; val yn = hy + f * alt / zn
-            path.reset(); path.moveTo(cx + f * rx1 / zn, min(yn, h * 4)); path.lineTo(cx + f * rx2 / zn, min(yn, h * 4)); path.lineTo(cx, hy); path.close()
-            drawPath(path, Color(0xFF2B3138).copy(alpha = if (night) 0.9f else 0.8f))
-        }
         // ——— ВПП ———
-        drawRunway(sim, f, cx, hy, h, night)
-        // дымка у горизонта
-        drawRect(Brush.verticalGradient(0f to lerp(skyMid, glow, 0.45f).copy(alpha = 0.85f), 1f to Color.Transparent, startY = hy, endY = hy + (h - hy) * 0.35f),
-            topLeft = Offset(0f, hy), size = Size(w, (h - hy) * 0.35f))
+        drawRunway(sim, f, cx, hy, h, w, night)
+        // лёгкая дымка у самого горизонта
+        drawRect(Brush.verticalGradient(0f to lerp(skyMid, glow, 0.4f).copy(alpha = 0.6f), 1f to Color.Transparent, startY = hy, endY = hy + (h - hy) * 0.12f),
+            topLeft = Offset(0f, hy), size = Size(w, (h - hy) * 0.12f))
     }
     // линия горизонта
     drawRect(glow.copy(alpha = (0.45f + 0.5f * flash).coerceAtMost(1f)), topLeft = Offset(0f, hy - 1f - 2f * flash), size = Size(w, 2f + 4f * flash))
@@ -287,60 +296,50 @@ private fun DrawScope.drawFlight(sim: FlightSim, wx: SkyWeather.W, glow: Color, 
     }
 }
 
-private fun DrawScope.drawRunway(sim: FlightSim, f: Float, cx: Float, hy: Float, h: Float, night: Boolean) {
-    val L = 170f; val half = 7f; val alt = sim.alt
+private fun DrawScope.drawRunway(sim: FlightSim, f: Float, cx: Float, hy: Float, h: Float, w: Float, night: Boolean) {
+    val L = 170f; val half = 7f; val alt = sim.alt; val zn = 2f
     val zs = sim.rw; val ze = sim.rw + L
-    if (ze <= 0.6f || zs > 1200f) return
-    val z1 = max(zs, 0.6f)
-    fun y(z: Float) = hy + f * alt / z
-    fun x(X: Float, z: Float) = cx + f * X / z
+    if (ze <= zn || zs > 1400f) return
     val p = Path()
-    p.moveTo(x(-half, z1), y(z1)); p.lineTo(x(half, z1), y(z1)); p.lineTo(x(half, ze), y(ze)); p.lineTo(x(-half, ze), y(ze)); p.close()
-    drawPath(p, Color(0xFF2A323D))
-    // кромки
-    for (side in listOf(-1f, 1f)) {
-        val X = side * (half - 0.4f)
-        drawLine(Color.White.copy(alpha = 0.75f), Offset(x(X, z1), y(z1)), Offset(x(X, ze), y(ze)), max(1f, f * 0.25f / max(z1, 4f)))
+    fun quad(x1: Float, x2: Float, za: Float, zb: Float, col: Color) {
+        if (zb <= zn) return
+        val z1 = max(za, zn)
+        val y1 = hy + f * alt / z1; val y2 = hy + f * alt / zb
+        if (y2 > h + 2f) return
+        p.reset()
+        p.moveTo(cx + f * x1 / z1, y1); p.lineTo(cx + f * x2 / z1, y1)
+        p.lineTo(cx + f * x2 / zb, y2); p.lineTo(cx + f * x1 / zb, y2); p.close()
+        drawPath(p, col)
     }
-    // осевая — прерывистая
-    var z = floor((z1 - zs) / 12f) * 12f + zs
-    while (z < ze) {
-        val a = max(z, 0.6f); val b = min(z + 6f, ze)
-        if (b > a) {
-            val q = Path()
-            q.moveTo(x(-0.25f, a), y(a)); q.lineTo(x(0.25f, a), y(a)); q.lineTo(x(0.25f, b), y(b)); q.lineTo(x(-0.25f, b), y(b)); q.close()
-            drawPath(q, Color.White.copy(alpha = 0.85f))
-        }
-        z += 12f
+    val white = Color(0xFFF2F5F8).copy(alpha = if (night) 0.8f else 0.9f)
+    quad(-half - 1.2f, half + 1.2f, zs, ze, if (night) Color(0xFF1A222C) else Color(0xFF55606A))   // обочина
+    quad(-half, half, zs, ze, if (night) Color(0xFF262F3B) else Color(0xFF3C444F))               // асфальт
+    quad(-half + 0.5f, -half + 0.9f, zs, ze, white); quad(half - 0.9f, half - 0.5f, zs, ze, white) // кромки
+    var z = zs + 12f
+    while (z < ze - 6f) { quad(-0.3f, 0.3f, z, z + 6f, white); z += 12f }                          // осевая
+    for (i in 0 until 8) { val x = -half + 1.4f + i * 1.7f + (if (i >= 4) 1.3f else 0f); quad(x, x + 0.9f, zs + 1.5f, zs + 7.5f, white) } // «зебра»
+    quad(-half + 1.4f, -half + 3.2f, zs + 30f, zs + 36f, white); quad(half - 3.2f, half - 1.4f, zs + 30f, zs + 36f, white)       // зона касания
+    // огни: по кромкам и огни подхода перед порогом
+    fun light(X: Float, Z: Float, col: Color, k: Float) {
+        if (Z <= zn) return
+        val x = cx + f * X / Z; val y = hy + f * alt / Z
+        if (y > h || x < -20f || x > w + 20f) return
+        val r = max(1.2f, f * k / Z)
+        if (night) drawCircle(col.copy(alpha = 0.22f), r * 3.5f, Offset(x, y))
+        drawCircle(col.copy(alpha = if (night) 1f else 0.75f), r, Offset(x, y))
     }
-    // «зебра» порога
-    if (zs + 4f > 0.6f) for (i in -5..5) {
-        if (i == 0) continue
-        val X = i * 1.15f; val a = max(zs + 1f, 0.6f); val b = zs + 5f
-        if (b <= a) continue
-        val q = Path()
-        q.moveTo(x(X - 0.35f, a), y(a)); q.lineTo(x(X + 0.35f, a), y(a)); q.lineTo(x(X + 0.35f, b), y(b)); q.lineTo(x(X - 0.35f, b), y(b)); q.close()
-        drawPath(q, Color.White.copy(alpha = 0.8f))
-    }
-    // огни вдоль полосы
-    var lz = floor(max(zs, 0.6f) / 10f) * 10f
-    while (lz < ze) {
-        if (lz > 0.6f) for (side in listOf(-1f, 1f)) {
-            val r = max(0.9f, f * (if (night) 0.32f else 0.2f) / lz)
-            val c = if (night) Color(0xFFFFE6A8) else Color(0xFFFFF4D6)
-            drawCircle(c.copy(alpha = if (night) 0.95f else 0.6f), r, Offset(x(side * (half + 0.8f), lz), y(lz)))
-        }
-        lz += 10f
-    }
+    var lz = floor(zs / 10f) * 10f + 10f
+    while (lz < ze) { light(-half - 0.8f, lz, Color(0xFFFFE6A8), 0.16f); light(half + 0.8f, lz, Color(0xFFFFE6A8), 0.16f); lz += 10f }
+    for (i in 1..6) light(0f, zs - i * 12f, Color.White, 0.22f)
 }
 
 private fun DrawScope.drawClouds(sim: FlightSim, wx: SkyWeather.W, f: Float, cx: Float, hy: Float, w: Float, h: Float) {
     val base = when {
         wx.rain -> Color(0xFF6E7C8C)
-        !wx.day -> Color(0xFF3A4C66)
+        !wx.day -> Color(0xFF6C80A0)
         else -> Color(0xFFF2F6FB)
     }
-    val alpha = if (wx.rain) 0.75f else if (!wx.day) 0.55f else 0.62f
+    val alpha = if (wx.rain) 0.8f else if (!wx.day) 0.7f else 0.75f
     for (c in sim.clouds.sortedByDescending { it.z }) {
         val z = c.z
         val sx = cx + f * c.x / z

@@ -105,7 +105,7 @@ object Agent {
 
 
         var onFinish: ((Done) -> Unit)? = null
-        private var lastButtons: List<String> = emptyList()
+        var lastButtons: List<String> by mutableStateOf(emptyList()); private set
 
         val isMain: Boolean get() = fid == Friends.MAIN
         /** Сейчас выполняется просьба, переданная другим другом. */
@@ -333,7 +333,18 @@ object Agent {
                     msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: ${res.take(3000)}"))
                 }
                 lastSmart = smart
-                finish(true, final ?: "Слишком много шагов — остановился. Попробуй сформулировать проще.")
+                var out = final ?: "Слишком много шагов — остановился. Попробуй сформулировать проще."
+                // после поиска в интернете — железно: время данных и кнопка «Подробнее» (модели их часто забывают)
+                val usedWeb = listOf("web_search", "web_read", "web_page").any { (calls[it] ?: 0) > 0 }
+                if (final != null && usedWeb) {
+                    if (!out.contains("по данным на", true))
+                        out += "\n🕓 по данным на " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                    if (Regex("свет|электр|отключени|веерн", RegexOption.IGNORE_CASE).containsMatchIn(text) &&
+                        !Memory.forPrompt(Agent.app, 300).contains("очеред", true) && !out.contains("очеред", true))
+                        out += "\nКакая у тебя очередь отключений или район? Запомню — буду говорить, когда свет именно у тебя."
+                    if (lastButtons.none { it.startsWith("Подробн", true) }) lastButtons = (lastButtons + "Подробнее").take(3)
+                }
+                finish(true, out)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
