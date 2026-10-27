@@ -111,6 +111,7 @@ fun App(voice: Voice) {
     }
     LaunchedEffect(open) {
         if (open == "digest") { scr = Scr.Digest; Nav.open = "" }
+        if (open == "update") { scr = Scr.Home; Nav.open = ""; Updater.run(Agent.app) }
         if (open.startsWith("chat:")) { scr = Scr.Home; Nav.open = "" }
         if (open == "yt") {
             Nav.open = ""

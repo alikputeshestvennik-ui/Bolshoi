@@ -13,6 +13,7 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.launch
 
 /**
  * GitHub только на чтение (личный токен GH_PAT): смотреть статус сборок приложения и скачивать готовый APK,
@@ -90,6 +91,19 @@ object Git {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", apk)
         val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        // приложение свёрнуто — Android не даст открыть установщик из фона: кладём уведомление «Установить»
+        if (!AppState.foreground) {
+            val pi = android.app.PendingIntent.getActivity(ctx, 7301, i, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+            val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+            if (nm.getNotificationChannel("important") == null)
+                nm.createNotificationChannel(android.app.NotificationChannel("important", "Важное и итог дня", android.app.NotificationManager.IMPORTANCE_HIGH))
+            runCatching {
+                androidx.core.app.NotificationManagerCompat.from(ctx).notify(7301, androidx.core.app.NotificationCompat.Builder(ctx, "important")
+                    .setSmallIcon(R.drawable.ic_launcher_mono).setContentTitle("Обновление скачано")
+                    .setContentText("Нажми, чтобы установить новую версию Пилота").setContentIntent(pi).setAutoCancel(true).build())
+            }
+            return "скачал свежую сборку — нажми уведомление «Обновление скачано», чтобы установить"
+        }
         runCatching { ctx.startActivity(i) }.onFailure { return "скачал, но не открылась установка: ${it.message}" }
         return "скачал свежую сборку — подтверди установку (один раз разреши «Установка из этого источника»)"
     }
@@ -126,9 +140,9 @@ object BuildWatch {
         if (status != "completed") { soon(ctx); return null }
         if (num <= installed(ctx) || num <= Prefs.buildSeen) return null
         Prefs.buildSeen = num
-        val (title, text) = if (concl == "success") "Новая версия Пилота готова" to "Сборка #$num собрана. Скажи «обновись» — поставлю."
+        val (title, text) = if (concl == "success") "Новая версия Пилота готова" to "Сборка #$num собрана. Скажи «обновись» или нажми уведомление — поставлю."
             else "Сборка #$num не собралась" to "Новая версия Пилота упала при сборке — на телефоне остаётся текущая."
-        Monitor.notify(ctx, 7300, title, text)
+        Monitor.notify(ctx, 7300, title, if (concl == "success") "Сборка #$num собрана. Нажми — поставлю." else text, open = if (concl == "success") "update" else "")
         return "🛠 $title. ${text}"
     }
 }
@@ -138,5 +152,31 @@ class BuildWatchWorker(ctx: Context, params: androidx.work.WorkerParameters) : a
         // в фоне — только уведомление (в чат запишет само приложение при открытии)
         runCatching { Prefs.init(applicationContext); BuildWatch.check(applicationContext) }
         return Result.success()
+    }
+}
+
+
+/** Обновление без модели: команда «обновись/установи» или нажатие уведомления — сразу качаем и ставим. */
+object Updater {
+    @Volatile var busy = false
+    private val start = Regex("^((да|давай|ну|пожалуйста|слушай)[,!\\s]+)*(обнови(сь|ся)?|установи|поставь|обновление|апдейт)([\\s!.,]|$)", RegexOption.IGNORE_CASE)
+    /** «обновись», «установи», «да установи ты новое, я случайно отказал» — но не «обнови таблицу». */
+    fun isCommand(t: String): Boolean {
+        val x = t.trim().lowercase().replace('ё', 'е')
+        if (x.length > 90 || !start.containsMatchIn(x)) return false
+        if (Regex("таблиц|файл|документ|список|заметк|данн|курс|погод|цен").containsMatchIn(x)) return false
+        val rest = x.replace(start, "").replace(Regex("[!.,]"), " ").trim()
+        val filler = setOf("", "пожалуйста", "давай", "ты", "уже", "плиз", "ка", "-ка")
+        return rest.split(Regex("\\s+")).all { it in filler } || Regex("нов|верси|сборк|обновлен|приложени|пилот|себя|отказал|еще раз|снова").containsMatchIn(rest)
+    }
+    fun run(ctx: Context) {
+        if (busy) return
+        busy = true
+        Chat.main.note("⬇️ Скачиваю свежую сборку…")
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val r = runCatching { Git.installLatest(ctx) }.getOrElse { "не получилось: ${it.message}" }
+            busy = false
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.note("🛠 " + r.replaceFirstChar { it.uppercase() }) }
+        }
     }
 }
