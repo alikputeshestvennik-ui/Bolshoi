@@ -28,7 +28,7 @@ object Avia {
     private fun get(url: String): String =
         http.newCall(Request.Builder().url(url).header("Accept-Encoding", "identity").build()).execute().use { r ->
             val b = r.body?.string().orEmpty()
-            if (!r.isSuccessful) error("Авиасейлс ${r.code}")
+            if (!r.isSuccessful) error("Авиасейлс ${r.code}: " + (runCatching { JSONObject(b).optString("error") }.getOrNull()?.ifBlank { null } ?: b.take(120)))
             b
         }
 
@@ -60,6 +60,10 @@ object Avia {
      */
     fun search(from: String, to: String, date: String, returnDate: String = "", direct: Boolean = false): String {
         if (!ready) return "нет токена Авиасейлса (TRAVELPAYOUTS_TOKEN)"
+        val dre = Regex("^\\d{4}-\\d{2}(-\\d{2})?$")
+        if (!dre.matches(date)) return "дата «$date» не подходит: нужна одна дата ГГГГ-ММ-ДД или месяц ГГГГ-ММ. На выходные — вызови отдельно на каждый день"
+        if (returnDate.isNotBlank() && !dre.matches(returnDate)) return "дата обратно «$returnDate» не подходит: нужна ГГГГ-ММ-ДД или ГГГГ-ММ"
+        if (date.length == 10 && date < java.time.LocalDate.now().toString()) return "дата $date уже прошла — возьми будущую"
         val o = place(from) ?: return "не понял город вылета «$from»"
         val d = place(to) ?: return "не понял город прилёта «$to»"
         val oneWay = returnDate.isBlank()

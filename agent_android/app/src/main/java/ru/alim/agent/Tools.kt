@@ -473,11 +473,17 @@ object Tools {
             text
         },
 
-        Tool("flights", "{\"from\": \"Сочи\", \"to\": \"Стамбул\", \"date\": \"2026-11-22\", \"return_date\": \"\", \"direct\": false} — авиабилеты через API Авиасейлса: рейсы и цены на дату (ГГГГ-ММ-ДД) или на месяц (ГГГГ-ММ). Города пиши по-русски, коды подберутся сами. return_date — только если просят туда-обратно. direct=true — только прямые") t@{ _, a ->
+        Tool("flights", "{\"from\": \"Сочи\", \"to\": \"Стамбул\", \"date\": \"2026-11-22\", \"return_date\": \"\", \"direct\": false} — авиабилеты через API Авиасейлса: рейсы и цены на дату (ГГГГ-ММ-ДД) или на месяц (ГГГГ-ММ). Города пиши по-русски, коды подберутся сами; несколько городов прилёта или дат — через запятую. return_date — только если просят туда-обратно. direct=true — только прямые") t@{ _, a ->
             val from = a.optString("from").trim(); val to = a.optString("to").trim(); val date = a.optString("date").trim()
             if (from.isEmpty() || to.isEmpty()) return@t "откуда и куда?"
             if (date.isEmpty()) return@t "на какую дату? спроси у Алима"
-            Avia.search(from, to, date, a.optString("return_date").trim(), a.optBoolean("direct", false))
+            // несколько городов прилёта или дат за раз — ищем по каждому
+            val tos = to.split(Regex("\\s*(,|;|\\s+и\\s+)\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(5)
+            val dates = date.split(Regex("\\s*[,;]\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(4)
+            val ret = a.optString("return_date").trim(); val direct = a.optBoolean("direct", false)
+            if (tos.size == 1 && dates.size == 1) Avia.search(from, tos[0], dates[0], ret, direct)
+            else tos.flatMap { t -> dates.map { d -> runCatching { Avia.search(from, t, d, ret, direct) }.getOrElse { e -> "$from → $t, $d: ${e.message}" } } }
+                .joinToString("\n\n")
         },
 
         Tool("flights_open", "{\"n\": 1} — открыть рейс номер n из последнего поиска flights в приложении Авиасейлса (там покупка). Только по просьбе «открой»") t@{ ctx, a ->

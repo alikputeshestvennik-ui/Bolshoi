@@ -261,7 +261,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val pulse by bobT.animateFloat(0.35f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
     val glassBg = Color(0x17FFFFFF); val glassLine = Color(0x2EFFFFFF); val panel = Color(0xE6102034)
 
-    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))) {
+    Box(Modifier.fillMaxSize()) {
         FlightScene(flying = phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM, glow = glow, modifier = Modifier.fillMaxSize(), flash = flash,
             onLift = { Haptics.tick(tctx) }, onTouch = { touchN++ })
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp)
