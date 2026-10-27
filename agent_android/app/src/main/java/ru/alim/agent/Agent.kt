@@ -211,6 +211,8 @@ object Agent {
             append("- Маршрут, «как доехать», «сколько ехать» — maps_route (по умолчанию на машине, «на автобусе» — mt, «пешком» — pd). Места на карте — maps_search.\n")
             append("- Документ, список, письмо, договор — file_create type docx; таблица, бюджет, учёт, расчёт — type xlsx с формулами. Поправить файл — file_read, затем file_create с изменениями. Не вставляй содержимое файла в ответ — карточка будет на экране.\n")
             append("- Приложения: найти или обновить — play_open. Фильмы и сериалы KION — kion_open.\n")
+            append("- Сравнить технику / узнать характеристики (вес, батарея, экран, камера) — это НЕ покупка: ищи web_search «модель характеристики» или «модель обзор», читай сайт производителя или обзор (web_read). Цену в России — один web_search «модель цена» или один shop_search на модель; карточки товаров тут не нужны. Вывод «что лучше» дай всегда — по тому, что нашёл, с оговоркой.\n")
+            append("- Погода — ВСЕГДА инструмент weather (на 7 дней), не web_search. Выходные/конкретные дни — бери из его ответа.\n")
             append("- Покупки и товары (Ozon, Wildberries) — shop_search. Запрос короткий: бренд + модель/тип + пол (размер в запрос не пиши). Если назван размер — проверь его у 3-4 лучших вариантов через shop_check. «открой N» — shop_open. Не открывай приложение магазина без поиска. Оплату не делаешь.\n")
             append("- Назван продавец («у продавца Ozon Россия», «от самого Озона») — shop_search с seller. Важна оригинальность («оригинал», «не подделку») — original=true. На уточнение в продолжении разговора повтори shop_search с новым фильтром, а не открывай поиск в приложении.\n")
             append("- Размер на Ozon («в сетке») — значит, он есть в размерной сетке, но мог быть распродан: так и скажи «43 в сетке, наличие проверь в карточке». На WB «есть» — точно в наличии.\n")
@@ -347,6 +349,12 @@ object Agent {
                 }
                 lastSmart = smart
                 var out = final ?: "Слишком много шагов — остановился. Попробуй сформулировать проще."
+                // задача с файлом (сравнение/таблица): карточки товаров — только упомянутые в ответе, без «витрины» поиска
+                if (final != null && files.isNotEmpty() && products.isNotEmpty() && Tools.taskVideos.isEmpty()) {
+                    val low = out.lowercase()
+                    val keep = products.filter { p -> val k = p.title.lowercase().take(24); k.length >= 10 && low.contains(k) }
+                    products.clear(); products.addAll(keep)
+                }
                 // подборка из нескольких поисков YouTube: карточками показываем выбранные ролики, а не последний поиск
                 if (final != null && Tools.taskVideos.isNotEmpty()) {
                     val hay = buildString {
@@ -365,7 +373,7 @@ object Agent {
                 if (final != null && usedWeb) {
                     if (!Regex("по данным на|данные на|данные от|датирован|опубликован|проверено в|🕓|🕐|⏰", RegexOption.IGNORE_CASE).containsMatchIn(out))
                         out += if (SrcTime.newest > 0) "\n🕓 данные от " + SrcTime.label(SrcTime.newest)
-                               else "\n🕓 проверено в " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + " (дата у источника не указана)"
+                               else "\n🕓 проверено в " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
                     if (Regex("отключени\\w*\\s+(свет|электр)|электроэнерг|электричеств|веерн|(нет|без|будет|дадут|включат|отключат)\\s+свет|свет\\w*\\s+(будет|когда|дадут|включат|отключат|нет)|график\\w*\\s+отключ", RegexOption.IGNORE_CASE).containsMatchIn(text) &&
                         !Memory.forPrompt(Agent.app, 300).contains("очеред", true) && !out.contains("очеред", true))
                         out += "\nКакая у тебя очередь отключений или район? Запомню — буду говорить, когда свет именно у тебя."
