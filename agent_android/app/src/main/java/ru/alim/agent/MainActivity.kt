@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
         Agent.onSpeak = { voice.say(it) }
         Nav.open = intent?.getStringExtra("open").orEmpty()
         Monitor.schedule(this)
+        BuildWatch.schedule(this)
         ArturService.start(this)
         setContent { App(voice) }
     }

@@ -46,6 +46,9 @@ object Git {
         when { mins < 1 -> "только что"; mins < 60 -> "$mins мин назад"; mins < 1440 -> "${mins / 60} ч назад"; else -> "${mins / 1440} дн назад" }
     }.getOrDefault(iso)
 
+    /** Последний запуск сборки приложения (любой статус) или null. */
+    fun latestRun(): JSONObject? = api("/repos/$OWNER/$REPO/actions/workflows/$WORKFLOW/runs?per_page=1").optJSONArray("workflow_runs")?.optJSONObject(0)
+
     /** Статус последней сборки приложения. */
     fun lastBuild(): String {
         if (!ready) return "нет токена GitHub (GH_PAT)"
@@ -89,5 +92,51 @@ object Git {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { ctx.startActivity(i) }.onFailure { return "скачал, но не открылась установка: ${it.message}" }
         return "скачал свежую сборку — подтверди установку (один раз разреши «Установка из этого источника»)"
+    }
+}
+
+/**
+ * Сторож сборок: сам замечает новую версию Пилота на GitHub и присылает уведомление «готово — скажи „обновись“».
+ * Раз в 15 минут в фоне + при каждом открытии приложения; пока сборка идёт — проверяет каждые 2 минуты.
+ */
+object BuildWatch {
+    private fun installed(ctx: Context): Int = runCatching {
+        val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+        (if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode.toInt() else @Suppress("DEPRECATION") pi.versionCode) - 1
+    }.getOrDefault(0)
+
+    fun schedule(ctx: Context) {
+        val wm = androidx.work.WorkManager.getInstance(ctx)
+        val net = androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build()
+        wm.enqueueUniquePeriodicWork("buildwatch", androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.PeriodicWorkRequestBuilder<BuildWatchWorker>(15, TimeUnit.MINUTES).setConstraints(net).build())
+    }
+
+    private fun soon(ctx: Context) {
+        val net = androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build()
+        androidx.work.WorkManager.getInstance(ctx).enqueueUniqueWork("buildwatch-soon", androidx.work.ExistingWorkPolicy.REPLACE,
+            androidx.work.OneTimeWorkRequestBuilder<BuildWatchWorker>().setInitialDelay(2, TimeUnit.MINUTES).setConstraints(net).build())
+    }
+
+    /** Проверка последней сборки. Возвращает текст для чата, если есть что сказать (новая готова / упала). */
+    fun check(ctx: Context): String? {
+        if (!Git.ready) return null
+        val r = Git.latestRun() ?: return null
+        val num = r.optInt("run_number"); val status = r.optString("status"); val concl = r.optString("conclusion")
+        if (status != "completed") { soon(ctx); return null }
+        if (num <= installed(ctx) || num <= Prefs.buildSeen) return null
+        Prefs.buildSeen = num
+        val (title, text) = if (concl == "success") "Новая версия Пилота готова" to "Сборка #$num собрана. Скажи «обновись» — поставлю."
+            else "Сборка #$num не собралась" to "Новая версия Пилота упала при сборке — на телефоне остаётся текущая."
+        Monitor.notify(ctx, 7300, title, text)
+        return "🛠 $title. ${text}"
+    }
+}
+
+class BuildWatchWorker(ctx: Context, params: androidx.work.WorkerParameters) : androidx.work.CoroutineWorker(ctx, params) {
+    override suspend fun doWork(): Result {
+        // в фоне — только уведомление (в чат запишет само приложение при открытии)
+        runCatching { Prefs.init(applicationContext); BuildWatch.check(applicationContext) }
+        return Result.success()
     }
 }

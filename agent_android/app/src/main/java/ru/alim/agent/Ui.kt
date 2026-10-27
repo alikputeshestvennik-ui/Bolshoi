@@ -79,7 +79,12 @@ fun App(voice: Voice) {
     val life = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(life) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { SkyDrift.reroll(); tgScope.launch { SkyWeather.refresh() } }
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                SkyDrift.reroll(); tgScope.launch { SkyWeather.refresh() }
+                tgScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { BuildWatch.check(tgCtx) }.getOrNull()?.let { m -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.note(m) } }
+                }
+            }
             if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured) tgScope.launch {
                 Tg.start(tgCtx)
                 var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)

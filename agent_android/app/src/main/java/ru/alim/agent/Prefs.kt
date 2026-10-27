@@ -25,6 +25,8 @@ object Prefs {
     /** Модель для быстрой полосы (по умолчанию — Alice AI Flash Яндекса: бесплатно, без VPN, хорошо по-русски). */
     var laneModel: String get() = s("lane", "yc:aliceai-llm-flash"); set(v) = put("lane", v.trim())
     /** Тактильные отклики кабины (отрыв/запрос/посадка задачи). */
+    /** Номер последней сборки, о которой уже сказали. */
+    var buildSeen: Int get() = sp.getInt("build_seen", 0); set(v) = sp.edit().putInt("build_seen", v).apply()
     var haptics: Boolean get() = b("haptics", true); set(v) = putB("haptics", v)
     /** Объёмная 3D-сцена полёта на экране задачи (WebView + WebGL). */
     var flight3d: Boolean get() = b("flight3d", true); set(v) = putB("flight3d", v)
