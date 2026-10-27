@@ -611,7 +611,7 @@ fun Wallpaper() {
     val ver = WallState.version
     val bmp = remember(photo, ver) { if (photo) loadBitmap(java.io.File(ctx.filesDir, "wallpaper.jpg").path, 1600) else null }
     if (bmp == null && Th.cockpit) {
-        CockpitSky(Sky.glowCalm, Modifier.fillMaxSize())
+        FlightScene(flying = false, glow = Sky.glowCalm, modifier = Modifier.fillMaxSize())
     } else if (bmp != null) {
         Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxSize().background((if (p.dark) Color.Black else Color.White).copy(alpha = Prefs.wallDim / 100f)))

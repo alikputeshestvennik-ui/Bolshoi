@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
         // во весь экран: приложение рисует и под шторкой, и под нижней полосой
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         Prefs.init(this)
+        SkyWeather.load()
         Th.load()
         Agent.app = applicationContext
         Chat.init(this)

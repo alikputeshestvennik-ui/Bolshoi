@@ -225,19 +225,28 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val orbDrop = remember { Animatable(0f) }    // со-пилот опускается и пружинит
     val cardY = remember { Animatable(0f) }      // итог выезжает снизу
     var touchdown by remember { mutableStateOf(false) }
+    var approaching by remember { mutableStateOf(false) }   // ответ готов, самолёт заходит на посадку
+    var touchN by remember { mutableStateOf(0) }            // счётчик касаний полосы (из сцены)
+    val tctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(phase) {
         val landed = phase == Agent.Phase.DONE && prevPhase == Agent.Phase.WORKING
         prevPhase = phase
         if (landed) {
-            touchdown = true
+            approaching = true
             cardY.snapTo(1f)
-            orbDrop.snapTo(-1f)
-            kotlinx.coroutines.coroutineScope {
-                launch { orbDrop.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.3f, stiffness = 220f)) }
-                launch { touch.snapTo(0f); touch.animateTo(1f, tween(1100, easing = EaseOutCubic)) }
-                launch { delay(180); cardY.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 260f)) }
-                launch { delay(1300); touchdown = false }
-            }
+            cardY.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 260f))
+        }
+    }
+    // само касание — когда сцена реально посадила самолёт на ВПП
+    LaunchedEffect(touchN) {
+        if (touchN == 0) return@LaunchedEffect
+        approaching = false; touchdown = true
+        Haptics.landing(tctx)
+        orbDrop.snapTo(-1f)
+        kotlinx.coroutines.coroutineScope {
+            launch { orbDrop.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.3f, stiffness = 220f)) }
+            launch { touch.snapTo(0f); touch.animateTo(1f, tween(1100, easing = EaseOutCubic)) }
+            launch { delay(1600); touchdown = false }
         }
     }
     val flash = if (touch.value in 0.001f..0.999f) (1f - touch.value) else 0f
@@ -253,7 +262,8 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     val glassBg = Color(0x17FFFFFF); val glassLine = Color(0x2EFFFFFF); val panel = Color(0xE6102034)
 
     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))) {
-        CockpitSky(glow, Modifier.fillMaxSize(), working = running, flash = flash)
+        FlightScene(flying = phase == Agent.Phase.WORKING || phase == Agent.Phase.CONFIRM, glow = glow, modifier = Modifier.fillMaxSize(), flash = flash,
+            onLift = { Haptics.tick(tctx) }, onTouch = { touchN++ })
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp)
             .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 36.dp.toPx() },
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -287,7 +297,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                     Text(when (phase) {
                         Agent.Phase.WORKING -> "В ПОЛЁТЕ"
                         Agent.Phase.CONFIRM -> "НУЖНО ТВОЁ ОК"
-                        else -> if (Agent.failed) "НЕ ДОЛЕТЕЛИ" else if (touchdown) "ПОСАДКА" else "ГОРИЗОНТ ЧИСТЫЙ"
+                        else -> if (Agent.failed) "НЕ ДОЛЕТЕЛИ" else if (touchdown) "ПОСАДКА" else if (approaching) "ЗАХОДИМ НА ПОСАДКУ" else "ГОРИЗОНТ ЧИСТЫЙ"
                     }, style = body(13, FontWeight.Bold, when (phase) {
                         Agent.Phase.WORKING -> Color(0xFFBFC9FF).copy(alpha = pulse)
                         Agent.Phase.CONFIRM -> Color(0xFFF2C58A)

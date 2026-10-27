@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- «Пилот»: голова робота с улыбкой (для значков в шторке и тематических иконок) -->
+<!-- Со-пилот силуэтом (значки в шторке и тематические иконки): шарик с прорезью визора и глазами -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
-        android:pathData="M54,30c15.5,0 27,9.5 27,23s-11.5,24 -27,24s-27,-10.5 -27,-24s11.5,-23 27,-23zM54,38c-11,0 -18,6.5 -18,15s7,15 18,15s18,-6.5 18,-15s-7,-15 -18,-15z"/>
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4" android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M44,56c2,-4 7,-4 9,0M57,56c2,-4 7,-4 9,0"/>
-    <path android:fillColor="#FFFFFFFF" android:pathData="M17,53a5,7 0,1 0,10 0a5,7 0,1 0,-10 0z"/>
+        android:pathData="M25,54a29,29 0 1,0 58,0a29,29 0 1,0 -58,0zM45.6,43.3h16.8a12.5,12.5 0 0,1 0,25h-16.8a12.5,12.5 0 0,1 0,-25z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.2" android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M39.7,57.6A4.4,3.8 0 0,1 47.9,57.6M60.1,57.6A4.4,3.8 0 0,1 68.3,57.6" />
 </vector>

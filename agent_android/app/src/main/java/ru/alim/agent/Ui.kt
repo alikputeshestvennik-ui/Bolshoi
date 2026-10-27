@@ -79,6 +79,7 @@ fun App(voice: Voice) {
     val life = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(life) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { SkyDrift.reroll(); tgScope.launch { SkyWeather.refresh() } }
             if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured) tgScope.launch {
                 Tg.start(tgCtx)
                 var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)
@@ -100,7 +101,6 @@ fun App(voice: Voice) {
                 if (scr == Scr.Home) { taskBack = Scr.Home; scr = Scr.Task }
             }
             phase == Agent.Phase.CONFIRM && prevPhase != Agent.Phase.CONFIRM -> Haptics.ask(uiCtx)
-            phase == Agent.Phase.DONE && prevPhase == Agent.Phase.WORKING -> Haptics.landing(uiCtx)
         }
         prevPhase = phase
     }

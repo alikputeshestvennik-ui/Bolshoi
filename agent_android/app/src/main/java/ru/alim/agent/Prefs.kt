@@ -69,6 +69,8 @@ object Prefs {
     var tgShown: String get() = s("tg_shown", "{}"); set(v) = put("tg_shown", v)
     /** Ссылки на рейсы из последнего поиска Авиасейлса — для «открой второй рейс». */
     var aviaLinks: String get() = s("avia_links", ""); set(v) = put("avia_links", v)
+    /** Погода для неба кабины (облачность/дождь/день) с меткой времени. */
+    var skyWx: String get() = s("sky_wx", ""); set(v) = put("sky_wx", v)
     var cockpitTheme: Boolean get() = b("cockpit_theme", false); set(v) = putB("cockpit_theme", v)
     /** Подложка: "pattern" — узор темы, "photo" — картинка из файла wallpaper.jpg. */
     var wallpaper: String get() = s("wall", "pattern"); set(v) = put("wall", v)
