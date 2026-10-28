@@ -302,7 +302,8 @@ object Deleg {
             it.lines += Line(true, s, System.currentTimeMillis()); it.lastOut = System.currentTimeMillis()
         }
         val jj = j!!
-        if (jj.optBoolean("attach") && !it.sentFiles && it.files.isNotEmpty() && it.channel == "tg") {
+        // фото уходят сами — сразу после сообщения с сутью (2-я наша реплика), не дожидаясь флажка модели
+        if (!it.sentFiles && it.files.isNotEmpty() && it.channel == "tg" && (jj.optBoolean("attach") || it.lines.count { l -> l.me } >= 2)) {
             delay(1500)
             if (Tg.sendFiles(it.addr.toLong(), it.files)) { it.sentFiles = true; it.lines += Line(true, "[отправил фото: ${it.files.size}]", System.currentTimeMillis()) }
         }
