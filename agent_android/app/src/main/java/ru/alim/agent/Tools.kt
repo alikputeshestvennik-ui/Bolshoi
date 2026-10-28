@@ -509,6 +509,10 @@ object Tools {
             Deleg.answer(ctx, a.optLong("id").takeIf { it > 0 }, a.optString("text").trim().ifBlank { return@t "нужен текст" })
         },
 
+        Tool("delegate_finish", "{\"id\": 123} — завершить поручение: вежливо попрощаться с собеседником и прислать Алиму итог («заверши», «хватит, давай итог»)") t@{ ctx, a ->
+            Deleg.finish(ctx, a.optLong("id").takeIf { it > 0 })
+        },
+
         Tool("delegate_stop", "{\"id\": 123} — остановить поручение (больше не писать собеседнику)") t@{ ctx, a ->
             Deleg.stop(ctx, a.optLong("id").takeIf { it > 0 })
         },

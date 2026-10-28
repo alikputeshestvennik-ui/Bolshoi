@@ -182,6 +182,30 @@ object Deleg {
         return "передал в «${it.title}» — продолжаю переписку"
     }
 
+    /** «Заверши»: вежливо попрощаться и прислать итог — без JSON-переговорщика (итог пишем простым текстом). */
+    fun finish(ctx: Context, id: Long?): String {
+        init(ctx)
+        val it = (if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.active } else null)
+            ?: items.lastOrNull { x -> x.status == "ask" } ?: items.lastOrNull { x -> x.active } ?: return "активных поручений нет"
+        it.status = "active"; it.question = ""; waits[it.id]?.cancel(); save()
+        awake(true)
+        scope.launch {
+            lock.withLock {
+                val bye = "Спасибо, всё понятно! Хорошего вечера."
+                if (send(ctx, it, bye) == null) { it.lines += Line(true, bye, System.currentTimeMillis()); it.lastOut = System.currentTimeMillis() }
+                val ask = JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", "Сделай итог переписки для Алима: 2-4 строки, по делу. Что выяснили по поручению — точные данные дословно (что, сколько, где, когда). Чего не выяснили — так и скажи. Только текст, без JSON и без вступлений."))
+                    .put(JSONObject().put("role", "user").put("content", "ПОРУЧЕНИЕ: ${it.goal}\n\nПЕРЕПИСКА:\n" + dialog(it)))
+                val txt = runCatching { Llm.chat(Prefs.smartModel, ask, 600, json = false).text.trim() }.getOrNull()?.takeIf { t -> t.isNotBlank() && !t.startsWith("{") }
+                    ?: runCatching { Llm.chat(Prefs.fastModel, ask, 600, json = false).text.trim() }.getOrNull()?.takeIf { t -> t.isNotBlank() }
+                    ?: ("Ответы ${it.who}:\n" + it.lines.filter { l -> !l.me }.takeLast(6).joinToString("\n") { l -> "• ${l.text}" })
+                report(it, "done", txt)
+            }
+            awake(false)
+        }
+        return "завершаю «${it.title}»: прощаюсь и пришлю итог"
+    }
+
     fun stop(ctx: Context, id: Long?): String {
         init(ctx)
         val it = (if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.active } else items.lastOrNull { x -> x.active }) ?: return "активных поручений нет"
@@ -265,7 +289,7 @@ object Deleg {
         }
         if (j == null) {
             // не вышло подумать — не бросаем: спрашиваем Алима, данные уже в переписке
-            it.status = "ask"; it.question = "я запутался ($lastErr). Последнее от ${it.who}: «${it.lines.lastOrNull { l -> !l.me }?.text?.take(200).orEmpty()}». Что ответить или завершить?"; save()
+            it.status = "ask"; it.question = "я запутался ($lastErr${if (it.err.isNotBlank()) "; модель: ${it.err.take(140)}" else ""}). Последнее от ${it.who}: «${it.lines.lastOrNull { l -> !l.me }?.text?.take(200).orEmpty()}». Что ответить или завершить?"; save()
             tell(ctx, it, "❓ ${it.title}\n${it.question}", "Нужно твоё решение"); return@withLock
         }
         // жёсткая страховка: никаких кодов/карт в исходящих

@@ -375,8 +375,10 @@ class ChatStore(val fid: String) {
         // поручение ждёт решения Алима — его сообщение и есть ответ: передаём напрямую, без модели (модель могла «соврать», что передала)
         Deleg.waitingQuestion()?.let { q ->
             if (m.att.isBlank() && m.text.isNotBlank() && !Updater.isCommand(m.text)) {
-                val stop = Regex("^(стоп|хватит|останови|не пиши|отбой|отмена)", RegexOption.IGNORE_CASE).containsMatchIn(m.text.trim())
-                note(if (stop) Deleg.stop(Agent.app, q.id) else "↪ " + Deleg.answer(Agent.app, q.id, m.text))
+                val t = m.text.trim().replace(Regex("^#?\\d{1,4}\\s*"), "")   // «147 заверши»
+                val stop = Regex("^(стоп|останови|не пиши|отбой|отмена)", RegexOption.IGNORE_CASE).containsMatchIn(t)
+                val fin = Regex("^(заверши|закончи|закрой|хватит|достаточно|всё|все\\b|итог)", RegexOption.IGNORE_CASE).containsMatchIn(t)
+                note(when { stop -> Deleg.stop(Agent.app, q.id); fin -> "↪ " + Deleg.finish(Agent.app, q.id); else -> "↪ " + Deleg.answer(Agent.app, q.id, m.text) })
                 drainQueue(); return
             }
         }
