@@ -334,6 +334,11 @@ object Agent {
                         continue
                     }
 
+                    // поручение: разовые SMS/Telegram отсекаем ДО карточки подтверждения
+                    if (delegIntent && (tool == "sms_send" || tool == "tg_send" || tool == "whatsapp_write")) {
+                        msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: СТОП — это поручение, разовое сообщение запрещено. Вызови delegate: channel (sms/telegram), number или chat, sim (если Алим называл), goal — ПОЛНАЯ задача Алима своими словами. Переговорщик сам поздоровается, будет вести переписку и пришлёт итог."))
+                        continue
+                    }
                     val step = Step(stepText); steps.add(step)
                     var allowed = true
                     t.confirm?.let { c -> c(args) }?.takeIf { it.isNotBlank() }?.let { ctext ->
