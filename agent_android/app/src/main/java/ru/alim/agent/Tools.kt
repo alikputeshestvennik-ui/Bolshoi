@@ -460,6 +460,53 @@ object Tools {
             Tg.sendMessage(chat.first, text)
         },
 
+        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\"} — ПОРУЧЕНИЕ: Пилот сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
+            confirm = { a ->
+                val ch = if (a.optString("channel").startsWith("t", true)) "Telegram" else "SMS"
+                val to = a.optString(if (ch == "Telegram") "chat" else "number").ifBlank { a.optString("who") }
+                val att = Attach.sent.size
+                "Поручение от твоего имени\nКому: ${a.optString("who")} · $ch ($to)\nЗадача: ${a.optString("goal").take(400)}" + (if (att > 0) "\nФото: $att" else "") + "\n\nПишу сам и отчитаюсь итогом."
+            }) t@{ ctx, a ->
+            val who = a.optString("who").trim(); val goal = a.optString("goal").trim()
+            if (who.isEmpty() || goal.isEmpty()) return@t "нужно кому и что поручить"
+            val tg = a.optString("channel").startsWith("t", true)
+            if (tg) {
+                if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён — могу через SMS, если есть номер"
+                val q = a.optString("chat").trim().ifBlank { who }
+                val chat = Tg.findChat(q) ?: return@t "не нашёл в Telegram «$q» — спроси у Алима ник или номер"
+                val words = who.lowercase().split(Regex("\\s+")).filter { it.length >= 3 }
+                if (!q.startsWith("@") && words.isNotEmpty() && words.none { chat.second.lowercase().contains(it.take(4)) })
+                    return@t "в Telegram нашёлся «${chat.second}» — это не похоже на «$who». Уточни у Алима"
+                Deleg.start(ctx, chat.second, "tg", chat.first.toString(), goal, Attach.sent.toList())
+            } else {
+                if (!has(ctx, Manifest.permission.SEND_SMS)) return@t "нет разрешения на SMS"
+                var num = digits(a.optString("number"))
+                var name = who
+                if (num.length < 5) {
+                    val found = LinkedHashMap<String, String>()
+                    ctx.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                        "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?", arrayOf("%$who%"), null)?.use { c ->
+                        while (c.moveToNext()) { val n = digits(c.getString(1)); if (n.length >= 5) found.putIfAbsent(n.takeLast(10), c.getString(0) + "|" + n) }
+                    }
+                    if (found.isEmpty()) return@t "не нашёл «$who» в контактах — спроси у Алима номер"
+                    if (found.size > 1) return@t "в контактах несколько: " + found.values.joinToString("; ") { it.replace("|", " ") } + " — спроси у Алима, кому"
+                    found.values.first().split("|").let { name = it[0]; num = it[1] }
+                }
+                Deleg.start(ctx, name, "sms", num, goal, Attach.sent.toList())
+            }
+        },
+
+        Tool("delegate_answer", "{\"id\": 123, \"text\": \"решение Алима\"} — передать в идущее поручение ответ/решение Алима на вопрос переговорщика или дополнение (id можно не указывать — возьму то, что ждёт ответа)") t@{ ctx, a ->
+            Deleg.answer(ctx, a.optLong("id").takeIf { it > 0 }, a.optString("text").trim().ifBlank { return@t "нужен текст" })
+        },
+
+        Tool("delegate_stop", "{\"id\": 123} — остановить поручение (больше не писать собеседнику)") t@{ ctx, a ->
+            Deleg.stop(ctx, a.optLong("id").takeIf { it > 0 })
+        },
+
+        Tool("delegate_list", "{} — поручения: что идёт, что ждёт Алима, итоги") { ctx, _ -> Deleg.init(ctx); Deleg.list() },
+
         Tool("tg_join", "{\"username\": \"@example\"} — подписаться на Telegram-канал/чат в личном Telegram Алима. Только по прямой просьбе",
             confirm = { a -> "Подписаться в Telegram на ${a.optString("username")}?" }) t@{ _, a ->
             if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"

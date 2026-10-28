@@ -227,5 +227,6 @@ class SmsIn : BroadcastReceiver() {
                 arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
         }.getOrNull() ?: from
         Events.add(ctx, "sms", "SMS", name, "", text)
+        runCatching { Deleg.onIncoming(ctx, "sms", from, text) }
     }
 }

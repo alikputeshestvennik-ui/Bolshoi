@@ -351,6 +351,8 @@ class ChatStore(val fid: String) {
 
     /** Служебная строка посередине ленты. */
     fun note(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), note = true))
+    /** Обычная реплика Пилота в ленте (отчёты поручений и т.п.). */
+    fun say(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), status = "read"))
 
     private fun dispatch(m: Msg) {
         val c = core

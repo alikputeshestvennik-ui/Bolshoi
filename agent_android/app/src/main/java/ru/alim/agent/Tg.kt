@@ -57,6 +57,30 @@ object Tg {
 
     private fun onUpdate(u: TdApi.Object) {
         if (u is TdApi.UpdateAuthorizationState) onAuth(u.authorizationState)
+        // ответ собеседника по поручению: только входящие, не служебный чат
+        if (u is TdApi.UpdateNewMessage) {
+            val m = u.message
+            if (!m.isOutgoing && m.chatId != SERVICE_CHAT && m.chatId > 0) app?.let { ctx -> runCatching { Deleg.onIncoming(ctx, "tg", m.chatId.toString(), contentText(m.content)) } }
+        }
+    }
+
+    /** Текст в чат (для поручений). */
+    suspend fun sendText(chatId: Long, text: String): Boolean {
+        if (state != St.READY) return false
+        val content = TdApi.InputMessageText().apply { this.text = TdApi.FormattedText(text, emptyArray()) }
+        return call<TdApi.Message>(TdApi.SendMessage().apply { this.chatId = chatId; inputMessageContent = content }) != null
+    }
+
+    /** Фото/файлы альбомом (до 10). */
+    suspend fun sendFiles(chatId: Long, paths: List<String>): Boolean {
+        if (state != St.READY || paths.isEmpty()) return false
+        val contents: Array<TdApi.InputMessageContent> = paths.take(10).map { p ->
+            if (p.endsWith(".jpg") || p.endsWith(".png"))
+                TdApi.InputMessagePhoto().apply { photo = TdApi.InputPhoto().apply { this.photo = TdApi.InputFileLocal(p); addedStickerFileIds = IntArray(0) } }
+            else TdApi.InputMessageDocument().apply { document = TdApi.InputDocument().apply { this.document = TdApi.InputFileLocal(p) } }
+        }.toTypedArray()
+        return if (contents.size == 1) call<TdApi.Message>(TdApi.SendMessage().apply { this.chatId = chatId; inputMessageContent = contents[0] }) != null
+            else call<TdApi.Messages>(TdApi.SendMessageAlbum().apply { this.chatId = chatId; inputMessageContents = contents }) != null
     }
 
     private fun onAuth(s: TdApi.AuthorizationState) {
