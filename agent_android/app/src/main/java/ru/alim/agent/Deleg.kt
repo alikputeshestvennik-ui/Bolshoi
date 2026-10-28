@@ -226,7 +226,7 @@ object Deleg {
             .put(JSONObject().put("role", "system").put("content", system(it)))
             .put(JSONObject().put("role", "user").put("content", "ПЕРЕПИСКА:\n" + dialog(it) + (if (extra.isNotBlank()) "\n\n$extra" else "") + "\n\nЧто делаешь дальше? Только JSON."))
         val r = runCatching { Llm.chat(Prefs.smartModel, msgs, 1500) }.getOrElse { e ->
-            runCatching { Llm.chat(Prefs.fastModel, msgs, 1500) }.getOrElse { report(it, "failed", "Переговорщик не смог подумать: ${e.message}"); return@withLock }
+            runCatching { Llm.chat(Prefs.fastModel, msgs, 1500) }.getOrElse { _ -> report(it, "failed", "Переговорщик не смог подумать: ${e.message}"); return@withLock }
         }
         val j = parse(r.text) ?: run { report(it, "failed", "Не разобрал ответ модели — остановил переписку, чтобы не наломать дров."); return@withLock }
         val outs = j.optJSONArray("send")?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { s -> s.isNotBlank() } }.orEmpty().take(2)
