@@ -380,8 +380,9 @@ object Tg {
         val shown = runCatching { org.json.JSONObject(Prefs.tgShown) }.getOrDefault(org.json.JSONObject())
         val fresh = System.currentTimeMillis() / 1000 - 2 * 86400
         val out = StringBuilder(); var n = 0
+        val delegChats = runCatching { Deleg.tgChats() }.getOrDefault(emptySet())
         for (id in ids) {
-            if (id == SERVICE_CHAT) continue
+            if (id == SERVICE_CHAT || id in delegChats) continue   // переписку поручений докладывает переговорщик
             val chat = call<TdApi.Chat>(TdApi.GetChat(id)) ?: continue
             if (chat.type !is TdApi.ChatTypePrivate) continue
             val last = chat.lastMessage ?: continue

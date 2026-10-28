@@ -168,6 +168,10 @@ object Deleg {
         return true
     }
 
+    /** id чатов Telegram, где сейчас идёт поручение. */
+    fun tgChats(): Set<Long> = items.filter { it.channel == "tg" && (it.active || System.currentTimeMillis() - maxOf(it.lastIn, it.lastOut) < 3 * 3600_000L) }
+        .mapNotNull { it.addr.toLongOrNull() }.toSet()
+
     /** Есть поручение, которое ждёт решения Алима (его следующее сообщение — это ответ). */
     fun waitingQuestion(): Item? = items.lastOrNull { it.status == "ask" }
 
@@ -196,7 +200,8 @@ object Deleg {
                 val ask = JSONArray()
                     .put(JSONObject().put("role", "system").put("content", "Сделай итог переписки для Алима: 2-4 строки, по делу. Что выяснили по поручению — точные данные дословно (что, сколько, где, когда). Чего не выяснили — так и скажи. Только текст, без JSON и без вступлений."))
                     .put(JSONObject().put("role", "user").put("content", "ПОРУЧЕНИЕ: ${it.goal}\n\nПЕРЕПИСКА:\n" + dialog(it)))
-                val txt = runCatching { Llm.chat(Prefs.smartModel, ask, 600, json = false).text.trim() }.getOrNull()?.takeIf { t -> t.isNotBlank() && !t.startsWith("{") }
+                val txt = runCatching { Llm.chat(Prefs.smartModel, ask, 600, json = false).text.trim() }.getOrNull()?.takeIf { t -> t.isNotBlank() && !t.startsWith("{") && !looksRefusal(t) }
+                    ?: runCatching { Llm.chat(altModel(), ask, 600, json = false).text.trim() }.getOrNull()?.takeIf { t -> t.isNotBlank() && !looksRefusal(t) }
                     ?: runCatching { Llm.chat(Prefs.fastModel, ask, 600, json = false).text.trim() }.getOrNull()?.takeIf { t -> t.isNotBlank() }
                     ?: ("Ответы ${it.who}:\n" + it.lines.filter { l -> !l.me }.takeLast(6).joinToString("\n") { l -> "• ${l.text}" })
                 report(it, "done", txt)
@@ -274,9 +279,12 @@ object Deleg {
         var j: JSONObject? = null
         var outs: List<String> = emptyList()
         var lastErr = ""
+        var refused = false
         for (attempt in 0 until 3) {
-            val model = if (attempt < 2) Prefs.smartModel else Prefs.fastModel
+            // Яндекс отказывается от «чувствительных» тем (религия, национальность…) — тогда сразу модель без такого фильтра
+            val model = if (refused || attempt == 2) altModel() else Prefs.smartModel
             val r = runCatching { Llm.chat(model, msgs, 2000) }.getOrElse { e -> lastErr = e.message ?: "ошибка"; null } ?: continue
+            if (looksRefusal(r.text)) { refused = true; lastErr = "модель отказалась"; it.err = "отказ: " + r.text.take(120).replace('\n', ' '); continue }
             val cand = parse(r.text)
             if (cand == null) { lastErr = "ответ не в формате"; it.err = "не JSON: " + r.text.take(160).replace('\n', ' '); msgs.put(JSONObject().put("role", "assistant").put("content", r.text.take(1500)))
                 msgs.put(JSONObject().put("role", "user").put("content", "Это не JSON. Повтори ответ СТРОГО одним JSON-объектом по схеме, без пояснений.")); continue }
@@ -411,6 +419,14 @@ object Deleg {
         }
         return sb.toString()
     }
+
+    private fun looksRefusal(t: String): Boolean {
+        val l = t.trim().lowercase().replace('ё', 'е')
+        return !l.startsWith("{") && l.length < 400 && listOf("я не могу", "не могу обсуждать", "давайте поговорим", "не могу помочь", "не могу ответить", "эту тему").any { l.contains(it) }
+    }
+
+    /** Модель без «яндексовского» фильтра тем: фон (Gemini), чат, если не Яндекс, иначе Claude Haiku. */
+    private fun altModel(): String = listOf(Prefs.smartModel, Prefs.bgModel, Prefs.fastModel).firstOrNull { !Llm.isYandex(it) } ?: "claude-5.5-haiku"
 
     /** Убрать заглушки [Имя] и лишние пробелы. */
     private fun cleanOut(t: String): String = t.replace(Regex(",?\\s*[\\[<{][^\\]>}]{1,25}[\\]>}]"), "").replace(Regex("\\s+([!?.,])"), "$1").trim()
