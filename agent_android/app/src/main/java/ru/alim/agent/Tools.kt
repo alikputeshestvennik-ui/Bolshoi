@@ -460,12 +460,13 @@ object Tools {
             Tg.sendMessage(chat.first, text)
         },
 
-        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\"} — ПОРУЧЕНИЕ: Пилот сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
+        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"sim\": \"1|2|оператор (для sms; две SIM и не сказано — спроси Алима)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\"} — ПОРУЧЕНИЕ: Пилот сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
             confirm = { a ->
                 val ch = if (a.optString("channel").startsWith("t", true)) "Telegram" else "SMS"
                 val to = a.optString(if (ch == "Telegram") "chat" else "number").ifBlank { a.optString("who") }
                 val att = Attach.sent.size
-                "Поручение от твоего имени\nКому: ${a.optString("who")} · $ch ($to)\nЗадача: ${a.optString("goal").take(400)}" + (if (att > 0) "\nФото: $att" else "") + "\n\nПишу сам и отчитаюсь итогом."
+                val sim = a.optString("sim").takeIf { it.isNotBlank() && ch == "SMS" }?.let { " · SIM $it" }.orEmpty()
+                "Поручение от твоего имени\nКому: ${a.optString("who")} · $ch ($to)$sim\nЗадача: ${a.optString("goal").take(400)}" + (if (att > 0) "\nФото: $att" else "") + "\n\nПишу сам и отчитаюсь итогом."
             }) t@{ ctx, a ->
             val who = a.optString("who").trim(); val goal = a.optString("goal").trim()
             if (who.isEmpty() || goal.isEmpty()) return@t "нужно кому и что поручить"
@@ -480,6 +481,8 @@ object Tools {
                 Deleg.start(ctx, chat.second, "tg", chat.first.toString(), goal, Attach.sent.toList())
             } else {
                 if (!has(ctx, Manifest.permission.SEND_SMS)) return@t "нет разрешения на SMS"
+                Device.simChoice(ctx, a.optString("sim"))?.let { return@t it }
+                val subId = Device.pickSim(ctx, a.optString("sim")) ?: -1
                 var num = digits(a.optString("number"))
                 var name = who
                 if (num.length < 5) {
@@ -493,7 +496,7 @@ object Tools {
                     if (found.size > 1) return@t "в контактах несколько: " + found.values.joinToString("; ") { it.replace("|", " ") } + " — спроси у Алима, кому"
                     found.values.first().split("|").let { name = it[0]; num = it[1] }
                 }
-                Deleg.start(ctx, name, "sms", num, goal, Attach.sent.toList())
+                Deleg.start(ctx, name, "sms", num, goal, Attach.sent.toList(), subId)
             }
         },
 

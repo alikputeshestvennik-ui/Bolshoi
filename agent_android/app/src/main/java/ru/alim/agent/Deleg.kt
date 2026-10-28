@@ -37,6 +37,7 @@ object Deleg {
         var question: String = "", var report: String = "",
         var sentFiles: Boolean = false, var nudged: Boolean = false,
         var created: Long = System.currentTimeMillis(), var lastIn: Long = 0, var lastOut: Long = 0,
+        var subId: Int = -1, var err: String = "",
     ) {
         val active get() = status == "active" || status == "ask"
         val title get() = "Поручение #${id % 1000}: $who"
@@ -81,7 +82,8 @@ object Deleg {
                 val files = o.optJSONArray("files")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty()
                 val it = Item(o.getLong("id"), o.getString("who"), o.getString("ch"), o.getString("addr"), o.getString("goal"), files,
                     status = o.optString("st", "active"), question = o.optString("q"), report = o.optString("rep"),
-                    sentFiles = o.optBoolean("sf"), nudged = o.optBoolean("nu"), created = o.optLong("cr"), lastIn = o.optLong("li"), lastOut = o.optLong("lo"))
+                    sentFiles = o.optBoolean("sf"), nudged = o.optBoolean("nu"), created = o.optLong("cr"), lastIn = o.optLong("li"), lastOut = o.optLong("lo"),
+                    subId = o.optInt("sub", -1), err = o.optString("err"))
                 o.optJSONArray("lines")?.let { l -> for (k in 0 until l.length()) l.getJSONObject(k).let { x -> it.lines += Line(x.optBoolean("me"), x.optString("t"), x.optLong("ts")) } }
                 items += it
             }
@@ -98,7 +100,7 @@ object Deleg {
         val keep = items.filter { it.active } + items.filter { !it.active }.takeLast(20)
         for (it in keep) a.put(JSONObject().put("id", it.id).put("who", it.who).put("ch", it.channel).put("addr", it.addr)
             .put("goal", it.goal).put("files", JSONArray(it.files)).put("st", it.status).put("q", it.question).put("rep", it.report)
-            .put("sf", it.sentFiles).put("nu", it.nudged).put("cr", it.created).put("li", it.lastIn).put("lo", it.lastOut)
+            .put("sf", it.sentFiles).put("nu", it.nudged).put("cr", it.created).put("li", it.lastIn).put("lo", it.lastOut).put("sub", it.subId).put("err", it.err)
             .put("lines", JSONArray().apply { it.lines.forEach { l -> put(JSONObject().put("me", l.me).put("t", l.text).put("ts", l.ts)) } }))
         runCatching { file(ctx).writeText(a.toString()) }
     }
@@ -106,7 +108,7 @@ object Deleg {
     // ——— старт ———
 
     /** Запустить поручение. addr — номер телефона (sms) или id чата Telegram (tg). */
-    fun start(ctx: Context, who: String, channel: String, addr: String, goal: String, attach: List<Attach.Att>): String {
+    fun start(ctx: Context, who: String, channel: String, addr: String, goal: String, attach: List<Attach.Att>, subId: Int = -1): String {
         init(ctx)
         if (items.count { it.active } >= 5) return "уже идут 5 поручений — дождись итогов или останови одно"
         if (items.any { it.active && it.channel == channel && sameAddr(it.addr, addr, channel) })
@@ -121,7 +123,7 @@ object Deleg {
                 f.path
             }.getOrNull()
         }
-        val it = Item(System.currentTimeMillis(), who, channel, addr, goal, files)
+        val it = Item(System.currentTimeMillis(), who, channel, addr, goal, files, subId = subId)
         items += it; save()
         if (channel == "tg") runCatching { Tg.start(ctx.applicationContext) }
         awake(true)
@@ -145,6 +147,9 @@ object Deleg {
     fun onIncoming(ctx: Context, channel: String, addr: String, text: String) {
         init(ctx)
         val it = items.firstOrNull { x -> x.active && x.channel == channel && sameAddr(x.addr, addr, channel) } ?: return
+        // эхо своего же SMS (пишем на свой второй номер) — не считаем ответом собеседника
+        val now = System.currentTimeMillis()
+        if (it.lines.any { l -> l.me && now - l.ts < 15 * 60_000L && l.text.trim() == text.trim() }) return
         scope.launch {
             lock.withLock { it.lines += Line(false, text.take(2000), System.currentTimeMillis()); it.lastIn = System.currentTimeMillis(); save() }
             if (it.status == "ask") return@launch           // ждём решения Алима — потом разберём всё разом
@@ -182,7 +187,8 @@ object Deleg {
 
     fun list(): String = items.takeLast(8).reversed().joinToString("\n") { x ->
         val st = when (x.status) { "active" -> "идёт"; "ask" -> "ждёт тебя: ${x.question}"; "done" -> "готово"; "failed" -> "не вышло"; else -> "остановлено" }
-        "#${x.id % 1000} ${x.who} — $st" + (if (x.report.isNotBlank()) "\n  ${x.report.take(300)}" else "")
+        "#${x.id % 1000} ${x.who} — $st · отправлено ${x.lines.count { it.me }}, получено ${x.lines.count { !it.me }}" +
+            (if (x.err.isNotBlank()) " · ошибка: ${x.err}" else "") + (if (x.report.isNotBlank()) "\n  ${x.report.take(300)}" else "")
     }.ifBlank { "поручений не было" }
 
     // ——— мозг переговорщика ———
@@ -235,7 +241,8 @@ object Deleg {
         if (it.lines.count { l -> l.me } + safe.size > MAX_OUT) { report(it, "failed", "Переписка затянулась (больше $MAX_OUT сообщений) — остановился. Последнее от ${it.who}: «${it.lines.lastOrNull { l -> !l.me }?.text?.take(200).orEmpty()}»"); return@withLock }
         for ((k, s) in safe.withIndex()) {
             if (k > 0) delay(2500L + s.length * 25L)   // как человек: пауза между репликами
-            if (!send(ctx, it, s)) { report(it, "failed", "Не получилось отправить сообщение ${it.who}."); return@withLock }
+            val sendErr = send(ctx, it, s)
+            if (sendErr != null) { it.err = sendErr; report(it, "failed", "Не получилось отправить сообщение ${it.who}: $sendErr"); return@withLock }
             it.lines += Line(true, s, System.currentTimeMillis()); it.lastOut = System.currentTimeMillis()
         }
         if (j.optBoolean("attach") && !it.sentFiles && it.files.isNotEmpty() && it.channel == "tg") {
@@ -282,14 +289,40 @@ object Deleg {
         }
     }
 
-    private suspend fun send(ctx: Context, it: Item, text: String): Boolean = when (it.channel) {
-        "tg" -> Tg.sendText(it.addr.toLong(), text)
-        else -> withContext(Dispatchers.Main) {
-            runCatching {
-                val sm: SmsManager = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(SmsManager::class.java) else @Suppress("DEPRECATION") SmsManager.getDefault()
-                sm.sendMultipartTextMessage(it.addr, null, sm.divideMessage(text), null, null); true
-            }.getOrDefault(false)
-        }
+    /** Отправка. null — ушло; иначе текст ошибки. SMS ждём подтверждения от оператора. */
+    private suspend fun send(ctx: Context, it: Item, text: String): String? = when (it.channel) {
+        "tg" -> if (Tg.sendText(it.addr.toLong(), text)) null else "Telegram не принял сообщение"
+        else -> runCatching {
+            val base: SmsManager = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(SmsManager::class.java) else @Suppress("DEPRECATION") SmsManager.getDefault()
+            val sm = if (it.subId >= 0) runCatching { base.createForSubscriptionId(it.subId) }.getOrDefault(base) else base
+            val parts = sm.divideMessage(text)
+            val action = "ru.alim.agent.DELEG_SENT_${System.nanoTime()}"
+            val res = kotlinx.coroutines.withTimeoutOrNull(60_000) {
+                kotlinx.coroutines.suspendCancellableCoroutine<Int> { cont ->
+                    var left = parts.size; var worst = android.app.Activity.RESULT_OK
+                    val rc = object : android.content.BroadcastReceiver() {
+                        override fun onReceive(c: Context, i: android.content.Intent) {
+                            if (resultCode != android.app.Activity.RESULT_OK) worst = resultCode
+                            if (--left <= 0) { runCatching { ctx.unregisterReceiver(this) }; if (cont.isActive) cont.resumeWith(Result.success(worst)) }
+                        }
+                    }
+                    androidx.core.content.ContextCompat.registerReceiver(ctx, rc, android.content.IntentFilter(action), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+                    cont.invokeOnCancellation { runCatching { ctx.unregisterReceiver(rc) } }
+                    val pis = ArrayList(parts.indices.map { k ->
+                        android.app.PendingIntent.getBroadcast(ctx, (System.nanoTime() % 100000).toInt() + k,
+                            android.content.Intent(action).setPackage(ctx.packageName), android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_ONE_SHOT)
+                    })
+                    sm.sendMultipartTextMessage(it.addr, null, parts, pis, null)
+                }
+            }
+            when (res) {
+                null -> null   // подтверждение не пришло за минуту — считаем, что ушло (у некоторых операторов так)
+                android.app.Activity.RESULT_OK -> null
+                SmsManager.RESULT_ERROR_NO_SERVICE -> "нет сети на SIM"
+                SmsManager.RESULT_ERROR_RADIO_OFF -> "SIM выключена или авиарежим"
+                else -> "оператор отклонил SMS (код $res)"
+            }
+        }.getOrElse { e -> "SMS не отправилось: ${e.message}" }
     }
 
     private fun parse(t: String): JSONObject? {
