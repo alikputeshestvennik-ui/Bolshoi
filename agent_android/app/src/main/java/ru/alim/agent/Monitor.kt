@@ -226,7 +226,8 @@ class SmsIn : BroadcastReceiver() {
             ctx.contentResolver.query(Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(from)),
                 arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
         }.getOrNull() ?: from
+        // ответ по поручению (или эхо своего SMS) — его разбирает переговорщик, мониторинг не дёргаем
+        if (runCatching { Deleg.onIncoming(ctx, "sms", from, text) }.getOrDefault(false)) return
         Events.add(ctx, "sms", "SMS", name, "", text)
-        runCatching { Deleg.onIncoming(ctx, "sms", from, text) }
     }
 }
