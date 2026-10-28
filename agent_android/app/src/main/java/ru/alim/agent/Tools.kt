@@ -65,10 +65,6 @@ object Tools {
 
     private fun has(ctx: Context, p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
     private fun digits(s: String) = s.filter { it.isDigit() || it == '+' }
-    private fun contactName(ctx: Context, num: String): String? = runCatching {
-        ctx.contentResolver.query(Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(num)),
-            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
-    }.getOrNull()
     private val CYR = "а б в г д е ё ж з и й к л м н о п р с т у ф х ц ч ш щ ъ ы ь э ю я".split(" ")
     private val LAT = "a b v g d e e zh z i y k l m n o p r s t u f h ts ch sh sch   y   e yu ya".split(" ")
     /** Грубая транслитерация, чтобы «спортмастер» находил отправителя SPORTMASTER. */
