@@ -157,7 +157,13 @@ object Deleg {
             // человек может дописывать — ждём тишины, потом разбираем всё целиком
             waits[it.id]?.cancel()
             awake(true)
-            waits[it.id] = scope.launch { delay(SETTLE_MS); think(it, ""); waits.remove(it.id); awake(false) }
+            // отменяется только ожидание «дописывает ли»; само раздумье и отправка не обрываются никогда —
+            // новое сообщение во время раздумья просто запустит следующий разбор после него
+            waits[it.id] = scope.launch {
+                delay(SETTLE_MS)
+                waits.remove(it.id)
+                scope.launch { think(it, ""); awake(false) }
+            }
         }
         return true
     }
