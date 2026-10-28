@@ -114,6 +114,7 @@ object Tools {
 
         Tool("sms_send", "{\"number\": \"+7978…\", \"name\": \"Саша\", \"text\": \"…\", \"sim\": \"1|2|оператор, необяз.\"} — отправить SMS. Две SIM и sim не указан — спроси у Алима, с какой",
             confirm = { a -> "SMS ${a.optString("name").ifBlank { a.optString("number") }}:\n«${a.optString("text")}»" }) t@{ ctx, a ->
+            if (Agent.cur().delegIntent) return@t "СТОП: это поручение — разовые сообщения тут нельзя. Вызови delegate (channel, number/chat, sim, goal с полной задачей Алима) — переговорщик сам поздоровается, будет ждать ответы и пришлёт итог."
             if (!has(ctx, Manifest.permission.SEND_SMS)) return@t "нет разрешения на SMS"
             val n = digits(a.optString("number")); val text = a.optString("text")
             if (n.length < 3 || text.isBlank()) return@t "нужны номер и текст"
@@ -453,6 +454,7 @@ object Tools {
 
         Tool("tg_send", "{\"chat\": \"Егор\", \"text\": \"буду через 10 минут\"} — отправить сообщение в личном Telegram Алима. ТОЛЬКО по прямой просьбе Алима. Подтверждение покажет приложение",
             confirm = { a -> "Отправить в Telegram «${a.optString("chat")}»:\n${a.optString("text")}" }) t@{ _, a ->
+            if (Agent.cur().delegIntent) return@t "СТОП: это поручение — разовые сообщения тут нельзя. Вызови delegate (channel, number/chat, sim, goal с полной задачей Алима) — переговорщик сам поздоровается, будет ждать ответы и пришлёт итог."
             if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён"
             val q = a.optString("chat").trim(); val text = a.optString("text").trim()
             if (q.isEmpty() || text.isEmpty()) return@t "нужно кому и что"
@@ -481,8 +483,9 @@ object Tools {
                 Deleg.start(ctx, chat.second, "tg", chat.first.toString(), goal, Attach.sent.toList())
             } else {
                 if (!has(ctx, Manifest.permission.SEND_SMS)) return@t "нет разрешения на SMS"
-                Device.simChoice(ctx, a.optString("sim"))?.let { return@t it }
-                val subId = Device.pickSim(ctx, a.optString("sim")) ?: -1
+                val defSms = runCatching { android.telephony.SubscriptionManager.getDefaultSmsSubscriptionId() }.getOrDefault(-1)
+                if (a.optString("sim").isBlank() && defSms < 0) Device.simChoice(ctx, "")?.let { return@t "$it (потом снова вызови delegate с sim)" }
+                val subId = Device.pickSim(ctx, a.optString("sim")) ?: defSms
                 var num = digits(a.optString("number"))
                 var name = who
                 if (num.length < 5) {

@@ -123,6 +123,8 @@ object Agent {
         val busy: Boolean get() = phase == Phase.WORKING || phase == Phase.CONFIRM
         /** Быстрая полоса сейчас обрабатывает сообщение (стримит простой ответ до запуска агента). */
         @Volatile var fastBusy = false
+        /** Задача — поручение («свяжись с …, договорись …»): одиночные SMS/Telegram запрещены, только delegate. Держится и в продолжениях (ответ про SIM и т.п.). */
+        @Volatile var delegIntent = false
 
         fun start(text: String) {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
@@ -131,6 +133,7 @@ object Agent {
             startedAt = System.currentTimeMillis(); endedAt = 0L
             model = fast(); phase = Phase.WORKING
             lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
+            delegIntent = Regex("свяж(ись|итесь)|договор(ись|иться)|уточни у|спроси у|узнай у|напиши .{0,30}(и|чтобы) (уточни|спроси|узнай|договор)|переговор", RegexOption.IGNORE_CASE).containsMatchIn(t)
             job = scope.launch(RunCtx(this)) { loop(t, null, looksHard(t)) }
         }
 
