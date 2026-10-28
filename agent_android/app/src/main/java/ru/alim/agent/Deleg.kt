@@ -248,7 +248,7 @@ object Deleg {
             val model = if (attempt < 2) Prefs.smartModel else Prefs.fastModel
             val r = runCatching { Llm.chat(model, msgs, 2000) }.getOrElse { e -> lastErr = e.message ?: "ошибка"; null } ?: continue
             val cand = parse(r.text)
-            if (cand == null) { lastErr = "ответ не в формате"; msgs.put(JSONObject().put("role", "assistant").put("content", r.text.take(1500)))
+            if (cand == null) { lastErr = "ответ не в формате"; it.err = "не JSON: " + r.text.take(160).replace('\n', ' '); msgs.put(JSONObject().put("role", "assistant").put("content", r.text.take(1500)))
                 msgs.put(JSONObject().put("role", "user").put("content", "Это не JSON. Повтори ответ СТРОГО одним JSON-объектом по схеме, без пояснений.")); continue }
             val o = cand.optJSONArray("send")?.let { a -> (0 until a.length()).map { k -> cleanOut(a.optString(k)) }.filter { x -> x.isNotBlank() } }.orEmpty().take(2)
             val bad = violation(it, o)
@@ -358,7 +358,27 @@ object Deleg {
         if (s < 0 || e <= s) return null
         val body = x.substring(s, e + 1)
         return runCatching { JSONObject(body) }.getOrNull()
-            ?: runCatching { JSONObject(body.replace(Regex(",\\s*([}\\]])"), "$1")) }.getOrNull()   // лишние запятые
+            ?: runCatching { JSONObject(escapeNewlines(body)) }.getOrNull()                                  // переносы строк внутри строк (итог в 2-4 строки)
+            ?: runCatching { JSONObject(escapeNewlines(body).replace(Regex(",\\s*([}\\]])"), "$1")) }.getOrNull()   // + лишние запятые
+    }
+
+    /** Сырые переносы строк внутри "строк" JSON → \\n (модели часто пишут многострочный report как есть). */
+    private fun escapeNewlines(b: String): String {
+        val sb = StringBuilder(); var inStr = false; var esc = false
+        for (ch in b) {
+            if (inStr) {
+                when {
+                    esc -> { sb.append(ch); esc = false }
+                    ch == '\\' -> { sb.append(ch); esc = true }
+                    ch == '"' -> { sb.append(ch); inStr = false }
+                    ch == '\n' -> sb.append("\\n")
+                    ch == '\r' -> {}
+                    ch == '\t' -> sb.append("\\t")
+                    else -> sb.append(ch)
+                }
+            } else { if (ch == '"') inStr = true; sb.append(ch) }
+        }
+        return sb.toString()
     }
 
     /** Убрать заглушки [Имя] и лишние пробелы. */
