@@ -249,10 +249,10 @@ object AutoReply {
         val key = m.pkg + m.from
         // Знакомым из контактов не отвечаем никогда (если Алим сам не разрешил) — только уведомление
         val known = inContacts(ctx, m.from)
-        if (known && !Prefs.replyKnown) {
-            notify(ctx, "${m.from} · ${m.app}", m.text.take(200))
-            return
-        }
+        // Тишина: сообщение уже показал сам мессенджер — дублировать его в шторке незачем
+        if (known && !Prefs.replyKnown) return
+        // с этим человеком идёт поручение — отвечает переговорщик, автоответчик молчит
+        if (runCatching { Deleg.isPartner(m.from) }.getOrDefault(false)) return
         val now = System.currentTimeMillis()
         // Не переписываемся с собеседником сами с собой: не чаще раза в 2 минуты
         if (now - (lastReply[key] ?: 0L) < 120_000L) return
@@ -295,9 +295,8 @@ object AutoReply {
                         else -> notify(ctx, "Не смог ответить: ${m.from}", "${res.text}. Хотел ответить: «$reply»\n$note")
                     }
                 }
-            } else {
-                notify(ctx, "${m.from} · ${m.app}", note)
             }
+            // решил не отвечать — молчим: уведомление о самом сообщении уже есть от мессенджера
             Journal.add(ctx, TaskRec(now, "Автоответ: ${m.from}", 1, Agent.short(model), r.cost(model), true))
         } catch (e: Exception) {
             notify(ctx, "Автоответчик не сработал", e.message ?: "ошибка")

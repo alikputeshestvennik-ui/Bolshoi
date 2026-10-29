@@ -152,7 +152,7 @@ class BuildWatchWorker(ctx: Context, params: androidx.work.WorkerParameters) : a
         // в фоне — только уведомление (в чат запишет само приложение при открытии)
         runCatching { Prefs.init(applicationContext); BuildWatch.check(applicationContext) }
         // заодно разбудить поручения (молчание собеседника, напоминание) — WorkManager приходит и в режиме сна
-        runCatching { Chat.init(applicationContext); Deleg.init(applicationContext); Deleg.tick() }
+        runCatching { Chat.init(applicationContext); Deleg.init(applicationContext); Watch.init(applicationContext); Deleg.tick() }
         return Result.success()
     }
 }

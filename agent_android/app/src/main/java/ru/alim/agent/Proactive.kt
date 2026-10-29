@@ -168,7 +168,7 @@ class ArturService : Service() {
         Prefs.init(this); Th.load()
         Agent.app = applicationContext
         Chat.init(this); Online.init(this)
-        Deleg.init(this)   // поручения переживают закрытие приложения и перезагрузку
+        Deleg.init(this); Watch.init(this)   // поручения переживают закрытие приложения и перезагрузку
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel("artur_bg") == null)
             nm.createNotificationChannel(NotificationChannel("artur_bg", "${Persona.name} рядом (фон)", NotificationManager.IMPORTANCE_MIN))

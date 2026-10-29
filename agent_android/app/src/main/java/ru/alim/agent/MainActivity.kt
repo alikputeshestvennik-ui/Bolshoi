@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         Th.load()
         Agent.app = applicationContext
         Chat.init(this)
-        Deleg.init(this)
+        Deleg.init(this); Watch.init(this)
         Online.init(this)
         YaMusic.init(this)
         YtMe.init(this)

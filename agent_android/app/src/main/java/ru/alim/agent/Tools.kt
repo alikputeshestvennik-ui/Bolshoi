@@ -462,16 +462,23 @@ object Tools {
             Tg.sendMessage(chat.first, text)
         },
 
-        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"sim\": \"1|2|оператор (для sms; две SIM и не сказано — спроси Алима)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\"} — ПОРУЧЕНИЕ: Пилот сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
+        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"sim\": \"1|2|оператор (для sms; две SIM и не сказано — спроси Алима)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\", \"start_at\": \"ГГГГ-ММ-ДДTЧЧ:ММ — начать позже (пусто — сразу)\", \"repeat\": \"daily 10:00 | weekdays 18:00 | weekly mon,fri 10:00 | every 2h — повторять по расписанию (пусто — один раз)\", \"until\": \"ГГГГ-ММ-ДД — до какого дня повторять\"} — ПОРУЧЕНИЕ: Пилот сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
             confirm = { a ->
                 val ch = if (a.optString("channel").startsWith("t", true)) "Telegram" else "SMS"
                 val to = a.optString(if (ch == "Telegram") "chat" else "number").ifBlank { a.optString("who") }
                 val att = Attach.sent.size
                 val sim = a.optString("sim").takeIf { it.isNotBlank() && ch == "SMS" }?.let { " · SIM $it" }.orEmpty()
-                "Поручение от твоего имени\nКому: ${a.optString("who")} · $ch ($to)$sim\nЗадача: ${a.optString("goal").take(400)}" + (if (att > 0) "\nФото: $att" else "") + "\n\nПишу сам и отчитаюсь итогом."
+                val rep = a.optString("repeat").trim()
+                val sa = Deleg.parseWhen(a.optString("start_at"))
+                val wh = when { rep.isNotEmpty() -> "\nКогда: ${Deleg.humanRepeat(rep)}" + (Deleg.parseWhen(a.optString("until"))?.let { u -> ", до ${Deleg.whenText(u)}" } ?: "")
+                    sa != null && sa > System.currentTimeMillis() + 60_000L -> "\nКогда: ${Deleg.whenText(sa)}"; else -> "" }
+                "Поручение от твоего имени\nКому: ${a.optString("who")} · $ch ($to)$sim\nЗадача: ${a.optString("goal").take(400)}$wh" + (if (att > 0) "\nФото: $att" else "") + "\n\nПишу сам и отчитаюсь итогом."
             }) t@{ ctx, a ->
             val who = a.optString("who").trim(); val goal = a.optString("goal").trim()
             if (who.isEmpty() || goal.isEmpty()) return@t "нужно кому и что поручить"
+            val startAt = Deleg.parseWhen(a.optString("start_at")) ?: 0L
+            val repeat = a.optString("repeat").trim()
+            val until = Deleg.parseWhen(a.optString("until"))?.let { u -> if (a.optString("until").trim().length <= 10) u + 14 * 3600_000L else u } ?: 0L
             val tg = a.optString("channel").startsWith("t", true)
             if (tg) {
                 if (Tg.state != Tg.St.READY) return@t "личный Telegram не подключён — могу через SMS, если есть номер"
@@ -480,7 +487,7 @@ object Tools {
                 val words = who.lowercase().split(Regex("\\s+")).filter { it.length >= 3 }
                 if (!q.startsWith("@") && words.isNotEmpty() && words.none { chat.second.lowercase().contains(it.take(4)) })
                     return@t "в Telegram нашёлся «${chat.second}» — это не похоже на «$who». Уточни у Алима"
-                Deleg.start(ctx, chat.second, "tg", chat.first.toString(), goal, Attach.sent.toList())
+                Deleg.start(ctx, chat.second, "tg", chat.first.toString(), goal, Attach.sent.toList(), startAt = startAt, repeat = repeat, until = until)
             } else {
                 if (!has(ctx, Manifest.permission.SEND_SMS)) return@t "нет разрешения на SMS"
                 val defSms = runCatching { android.telephony.SubscriptionManager.getDefaultSmsSubscriptionId() }.getOrDefault(-1)
@@ -501,7 +508,7 @@ object Tools {
                 }
                 // номер дан напрямую — подпишем человека именем из контактов, если он там есть
                 if (name.any { it.isDigit() } && name.filter { it.isDigit() }.length >= 7) contactName(ctx, num)?.let { name = it }
-                Deleg.start(ctx, name, "sms", num, goal, Attach.sent.toList(), subId)
+                Deleg.start(ctx, name, "sms", num, goal, Attach.sent.toList(), subId, startAt = startAt, repeat = repeat, until = until)
             }
         },
 
@@ -516,6 +523,15 @@ object Tools {
         Tool("delegate_stop", "{\"id\": 123} — остановить поручение (больше не писать собеседнику)") t@{ ctx, a ->
             Deleg.stop(ctx, a.optLong("id").takeIf { it > 0 })
         },
+
+        Tool("watch_start", "{\"topic\": \"Крымский мост\", \"what\": \"что именно отслеживать: открыт/закрыт, ограничения, пробки\", \"sources\": [\"@ник_канала\", \"https://…\", \"поисковый запрос\"], \"every_min\": 30, \"until\": \"ГГГГ-ММ-ДДTЧЧ:ММ (пусто — до конца дня)\"} — СЛЕЖКА: Пилот сам проверяет тему каждые N минут (≥15) в нескольких источниках, первый результат присылает сразу, дальше — ТОЛЬКО при изменениях, до указанного времени. Для «проверяй каждые …», «следи за …», «сообщай, если изменится». Источники подбери сами: официальный канал + новости + поиск") t@{ ctx, a ->
+            val topic = a.optString("topic").trim().ifBlank { return@t "за чем следить?" }
+            val src = a.optJSONArray("sources")?.let { s -> (0 until s.length()).map { s.optString(it) } }
+                ?: a.optString("sources").split(',', ';').map { it.trim() }
+            Watch.start(ctx, topic, a.optString("what").trim(), src, a.optInt("every_min", 60), Deleg.parseWhen(a.optString("until")) ?: 0L)
+        },
+        Tool("watch_stop", "{\"id\": 123} — остановить слежку («хватит следить», «больше не проверяй»)") t@{ ctx, a -> Watch.stop(ctx, a.optLong("id").takeIf { it > 0 }) },
+        Tool("watch_list", "{} — какие слежки идут и что сейчас") { ctx, _ -> Watch.init(ctx); Watch.list() },
 
         Tool("delegate_list", "{} — поручения: что идёт, что ждёт Алима, итоги") { ctx, _ -> Deleg.init(ctx); Deleg.list() },
 
