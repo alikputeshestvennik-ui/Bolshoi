@@ -485,6 +485,9 @@ object Deleg {
 
     private fun tell(ctx: Context, it: Item, text: String, short: String) {
         scope.launch(Dispatchers.Main) { runCatching { Chat.main.say(text) } }
+        val important = it.status == "ask"
+        Alert.fire(ctx, if (important) Alert.IMPORTANT else Alert.NORMAL,
+            if (important) "${it.who}. Нужно твоё решение." else "${it.who}: поручение ${if (it.status == "done") "выполнено" else "не получилось"}.")
         Monitor.notify(ctx, 7400 + (it.id % 50).toInt(), "${it.who}: $short", text.lines().drop(1).joinToString(" ").take(300), open = "chat:main")
     }
 

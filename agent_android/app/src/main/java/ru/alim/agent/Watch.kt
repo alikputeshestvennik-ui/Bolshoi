@@ -153,6 +153,7 @@ object Watch {
             runCatching { Chat.main.add(Msg(Chat.main.newId(), false, text, System.currentTimeMillis(), status = "read", tgPhotos = media.joinToString("\n"))) }
         }
         Monitor.notify(ctx, 7500 + (it.id % 50).toInt(), it.topic, text.lines().drop(1).joinToString(" ").take(200), open = "chat:main")
+        Alert.fire(ctx, Alert.NORMAL)
     }
 
     private suspend fun check(it: Item, first: Boolean) = lock.withLock {
@@ -233,6 +234,8 @@ object Watch {
 
     private fun tell(it: Item, text: String, short: String) {
         val ctx = app ?: return
+        val change = text.startsWith("🔔")
+        Alert.fire(ctx, if (change) Alert.IMPORTANT else Alert.NORMAL, if (change) "${it.topic}: ${short.take(160)}" else "")
         scope.launch(Dispatchers.Main) { runCatching { Chat.main.say(text) } }
         Monitor.notify(ctx, 7500 + (it.id % 50).toInt(), it.topic, short.take(200), open = "chat:main")
     }

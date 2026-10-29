@@ -645,6 +645,22 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                     Toggle(hap) { hap = it; Prefs.haptics = it }
                 }
+                var av by remember { mutableStateOf(Prefs.alertVoice) }
+                var af by remember { mutableStateOf(Prefs.alertFlash) }
+                var aw by remember { mutableStateOf(Prefs.alertWake) }
+                Text("Сигналы важного", style = body(15, FontWeight.SemiBold))
+                Text("Важное (нужно твоё решение, изменение в слежке) — голос, 3 вспышки, экран. Обычное — 1 вспышка и экран. В «Не беспокоить» — тишина; в беззвучном — без голоса (в наушниках говорит).",
+                    style = body(12, color = Muted), lineHeight = 16.sp)
+                listOf(Triple("Голос", av) { v: Boolean -> av = v; Prefs.alertVoice = v },
+                    Triple("Вспышка", af) { v: Boolean -> af = v; Prefs.alertFlash = v },
+                    Triple("Будить экран (внешний на сложенном)", aw) { v: Boolean -> aw = v; Prefs.alertWake = v }).forEach { (name, on, set) ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(name, style = body(14), modifier = Modifier.weight(1f))
+                        Toggle(on) { set(it) }
+                    }
+                }
+                val actx = androidx.compose.ui.platform.LocalContext.current
+                BigButton("Проверить сигналы", { Alert.test(actx) })
                 var f3 by remember { mutableStateOf(Prefs.flight3d) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
