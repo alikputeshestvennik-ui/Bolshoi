@@ -350,7 +350,20 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     val picked = m.id in ChatSel.ids
     val lit = ChatJump.glow == m.id
     // результат задачи — «лист», как в макете: крупный вывод, текст, файлы иконками
-    if (!m.me && !ChatSel.on && (m.files.isNotBlank() || (m.meta.isNotBlank() && m.text.length > 260))) {
+    if (!m.me && !ChatSel.on && m.files.isNotBlank()) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            ResultCard(m, compact = false, lit = lit) {}
+            if (showButtons && m.buttons.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                m.buttons.forEach { b ->
+                    Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble.copy(alpha = 0.85f))
+                        .border(1.dp, Teal.copy(alpha = 0.5f), RoundedCornerShape(18.dp)).clickable { chat.send(b) }.padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center) { Text(b, style = body(14, FontWeight.SemiBold, Teal)) }
+                }
+            }
+        }
+        return
+    }
+    if (!m.me && !ChatSel.on && m.meta.isNotBlank() && m.text.length > 260) {
         SheetCard(m, lit, showButtons, chat)
         return
     }

@@ -103,7 +103,10 @@ fun DashScreen(go: (Scr) -> Unit) {
                 // свежий короткий ответ Пилота — чтобы не ходить в журнал
                 val lastMe = chat.msgs.lastOrNull { it.me }
                 val reply = chat.msgs.lastOrNull { !it.me && !it.note }
-                if (reply != null && lastMe != null && reply.ts >= lastMe.ts && System.currentTimeMillis() - reply.ts < 3 * 3600_000L && t >= 0) {
+                if (reply != null && lastMe != null && reply.ts >= lastMe.ts && System.currentTimeMillis() - reply.ts < 3 * 3600_000L && t >= 0 && reply.files.isNotBlank()) {
+                    Text("› " + lastMe.text.ifBlank { "голосовое" }, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    ResultCard(reply, compact = true) { ChatJump.to(reply.id); go(Scr.Journal) }
+                } else if (reply != null && lastMe != null && reply.ts >= lastMe.ts && System.currentTimeMillis() - reply.ts < 3 * 3600_000L && t >= 0) {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(reply.id); go(Scr.Journal) }.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("› " + lastMe.text.ifBlank { "голосовое" }, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -156,12 +159,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                 val doneDeleg = Deleg.items.filter { it.status == "done" && maxOf(it.lastIn, it.lastOut, it.created) > since }.takeLast(2).reversed()
                 if (done.isNotEmpty() || doneDeleg.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SecTitle("Готово", Muted)
-                    done.forEach { m ->
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(m.id); go(Scr.Journal) }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(m.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(), style = body(14).copy(lineHeight = 20.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
-                            FileCards(Chat.filesOf(m))
-                        }
-                    }
+                    done.forEach { m -> ResultCard(m, compact = true) { ChatJump.to(m.id); go(Scr.Journal) } }
                     doneDeleg.forEach { d ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(ChatJump.find(chat, d.who)); go(Scr.Journal) }.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically) {
@@ -300,4 +298,103 @@ fun SidePanel(scr: Scr, go: (Scr) -> Unit) {
             }
         }
     }
+}
+
+
+/**
+ * Карточка результата — как в «Бортжурнале»: вывод заголовком, коротко текст, мини-таблица из Excel,
+ * файлы квадратными иконками и одна кнопка «отправить». Одна и та же на панели и в журнале.
+ */
+@Composable
+fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    val files = remember(m.files) { Chat.filesOf(m).distinctBy { it.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "") } }
+    val parts = remember(m.text) { splitResult(m.text) }
+    val preview by androidx.compose.runtime.produceState<List<List<String>>?>(null, m.files) {
+        value = files.firstOrNull { it.mime == Docs.XLSX }?.let { f ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { tablePreview(ctx, f.uri) }.getOrNull() }
+        }
+    }
+    val shape = RoundedCornerShape(20.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).then(if (lit) Modifier.border(1.dp, Teal, shape) else Modifier)
+        .clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (parts.title.isNotBlank()) Text(parts.title, style = TextStyle(fontFamily = Fonts.display, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = Ink))
+        if (parts.body.isNotBlank()) Text(parts.body, style = body(14, color = Ink.copy(alpha = 0.82f)).copy(lineHeight = 20.sp),
+            maxLines = if (compact) 3 else 40, overflow = TextOverflow.Ellipsis)
+        preview?.takeIf { it.size >= 2 }?.let { rows -> MiniTable(rows) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            files.forEach { f ->
+                val xl = f.mime == Docs.XLSX
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (xl) Color(0xFF1E7A4C) else Color(0xFF2B579A))
+                    .clickable(onClickLabel = "Открыть ${f.name}") {
+                        runCatching { ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
+                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }, contentAlignment = Alignment.Center) { Text(if (xl) "XLS" else "DOC", style = body(11, FontWeight.Bold, Color.White)) }
+            }
+            if (files.isNotEmpty()) Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить") {
+                runCatching {
+                    val i = if (files.size == 1) android.content.Intent(android.content.Intent.ACTION_SEND).setType(files[0].mime).putExtra(android.content.Intent.EXTRA_STREAM, files[0].uri)
+                        else android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).setType("*/*").putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, ArrayList(files.map { it.uri }))
+                    ctx.startActivity(android.content.Intent.createChooser(i.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }, contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icPlane), "Отправить", tint = Teal, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Text(parts.stamp.ifBlank { SimpleDateFormat("HH:mm", Locale.US).format(Date(m.ts)) }, style = body(11, color = Th.c.meta), maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun MiniTable(rows: List<List<String>>) {
+    val shape = RoundedCornerShape(12.dp)
+    val cols = rows.maxOf { it.size }.coerceAtMost(4)
+    Column(Modifier.fillMaxWidth().clip(shape).border(1.dp, Line, shape)) {
+        rows.take(6).forEachIndexed { i, r ->
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
+            Row(Modifier.fillMaxWidth().background(if (i == 0) Th.c.bg.copy(alpha = 0.6f) else Color.Transparent)) {
+                for (c in 0 until cols) {
+                    Text(r.getOrNull(c).orEmpty(), style = body(12, if (i == 0) FontWeight.Bold else FontWeight.Normal, if (i == 0 || c == 0) Muted else Ink),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 9.dp, vertical = 7.dp))
+                }
+            }
+        }
+    }
+}
+
+private class ResultParts(val title: String, val body: String, val stamp: String)
+
+/** Вывод — заголовком. «Таблица готова…» — служебное, тогда заголовок — следующая фраза. Строка 🕓 — в подпись. */
+private fun splitResult(text: String): ResultParts {
+    var t = text.trim()
+    var stamp = ""
+    Regex("\\n?\\s*(🕓|🕐|⏰)\\s*([^\\n]+)").find(t)?.let { m -> stamp = m.groupValues[2].trim(); t = t.removeRange(m.range).trim() }
+    val sentences = Regex("[^.!?\\n]+[.!?]*").findAll(t).map { it.value.trim() }.filter { it.isNotBlank() }.toMutableList()
+    if (sentences.size > 1 && Regex("^(таблиц|файл|документ|сравнени|готово|создал|сделал)", RegexOption.IGNORE_CASE).containsMatchIn(sentences[0])
+        && Regex("готов|создал|сделал|сохранил", RegexOption.IGNORE_CASE).containsMatchIn(sentences[0])) sentences.removeAt(0)
+    val title = sentences.firstOrNull()?.takeIf { it.length in 8..170 }?.trimEnd('.').orEmpty()
+    val body = if (title.isNotBlank()) sentences.drop(1).joinToString(" ") else sentences.joinToString(" ")
+    return ResultParts(title, body, stamp)
+}
+
+/** Первые строки первого листа Excel — для мини-таблицы. Формулы показываем «—». */
+private fun tablePreview(ctx: android.content.Context, uri: android.net.Uri): List<List<String>>? {
+    val j = ctx.contentResolver.openInputStream(uri)?.use { Docs.readXlsx(it) } ?: return null
+    val rows = j.optJSONArray("sheets")?.optJSONObject(0)?.optJSONArray("rows") ?: return null
+    fun cell(v: Any?): String = when (v) {
+        null -> ""
+        is Number -> { val d = v.toDouble(); if (d == Math.floor(d) && kotlin.math.abs(d) < 1e12) "%,d".format(d.toLong()).replace(',', ' ') else "%.2f".format(d) }
+        is String -> if (v.startsWith("=")) "—" else v
+        else -> v.toString()
+    }
+    return (0 until minOf(rows.length(), 6)).map { i -> val r = rows.optJSONArray(i); (0 until (r?.length() ?: 0)).map { c -> cell(r?.opt(c)) } }
+        .filter { r -> r.any { it.isNotBlank() } }
+}
+
+private val icPlane by lazy {
+    androidx.compose.ui.graphics.vector.ImageVector.Builder("plane", 24.dp, 24.dp, 24f, 24f).apply {
+        addPath(androidx.compose.ui.graphics.vector.addPathNodes("M21 3L10 14M21 3l-7 18-4-7-7-4z"), stroke = SolidColor(Color.Black), strokeLineWidth = 1.9f,
+            strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
+    }.build()
 }
