@@ -46,6 +46,20 @@ object Th {
             dots = listOf(Color(0x292F6FD6), Color(0x1F8B7CFF), Color(0x2422A0C8)),
             inBubble = Color.White, outBubble = Color(0xFFCFE3FF), outInk = Color(0xFF131C28), outMeta = Color(0xFF41618E), meta = Color(0xFF677486),
             glass = Color(0x8CFFFFFF), glassLine = Color(0xB3FFFFFF), online = Color(0xFF22C55E)),
+        Pal("dawn", "Рассвет", false,
+            bg = Color(0xFFF3EFE6), card = Color(0xFFFFFFFF), line = Color(0xFFE2DACB), ink = Color(0xFF1D2430), muted = Color(0xFF5D6672),
+            accent = Color(0xFF1F5FD1), onAccent = Color.White, violet = Color(0xFF5A49C2), amber = Color(0xFFA3560F), danger = Color(0xFFC62828),
+            wall = listOf(Color(0xFFF3EFE6), Color(0xFFEFE9DD), Color(0xFFF3EFE6)),
+            dots = listOf(Color(0x1A1F5FD1), Color(0x145A49C2), Color(0x1AA3560F)),
+            inBubble = Color.White, outBubble = Color(0xFFDCE7FA), outInk = Color(0xFF1D2430), outMeta = Color(0xFF41618E), meta = Color(0xFF6A727D),
+            glass = Color(0x8CFFFFFF), glassLine = Color(0xB3FFFFFF), online = Color(0xFF187A4C)),
+        Pal("flight", "Ночной рейс", true,
+            bg = Color(0xFF000000), card = Color(0xFF111214), line = Color(0xFF26282D), ink = Color(0xFFF3F3F1), muted = Color(0xFFA3A39B),
+            accent = Color(0xFFFFB547), onAccent = Color(0xFF1E1300), violet = Color(0xFFA7B0FF), amber = Color(0xFFFF8F6B), danger = Color(0xFFFF8A80),
+            wall = listOf(Color(0xFF000000), Color(0xFF0A0A0B), Color(0xFF000000)),
+            dots = listOf(Color(0x00000000), Color(0x00000000), Color(0x00000000)),
+            inBubble = Color(0xFF16171A), outBubble = Color(0xFF2B2416), outInk = Color(0xFFF3F3F1), outMeta = Color(0xFFC9B48A), meta = Color(0xFF8F8F88),
+            glass = Color(0x99101114), glassLine = Color(0x1AFFFFFF), online = Color(0xFF7BE3A6)),
         Pal("night", "Ночь", true,
             bg = Color(0xFF0E1116), card = Color(0xFF151A21), line = Color(0xFF262C36), ink = Color(0xFFE8EAED), muted = Color(0xFF9AA3AE),
             accent = Color(0xFF3DD9C1), onAccent = Color(0xFF0E1116), violet = Color(0xFF8B7CFF), amber = Color(0xFFF5B83D), danger = Color(0xFFFF8A80),
@@ -55,14 +69,26 @@ object Th {
             glass = Color(0x85161C24), glassLine = Color(0x12FFFFFF), online = Color(0xFF3DD9C1)),
     )
 
-    var c by mutableStateOf(all[0])
-        private set
+    private var base by mutableStateOf(all[0])
+    /** В кабине задачи (полёт) — всегда тёмная «Кабина», какая бы тема ни стояла. */
+    var forceCockpit by mutableStateOf(false)
+    val c: Pal get() = if (forceCockpit) all[0] else base
 
     fun load() {
         // переход на «Кабину» один раз — дальше Алим может выбрать любую тему сам
         if (!Prefs.cockpitTheme) { Prefs.cockpitTheme = true; Prefs.theme = "cockpit" }
-        c = all.firstOrNull { it.id == Prefs.theme } ?: all[0]
+        // приборная панель: «Рассвет» днём, «Ночной рейс» вечером — один раз переводим на авто
+        if (!Prefs.dashTheme) { Prefs.dashTheme = true; Prefs.theme = "auto" }
+        base = if (Prefs.theme == "auto") autoPal() else all.firstOrNull { it.id == Prefs.theme } ?: all[0]
     }
+    /** Авто: с 7:00 до 19:00 «Рассвет», иначе «Ночной рейс». */
+    private fun autoPal(): Pal {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return all.first { it.id == if (h in 7..18) "dawn" else "flight" }
+    }
+    /** Пересчитать авто-тему (при возвращении в приложение и раз в минуту). */
+    fun tick() { if (Prefs.theme == "auto") autoPal().let { if (it.id != base.id) base = it } }
+    val auto: Boolean get() = Prefs.theme == "auto"
     val cockpit: Boolean get() = c.id == "cockpit"
     fun set(id: String) { Prefs.theme = id; load() }
 }

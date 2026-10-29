@@ -82,6 +82,8 @@ object Prefs {
     var aviaLinks: String get() = s("avia_links", ""); set(v) = put("avia_links", v)
     /** Погода для неба кабины (облачность/дождь/день) с меткой времени. */
     var skyWx: String get() = s("sky_wx", ""); set(v) = put("sky_wx", v)
+    var dashTheme: Boolean get() = b("dash_theme", false); set(v) = putB("dash_theme", v)
+    var dashboard: Boolean get() = b("dashboard", true); set(v) = putB("dashboard", v)
     var cockpitTheme: Boolean get() = b("cockpit_theme", false); set(v) = putB("cockpit_theme", v)
     /** Подложка: "pattern" — узор темы, "photo" — картинка из файла wallpaper.jpg. */
     var wallpaper: String get() = s("wall", "pattern"); set(v) = put("wall", v)

@@ -475,7 +475,7 @@ fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
 // ———————————————— ввод и голосовое ————————————————
 
 @Composable
-private fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
+fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current

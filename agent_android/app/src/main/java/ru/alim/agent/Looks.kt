@@ -25,6 +25,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,11 +80,20 @@ fun LookScreen(back: () -> Unit) {
     Screen("Оформление", back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Label("Цвет")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Th.all.forEach { p ->
-                    val on = Th.c.id == p.id
+            var auto by remember { mutableStateOf(Th.auto) }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Th.c.card).padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Авто: день и ночь", style = body(15, FontWeight.SemiBold))
+                    Text("С 7:00 до 19:00 — «Рассвет», вечером и ночью — «Ночной рейс».", style = body(12, color = Muted))
+                }
+                Toggle(auto) { on -> auto = on; if (on) Th.set("auto") else Th.set(Th.c.id) }
+            }
+            Th.all.chunked(4).forEach { rowPals -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowPals.forEach { p ->
+                    val on = !auto && Th.c.id == p.id
                     Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Th.c.card)
-                        .border(if (on) 2.dp else 1.dp, if (on) Teal else Line, RoundedCornerShape(16.dp)).clickable { Th.set(p.id) }.padding(6.dp),
+                        .border(if (on) 2.dp else 1.dp, if (on) Teal else Line, RoundedCornerShape(16.dp)).clickable { auto = false; Th.set(p.id) }.padding(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Column(Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(11.dp))
                             .background(androidx.compose.ui.graphics.Brush.linearGradient(p.wall)).padding(6.dp),
@@ -92,10 +102,11 @@ fun LookScreen(back: () -> Unit) {
                             Box(Modifier.align(Alignment.End).size(38.dp, 12.dp).clip(RoundedCornerShape(6.dp)).background(p.outBubble))
                             Box(Modifier.size(30.dp, 12.dp).clip(RoundedCornerShape(6.dp)).background(p.inBubble))
                         }
-                        Text(p.title, style = body(12, FontWeight.SemiBold), modifier = Modifier.align(Alignment.CenterHorizontally))
+                        Text(p.title, style = body(12, FontWeight.SemiBold), modifier = Modifier.align(Alignment.CenterHorizontally), maxLines = 1)
                     }
                 }
-            }
+                repeat(4 - rowPals.size) { Spacer(Modifier.weight(1f)) }
+            } }
             Label("Подложка")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("pattern" to "Узор", "gallery" to "Из галереи", "gen" to "Нарисовать").forEach { (id, t) ->

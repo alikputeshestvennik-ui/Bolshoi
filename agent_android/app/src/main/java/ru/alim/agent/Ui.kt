@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
+enum class Scr { Home, Journal, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
@@ -88,7 +88,7 @@ fun App(voice: Voice) {
     androidx.compose.runtime.DisposableEffect(life) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
             if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                SkyDrift.reroll(); tgScope.launch { SkyWeather.refresh() }
+                SkyDrift.reroll(); Th.tick(); tgScope.launch { SkyWeather.refresh() }
                 tgScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     runCatching { BuildWatch.check(tgCtx) }.getOrNull()?.let { m -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.noteUpd(m) } }
                 }
@@ -102,6 +102,9 @@ fun App(voice: Voice) {
         life.lifecycle.addObserver(obs)
         onDispose { life.lifecycle.removeObserver(obs) }
     }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); Th.tick() } }
+    // кабина задачи — всегда в цветах «Кабины» (небо, полёт), панель и журнал — в выбранной теме
+    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task }
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
@@ -111,7 +114,7 @@ fun App(voice: Voice) {
         when {
             phase == Agent.Phase.WORKING && prevPhase != Agent.Phase.WORKING -> {
                 Haptics.takeoff(uiCtx)
-                if (scr == Scr.Home) { taskBack = Scr.Home; scr = Scr.Task }
+                if (scr == Scr.Home || scr == Scr.Journal) { taskBack = scr; scr = Scr.Task }
             }
             phase == Agent.Phase.CONFIRM && prevPhase != Agent.Phase.CONFIRM -> Haptics.ask(uiCtx)
         }
@@ -146,11 +149,12 @@ fun App(voice: Voice) {
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Task) Modifier else Modifier.systemBarsPadding().imePadding())) {
+        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task) Modifier else Modifier.systemBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             // одна сцена полёта под чатом и задачей: из чата в задачу — тот же самолёт на той же полосе
-            if ((scr == Scr.Home || scr == Scr.Task) && Th.cockpit && Prefs.wallpaper != "photo") {
+            val dash = Prefs.dashboard
+            if ((scr == Scr.Task || ((scr == Scr.Journal || (scr == Scr.Home && !dash)) && Th.cockpit)) && Prefs.wallpaper != "photo") {
                 val sctx = androidx.compose.ui.platform.LocalContext.current
                 val onTask = scr == Scr.Task
                 FlightScene(flying = onTask && FlightBus.flying, glow = if (onTask) FlightBus.glow else Sky.glowCalm,
@@ -158,7 +162,8 @@ fun App(voice: Voice) {
                     onLift = { Haptics.tick(sctx) }, onTouch = { FlightBus.touchN++ })
             }
             when (scr) {
-                Scr.Home -> ChatScreen(Friends.MAIN, go)
+                Scr.Home -> if (dash) DashScreen(go) else ChatScreen(Friends.MAIN, go)
+                Scr.Journal -> ChatScreen(Friends.MAIN, go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen(home)
                 Scr.Tg -> TgScreen(home)

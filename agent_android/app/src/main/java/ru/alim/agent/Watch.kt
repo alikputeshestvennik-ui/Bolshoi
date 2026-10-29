@@ -30,7 +30,7 @@ object Watch {
         val mode: String = "state", val chatId: Long = 0, var lastMsg: Long = 0,
     ) { val title get() = (if (mode == "feed") "Лента #" else "Слежка #") + "${id % 1000}: $topic" }
 
-    val items = ArrayList<Item>()
+    val items = androidx.compose.runtime.mutableStateListOf<Item>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Mutex()
     private var app: Context? = null

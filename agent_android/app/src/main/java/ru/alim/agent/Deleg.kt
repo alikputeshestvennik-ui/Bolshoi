@@ -268,7 +268,7 @@ object Deleg {
         "- #${x.id % 1000} ${x.who} (${if (x.channel == "tg") "Telegram" else "SMS"}): " + stateText(x) + (if (last.isNotBlank()) "; последнее — $last" else "")
     }
 
-    private fun stateText(x: Item): String = when (x.status) {
+    fun stateText(x: Item): String = when (x.status) {
         "active" -> "идёт переписка"
         "ask" -> "ЖДЁТ ОТВЕТА АЛИМА — «${x.question}»"
         "paused" -> "пауза, продолжу ${whenText(x.resumeAt)}"
