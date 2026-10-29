@@ -54,6 +54,7 @@ data class Msg(
     val note: Boolean = false,       // служебная строка посередине: «Мария просит: …», «Эрнест: сделал»
     val from: String = "",           // от какого друга пришла просьба (для заметок)
     val ytVideos: String = "",       // видео YouTube: строки "id\tназвание\tканал", разделитель "\n"
+    val best: String = "",           // «лучший выбор» в сравнении: {"name","value","note","alt":[{"name","value","diff"}]}
 )
 
 /** Друг-собеседник: имя, пол, манера, аватар, о чём с ним говорить и на какой модели. Главный — один, у него «руки». */
@@ -505,7 +506,7 @@ class ChatStore(val fid: String) {
         val base = Msg(newId(), false, r.text, System.currentTimeMillis(),
             items = if (r.products.isEmpty()) "" else Shop.toJson(r.products),
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
-            photos = r.photos.joinToString(","), tgPhotos = r.tgPhotos.joinToString("\n"), ytVideos = r.ytVideos.joinToString("\n"), buttons = r.buttons, meta = meta, failed = !r.ok)
+            photos = r.photos.joinToString(","), tgPhotos = r.tgPhotos.joinToString("\n"), ytVideos = r.ytVideos.joinToString("\n"), buttons = r.buttons, meta = meta, failed = !r.ok, best = r.best)
         if (wantVoice) io.launch {
             val v = runCatching { VoiceMsg.speakToFile(Chat.app, r.text, friend) }.getOrNull()
             withContext(Dispatchers.Main) {
@@ -562,12 +563,12 @@ class ChatStore(val fid: String) {
     private fun toJson(m: Msg) = JSONObject().put("id", m.id).put("me", m.me).put("t", m.text).put("ts", m.ts)
         .put("v", m.voice).put("d", m.dur).put("r", m.replyTo).put("rm", m.replyMe).put("rt", m.replyText)
         .put("i", m.items).put("f", m.files).put("p", m.photos).put("tgp", m.tgPhotos).put("b", JSONArray(m.buttons)).put("mt", m.meta)
-        .put("s", m.status).put("a", m.att).put("x", m.failed).put("n", m.note).put("fr", m.from).put("ytv", m.ytVideos)
+        .put("s", m.status).put("a", m.att).put("x", m.failed).put("n", m.note).put("fr", m.from).put("ytv", m.ytVideos).put("bst", m.best)
 
     private fun fromJson(o: JSONObject) = Msg(o.optLong("id"), o.optBoolean("me"), o.optString("t"), o.optLong("ts"),
         o.optString("v"), o.optInt("d"), o.optLong("r"), o.optBoolean("rm"), o.optString("rt"),
         o.optString("i"), o.optString("f"), o.optString("p"), o.optString("tgp"),
         o.optJSONArray("b")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(),
         o.optString("mt"), o.optString("s", "read").let { if (it == "pending") "pending" else it }, o.optString("a"), o.optBoolean("x"),
-        o.optBoolean("n"), o.optString("fr"), o.optString("ytv"))
+        o.optBoolean("n"), o.optString("fr"), o.optString("ytv"), o.optString("bst"))
 }

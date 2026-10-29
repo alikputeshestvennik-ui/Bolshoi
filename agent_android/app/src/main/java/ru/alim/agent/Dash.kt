@@ -48,6 +48,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
+import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,26 +70,14 @@ fun DashScreen(go: (Scr) -> Unit) {
     LaunchedEffect(Unit) { while (true) { delay(4000); tick++ } }
     LaunchedEffect(chat.msgs.size) { chat.markRead() }
 
+    var headH by remember { mutableStateOf(0) }
+    var compH by remember { mutableStateOf(0) }
     Box(Modifier.fillMaxSize().background(Th.c.bg)) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-            // ——— шапка ———
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.clickable(onClickLabel = "Профиль") { go(Scr.Profile) }) { Avatar(46.dp) }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Пилот", style = TextStyle(fontFamily = Fonts.display, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                    val now = remember(tick / 15) { SimpleDateFormat("EEE, d MMMM · HH:mm", Locale("ru")).format(Date()) }
-                    Text(if (core.busy) "работает · " + core.task.take(40) else now, style = body(12, color = if (core.busy) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Box(Modifier.size(46.dp).clip(CircleShape).background(Th.c.card).border(1.dp, Line, CircleShape).clickable(onClickLabel = "Меню") { Panel.open = true },
-                    contentAlignment = Alignment.Center) {
-                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icList), "Меню", tint = Ink, modifier = Modifier.size(22.dp))
-                }
-            }
-
             // ——— панель (края плавно уходят в фон под шапкой и полем ввода) ———
-            Box(Modifier.weight(1f)) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 14.dp, bottom = 24.dp),
+            Box(Modifier.fillMaxSize().haze(haze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+                .padding(top = with(androidx.compose.ui.platform.LocalDensity.current) { headH.toDp() } + 12.dp,
+                    bottom = with(androidx.compose.ui.platform.LocalDensity.current) { compH.toDp() } + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 val t = tick   // перечитываем состояние поручений/слежек раз в несколько секунд
 
@@ -182,16 +173,29 @@ fun DashScreen(go: (Scr) -> Unit) {
                         Text("Дай команду — найду, сравню, поручу или буду следить.", style = body(14, color = Muted))
                     }
             }
-            val fade = Th.c.bg
-            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(22.dp)
-                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade, fade.copy(alpha = 0f)))))
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(30.dp)
-                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade.copy(alpha = 0f), fade))))
             }
 
-            // ——— ввод ———
-            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp).padding(bottom = 10.dp)) { Composer(haze, chat, chat.friend) }
-        }
+            // ——— шапка ———
+            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { headH = it.height }
+                .hazeChild(haze, androidx.compose.ui.graphics.RectangleShape).background(Th.c.bg.copy(alpha = 0.55f))
+                .statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.clickable(onClickLabel = "Профиль") { go(Scr.Profile) }) { Avatar(46.dp) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Пилот", style = TextStyle(fontFamily = Fonts.display, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+                    val now = remember(tick / 15) { SimpleDateFormat("EEE, d MMMM · HH:mm", Locale("ru")).format(Date()) }
+                    Text(if (core.busy) "работает · " + core.task.take(40) else now, style = body(12, color = if (core.busy) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Box(Modifier.size(46.dp).clip(CircleShape).background(Th.c.card).border(1.dp, Line, CircleShape).clickable(onClickLabel = "Меню") { Panel.open = true },
+                    contentAlignment = Alignment.Center) {
+                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icList), "Меню", tint = Ink, modifier = Modifier.size(22.dp))
+                }
+            }
+
+            // ——— ввод (поверх ленты, под ним размытие) ———
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { compH = it.height }
+                .hazeChild(haze, androidx.compose.ui.graphics.RectangleShape).background(Th.c.bg.copy(alpha = 0.55f))
+                .navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(top = 8.dp, bottom = 10.dp)) { Composer(haze, chat, chat.friend) }
     }
 }
 
@@ -350,6 +354,7 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         val rows = preview?.takeIf { it.size >= 2 }
         // таблица — сама кнопка: тап открывает Excel
         if (rows != null && xls != null) Box(Modifier.clickable(onClickLabel = "Открыть таблицу") { open(xls) }) { MiniTable(rows) }
+        if (m.best.isNotBlank()) BestBlock(m.best)
         val rest = files.filter { rows == null || it != xls }
         if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             rest.forEach { f ->
@@ -362,6 +367,34 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         }
         Text(parts.stamp.ifBlank { SimpleDateFormat("HH:mm", Locale.US).format(Date(m.ts)) }, style = body(11, color = Th.c.meta), maxLines = 1,
             modifier = Modifier.align(Alignment.End))
+    }
+}
+
+/** «Лучший выбор» — как в макете Г: победитель крупнее и с плашкой, остальные меньше и тише. */
+@Composable
+private fun BestBlock(json: String) {
+    val b = remember(json) { runCatching { org.json.JSONObject(json) }.getOrNull() } ?: return
+    val alt = b.optJSONArray("alt")?.let { a -> (0 until minOf(2, a.length())).mapNotNull { a.optJSONObject(it) } }.orEmpty()
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+        val ok = Th.c.online
+        val shape = RoundedCornerShape(18.dp)
+        Column(Modifier.weight(3f).clip(shape).background(ok.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)).border(2.dp, ok, shape).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("ЛУЧШИЙ ВЫБОР", style = body(10, FontWeight.Bold, if (Th.c.dark) Color(0xFF062018) else Color.White).copy(letterSpacing = 0.8.sp),
+                modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(ok).padding(horizontal = 7.dp, vertical = 3.dp))
+            Text(b.optString("name"), style = body(13, FontWeight.Bold, Ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(b.optString("value"), style = TextStyle(fontFamily = Fonts.display, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = Ink), maxLines = 1)
+            if (b.optString("note").isNotBlank()) Text(b.optString("note"), style = body(12, color = Muted), maxLines = 2)
+        }
+        if (alt.isNotEmpty()) Column(Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            alt.forEach { a ->
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.bg.copy(alpha = 0.7f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(a.optString("name"), style = body(12, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(a.optString("value"), style = TextStyle(fontFamily = Fonts.display, fontSize = 14.sp, color = Ink.copy(alpha = 0.8f)), maxLines = 1)
+                    if (a.optString("diff").isNotBlank()) Text(a.optString("diff"), style = body(12, color = Muted), maxLines = 1)
+                }
+            }
+        }
     }
 }
 
