@@ -532,7 +532,9 @@ object Tools {
             if (feed.isNotEmpty()) return@t Watch.startFeed(ctx, feed, a.optInt("every_min", 15), Deleg.parseWhen(a.optString("until")) ?: 0L)
             Watch.start(ctx, topic, a.optString("what").trim(), src, a.optInt("every_min", 60), Deleg.parseWhen(a.optString("until")) ?: 0L)
         },
-        Tool("watch_stop", "{\"id\": 123} — остановить слежку («хватит следить», «больше не проверяй»)") t@{ ctx, a -> Watch.stop(ctx, a.optLong("id").takeIf { it > 0 }) },
+        Tool("watch_stop", "{\"id\": 123, \"topic\": \"название, если номер не назван\", \"in_min\": 0} — остановить слежку («хватит следить за …», «больше не проверяй»). Назвал по имени — передай topic. «Через N минут закончи» — in_min = N (не останавливай сразу)") t@{ ctx, a ->
+            Watch.stop(ctx, a.optLong("id").takeIf { it > 0 }, a.optString("topic").trim(), a.optInt("in_min", 0))
+        },
         Tool("watch_list", "{} — какие слежки идут и что сейчас") { ctx, _ -> Watch.init(ctx); Watch.list() },
 
         Tool("delegate_list", "{} — поручения: что идёт, что ждёт Алима, итоги") { ctx, _ -> Deleg.init(ctx); Deleg.list() },

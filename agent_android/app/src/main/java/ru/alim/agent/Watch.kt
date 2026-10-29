@@ -22,7 +22,7 @@ import java.io.File
 object Watch {
     class Item(
         val id: Long, val topic: String, val what: String, val sources: List<String>,
-        val everyMin: Int, val until: Long,
+        val everyMin: Int, var until: Long,
         var state: String = "", var key: String = "", var src: String = "",
         var nextAt: Long = 0, var runs: Int = 0, var changes: Int = 0,
         var status: String = "active", var err: String = "",
@@ -97,8 +97,22 @@ object Watch {
         return "смотрю ленту «$title»: проверяю каждые $every мин до ${Deleg.whenText(end)}. Последний пост пришлю сейчас, дальше — каждый новый с фото/видео."
     }
 
-    fun stop(ctx: Context, id: Long?): String {
+    fun stop(ctx: Context, id: Long?, topic: String = "", inMin: Int = 0): String {
         init(ctx)
+        if (id == null && topic.isNotBlank()) {
+            val q = topic.lowercase().trim().removePrefix("@")
+            val hit = items.filter { it.status == "active" && (it.topic.lowercase().contains(q) || q.contains(it.topic.lowercase())) }
+            if (hit.isEmpty()) return "слежки «$topic» среди активных нет: " + items.filter { it.status == "active" }.joinToString { "#${it.id % 1000} ${it.topic}" }.ifBlank { "активных нет" }
+            if (hit.size > 1) return "подходит несколько: " + hit.joinToString { "#${it.id % 1000} ${it.topic}" } + " — какую?"
+            return stop(ctx, hit[0].id, "", inMin)
+        }
+        if (inMin > 0) {
+            val it = (if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.status == "active" } else items.lastOrNull { x -> x.status == "active" })
+                ?: return "активных слежек нет"
+            val at = System.currentTimeMillis() + inMin * 60_000L
+            if (at < it.until || it.until == 0L) { it.until = at; save(); Planner.plan(ctx) }
+            return "закончу «${it.topic}» ${Deleg.whenText(it.until)}"
+        }
         if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.status != "active" }?.let { x -> return "«${x.title}» уже не идёт" }
         val it = (if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.status == "active" } else items.lastOrNull { x -> x.status == "active" })
             ?: return "активных слежек нет — нечего останавливать"
@@ -144,6 +158,7 @@ object Watch {
             val tail = if (first && k == posts.lastIndex) "\n\nДальше пришлю каждый новый пост, до ${Deleg.whenText(it.until)}." else ""
             post(it, "$head\n${p.text.ifBlank { "(без текста)" }}$tail", p.media)
         }
+        posts.lastOrNull()?.let { p -> it.state = "последний пост " + Tg.postTime(p.date).substringAfterLast(' ') + (if (it.changes > 0) " · новых ${it.changes}" else "") }
         save()
     }
 

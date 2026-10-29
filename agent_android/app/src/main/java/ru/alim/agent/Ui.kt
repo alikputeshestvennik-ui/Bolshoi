@@ -178,6 +178,7 @@ fun App(voice: Voice) {
                 Scr.Memory -> MemoryScreen(home)
                 Scr.Digest -> DigestScreen(home)
             }
+            if (scr == Scr.Home || scr == Scr.Journal) SidePanel(scr, go) else if (Panel.open) Panel.open = false
         }
     }
 }

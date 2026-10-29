@@ -2,6 +2,7 @@ package ru.alim.agent
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -62,7 +64,6 @@ fun DashScreen(go: (Scr) -> Unit) {
     val core = chat.core
     val haze = remember { HazeState() }
     var tick by remember { mutableStateOf(0) }
-    var menu by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(4000); tick++ } }
     LaunchedEffect(chat.msgs.size) { chat.markRead() }
 
@@ -77,26 +78,9 @@ fun DashScreen(go: (Scr) -> Unit) {
                     val now = remember(tick / 15) { SimpleDateFormat("EEE, d MMMM · HH:mm", Locale("ru")).format(Date()) }
                     Text(if (core.busy) "работает · " + core.task.take(40) else now, style = body(12, color = if (core.busy) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Box(Modifier.size(46.dp).clip(CircleShape).background(Th.c.card).border(1.dp, Line, CircleShape).clickable(onClickLabel = "Журнал") { go(Scr.Journal) },
+                Box(Modifier.size(46.dp).clip(CircleShape).background(Th.c.card).border(1.dp, Line, CircleShape).clickable(onClickLabel = "Меню") { Panel.open = true },
                     contentAlignment = Alignment.Center) {
-                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icList), "Журнал", tint = Ink, modifier = Modifier.size(22.dp))
-                }
-                Spacer(Modifier.width(6.dp))
-                Box {
-                    Box(Modifier.size(46.dp).clip(CircleShape).clickable(onClickLabel = "Меню") { menu = true }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.MoreVert, "Меню", tint = Ink)
-                    }
-                    DropdownMenu(menu, { menu = false }, Modifier.background(Th.c.card)) {
-                        listOf(
-                            "Журнал (вся переписка)" to { go(Scr.Journal) },
-                            "История и расходы" to { go(Scr.History) },
-                            "Что Пилот помнит" to { go(Scr.Memory) },
-                            "Сводки дня" to { go(Scr.Digest) },
-                            "Отвечать за меня" to { go(Scr.Rules) },
-                            "Оформление" to { go(Scr.Look) },
-                            "Настройки" to { go(Scr.Settings) },
-                        ).forEach { (t, f) -> DropdownMenuItem(text = { Text(t, style = body(15)) }, onClick = { menu = false; f() }) }
-                    }
+                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icList), "Меню", tint = Ink, modifier = Modifier.size(22.dp))
                 }
             }
 
@@ -120,7 +104,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                 val lastMe = chat.msgs.lastOrNull { it.me }
                 val reply = chat.msgs.lastOrNull { !it.me && !it.note }
                 if (reply != null && lastMe != null && reply.ts >= lastMe.ts && System.currentTimeMillis() - reply.ts < 3 * 3600_000L && t >= 0) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { go(Scr.Journal) }.padding(14.dp),
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(reply.id); go(Scr.Journal) }.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("› " + lastMe.text.ifBlank { "голосовое" }, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(reply.text, style = body(15).copy(lineHeight = 21.sp), maxLines = 8, overflow = TextOverflow.Ellipsis)
@@ -145,7 +129,8 @@ fun DashScreen(go: (Scr) -> Unit) {
                     SecTitle("Идёт сейчас", Muted)
                     val tiles = watches.map { w ->
                         Tile(if (w.mode == "feed") "ЛЕНТА" else "СЛЕЖКА", if (w.mode == "feed") Teal else Th.c.online, w.topic,
-                            (w.state.ifBlank { "первая проверка" }) + " · до " + Deleg.whenText(w.until).substringAfter(" в "))
+                            (w.state.ifBlank { if (w.mode == "feed") "смотрю ленту" else "первая проверка" }) + " · до " + Deleg.whenText(w.until).substringAfter(" в "),
+                            ChatJump.find(chat, w.topic))
                     } + delegs.map { d ->
                         val (tag, col) = when (d.status) {
                             "template" -> "ПО РАСПИСАНИЮ" to Muted
@@ -154,13 +139,14 @@ fun DashScreen(go: (Scr) -> Unit) {
                             "wait_ref" -> "ЦЕПОЧКА" to Violet
                             else -> "ПЕРЕПИСКА" to Violet
                         }
-                        Tile(tag, col, d.who, Deleg.stateText(d))
+                        Tile(tag, col, d.who, Deleg.stateText(d), ChatJump.find(chat, d.who))
                     }
-                    tiles.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            row.forEach { tl -> TileBox(tl, Modifier.weight(1f)) { go(Scr.Journal) } }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
-                        }
+                    val open: (Tile) -> Unit = { tl -> ChatJump.to(tl.target); go(Scr.Journal) }
+                    if (tiles.size <= 2) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        tiles.forEach { tl -> TileBox(tl, Modifier.weight(1f)) { open(tl) } }
+                        if (tiles.size == 1) Spacer(Modifier.weight(1f))
+                    } else Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        tiles.forEach { tl -> TileBox(tl, Modifier.width(168.dp)) { open(tl) } }
                     }
                 }
 
@@ -171,13 +157,13 @@ fun DashScreen(go: (Scr) -> Unit) {
                 if (done.isNotEmpty() || doneDeleg.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SecTitle("Готово", Muted)
                     done.forEach { m ->
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(m.id); go(Scr.Journal) }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(m.text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(), style = body(14).copy(lineHeight = 20.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
                             FileCards(Chat.filesOf(m))
                         }
                     }
                     doneDeleg.forEach { d ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { go(Scr.Journal) }.padding(14.dp),
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(ChatJump.find(chat, d.who)); go(Scr.Journal) }.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(8.dp).clip(CircleShape).background(Th.c.online)); Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
@@ -201,7 +187,7 @@ fun DashScreen(go: (Scr) -> Unit) {
     }
 }
 
-private class Tile(val tag: String, val color: Color, val title: String, val sub: String)
+private class Tile(val tag: String, val color: Color, val title: String, val sub: String, val target: Long = 0L)
 
 @Composable
 private fun TileBox(t: Tile, modifier: Modifier, onClick: () -> Unit) {
@@ -239,7 +225,7 @@ private fun AskCard(x: Deleg.Item, go: (Scr) -> Unit) {
                 DashBtn("Да, напиши", true, Modifier.weight(1f)) { sent = "↪ " + Deleg.referAnswer(ctx, x.id, "да") }
                 DashBtn("Нет", false, Modifier.weight(1f)) { sent = "↪ " + Deleg.referAnswer(ctx, x.id, "нет") }
             } else {
-                DashBtn("Ответить", true, Modifier.weight(1f)) { go(Scr.Journal) }
+                DashBtn("Ответить", true, Modifier.weight(1f)) { ChatJump.to(ChatJump.find(Chat.main, x.who)); go(Scr.Journal) }
                 DashBtn("Заверши", false, Modifier.weight(1f)) { sent = "↪ " + Deleg.finish(ctx, x.id) }
             }
         }
@@ -260,4 +246,58 @@ private val icList by lazy {
         addPath(androidx.compose.ui.graphics.vector.addPathNodes("M4 6h16M4 12h16M4 18h10"), stroke = SolidColor(Color.Black), strokeLineWidth = 1.9f,
             strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round)
     }.build()
+}
+
+
+/** Переход из панели в нужное место журнала (а не в его конец) + подсветка сообщения. */
+object ChatJump {
+    var target by mutableStateOf(0L)
+    var glow by mutableStateOf(0L)
+    var searchReq by mutableStateOf(false)
+    fun to(id: Long) { if (id != 0L) target = id }
+    /** Последнее сообщение Пилота, где упоминается тема/человек (отчёты слежки, поручений). */
+    fun find(chat: ChatStore, key: String): Long {
+        if (key.isBlank()) return 0L
+        val k = key.lowercase().take(24)
+        return chat.msgs.lastOrNull { !it.me && it.text.lowercase().contains(k) }?.id ?: 0L
+    }
+}
+
+/** Боковая панель справа (40% экрана): журнал, история, настройки… — вместо всплывающего меню. */
+object Panel { var open by mutableStateOf(false) }
+
+@Composable
+fun SidePanel(scr: Scr, go: (Scr) -> Unit) {
+    val shown = Panel.open
+    val a by androidx.compose.animation.core.animateFloatAsState(if (shown) 1f else 0f, androidx.compose.animation.core.tween(240), label = "panel")
+    if (a <= 0.001f && !shown) return
+    androidx.activity.compose.BackHandler(enabled = shown) { Panel.open = false }
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f * a)).clickable(indication = null,
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { Panel.open = false })
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            val w = maxOf(maxWidth * 0.4f, 190.dp)
+            Column(Modifier.align(Alignment.CenterEnd).width(w).fillMaxSize()
+                .graphicsLayer { translationX = (1f - a) * w.toPx() }
+                .background(Th.c.card).statusBarsPadding().navigationBarsPadding().padding(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val items = buildList {
+                    if (scr == Scr.Home) add("Журнал" to { go(Scr.Journal) }) else add("Главная" to { go(Scr.Home) })
+                    if (scr == Scr.Journal) add("Поиск" to { ChatJump.searchReq = true })
+                    add("История и расходы" to { go(Scr.History) })
+                    add("Что Пилот помнит" to { go(Scr.Memory) })
+                    add("Сводки дня" to { go(Scr.Digest) })
+                    add("Сам пишет первым" to { go(Scr.Initiative) })
+                    add("Отвечать за меня" to { go(Scr.Rules) })
+                    add("Оформление" to { go(Scr.Look) })
+                    add("Настройки" to { go(Scr.Settings) })
+                }
+                items.forEachIndexed { i, (t, f) ->
+                    Text(t, style = body(15, if (i == 0) FontWeight.Bold else FontWeight.Medium), modifier = Modifier.fillMaxWidth()
+                        .clickable { Panel.open = false; f() }.padding(horizontal = 18.dp, vertical = 13.dp))
+                    if (i == 0) Box(Modifier.padding(horizontal = 18.dp, vertical = 6.dp).fillMaxWidth().height(1.dp).background(Line))
+                }
+            }
+        }
+    }
 }

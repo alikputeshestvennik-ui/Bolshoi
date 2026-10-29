@@ -99,10 +99,12 @@ fun FileCards(files: List<Docs.FileRef>) {
                     Text(f.name, style = body(14, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text("Загрузки/Свои · нажми, чтобы открыть", style = body(12, color = Muted))
                 }
-                Text("Отправить", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clickable {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить") {
                     runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                }.padding(6.dp))
+                }, contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icSend), "Отправить", tint = Teal, modifier = Modifier.size(20.dp))
+                }
             }
         }
     }
@@ -141,4 +143,12 @@ fun md(text: String): AnnotatedString = buildAnnotatedString {
         }
         if (li < lines.size - 1) append("\n")
     }
+}
+
+
+private val icSend by lazy {
+    androidx.compose.ui.graphics.vector.ImageVector.Builder("send", 24.dp, 24.dp, 24f, 24f).apply {
+        addPath(androidx.compose.ui.graphics.vector.addPathNodes("M21 3L10 14M21 3l-7 18-4-7-7-4z"), stroke = androidx.compose.ui.graphics.SolidColor(Color.Black),
+            strokeLineWidth = 1.9f, strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
+    }.build()
 }

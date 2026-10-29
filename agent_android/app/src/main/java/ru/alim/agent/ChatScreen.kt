@@ -117,7 +117,6 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     val ctx = LocalContext.current
     val haze = remember { HazeState() }
     val list = rememberLazyListState()
-    var menu by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf<String?>(null) }
     val msgs = chat.msgs
     val shown = remember(msgs.size, search, msgs.lastOrNull()) {
@@ -125,7 +124,28 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         if (q.isEmpty()) msgs.toList() else msgs.filter { it.text.contains(q, true) }
     }
     // новые сообщения — прокрутка вниз
-    LaunchedEffect(msgs.size, core.busy) { if (search == null) list.animateScrollToItem(0) }
+    LaunchedEffect(msgs.size, core.busy) { if (search == null && ChatJump.target == 0L) list.animateScrollToItem(0) }
+    LaunchedEffect(ChatJump.searchReq) { if (ChatJump.searchReq) { search = ""; ChatJump.searchReq = false } }
+    // переход с панели — к нужному сообщению, с подсветкой
+    LaunchedEffect(ChatJump.target) {
+        val id = ChatJump.target
+        if (id == 0L) return@LaunchedEffect
+        delay(120)
+        var idx = 0
+        if (core.pending != null) idx++
+        if (core.busy && core.pending == null) idx++
+        val rev = msgs.toList().asReversed()
+        var found = -1
+        for ((i, m) in rev.withIndex()) {
+            if (m.id == id) { found = idx; break }
+            idx++
+            val prev = rev.getOrNull(i + 1)
+            if (prev == null || !sameDay(prev.ts, m.ts)) idx++
+        }
+        if (found >= 0) { list.scrollToItem(found, -200); ChatJump.glow = id }
+        ChatJump.target = 0L
+        delay(2200); ChatJump.glow = 0L
+    }
     var tick by remember { mutableStateOf(0) }
     var composerH by remember { mutableStateOf(220) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
@@ -198,35 +218,20 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             } else {
                 Row(Modifier.weight(1f).height(56.dp).glass(haze, RoundedCornerShape(28.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(44.dp, online = Online.online && tick >= 0, f = f)
+                    Avatar(44.dp, f = f)
                     HGap(10)
                     Column(Modifier.weight(1f)) {
                         Text(f.name, style = body(17, FontWeight.Bold), maxLines = 1)
+                        // «в сети» не пишем — Пилот на телефоне всегда рядом; статус только когда занят или нет связи
                         val st = Online.status(core, f)
-                        Text(if (core.busy) shortStatus(st) else st, style = body(if (core.busy) 12 else 13, color = if (Online.online && !core.busy) Teal else Muted),
+                        if (core.busy || !Online.online || tick < 0) Text(if (core.busy) shortStatus(st) else st, style = body(if (core.busy) 12 else 13, color = Muted),
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
             HGap(8)
-            Box {
-                Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Меню") { menu = true }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.MoreVert, "Меню", tint = Ink)
-                }
-                DropdownMenu(menu, { menu = false }, Modifier.background(Th.c.card)) {
-                    listOf(
-                        "История и расходы" to { go(Scr.History) },
-                        "Что ${f.name} помнит" to { go(Scr.Memory) },
-                        "Сводки дня" to { go(Scr.Digest) },
-                        "Сам пишет первым" to { go(Scr.Initiative) },
-                        "Отвечать за меня" to { go(Scr.Rules) },
-                        "Оформление" to { go(Scr.Look) },
-                        "Настройки" to { go(Scr.Settings) },
-                        "Поиск по переписке" to { search = "" },
-                    ).forEach { (t, f) ->
-                        DropdownMenuItem(text = { Text(t, style = body(15)) }, onClick = { menu = false; f() })
-                    }
-                }
+            Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Меню") { Panel.open = true }, contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icMenu), "Меню", tint = Ink, modifier = Modifier.size(22.dp))
             }
         }
 
@@ -343,8 +348,14 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
         return
     }
     val picked = m.id in ChatSel.ids
+    val lit = ChatJump.glow == m.id
+    // результат задачи — «лист», как в макете: крупный вывод, текст, файлы иконками
+    if (!m.me && !ChatSel.on && (m.files.isNotBlank() || (m.meta.isNotBlank() && m.text.length > 260))) {
+        SheetCard(m, lit, showButtons, chat)
+        return
+    }
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-        .background(if (picked) Teal.copy(alpha = 0.16f) else Color.Transparent)
+        .background(if (picked) Teal.copy(alpha = 0.16f) else if (lit) Teal.copy(alpha = 0.12f) else Color.Transparent)
         .combinedClickable(enabled = ChatSel.on, onClick = { ChatSel.toggle(m.id) })) {
     if (ChatSel.on) Box(Modifier.align(Alignment.CenterStart).padding(start = 6.dp).size(22.dp).clip(CircleShape)
         .background(if (picked) Teal else Color.Transparent).border(2.dp, if (picked) Teal else Muted, CircleShape),
@@ -393,6 +404,44 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
             }
         }
     }
+    }
+}
+
+/** «Лист» результата: заголовок-вывод крупно, остальное текстом, файлы, кнопки. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStore) {
+    val text = m.text.trim()
+    val cut = Regex("[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1
+    val title = if (cut > 0) text.take(cut).trim().trimEnd('.') else ""
+    val rest = if (cut > 0) text.drop(cut).trim() else text
+    val shape = RoundedCornerShape(22.dp)
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).border(1.dp, if (lit) Teal else Th.c.line, shape)
+            .combinedClickable(onClick = {}, onLongClick = { ChatSel.toggle(m.id) }).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("ЛИСТ · ГОТОВО", style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.4.sp), modifier = Modifier.weight(1f))
+                Text(hhmm.format(Date(m.ts)), style = body(12, color = Th.c.meta))
+            }
+            if (title.isNotBlank()) Text(title, style = androidx.compose.ui.text.TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, lineHeight = 25.sp, color = Ink))
+            if (rest.isNotBlank()) Text(md(rest), style = body(14, color = Ink.copy(alpha = 0.86f)), lineHeight = 20.sp)
+            if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
+            if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('\n').filter { it.isNotBlank() })
+            if (m.ytVideos.isNotBlank()) YtGrid(m.ytVideos.split('\n').filter { it.isNotBlank() })
+            if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
+            if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
+            if (m.meta.isNotBlank()) Text(m.meta, style = body(11, color = Th.c.meta), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (showButtons && m.buttons.isNotEmpty()) {
+            Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                m.buttons.forEach { b ->
+                    Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble.copy(alpha = 0.85f))
+                        .border(1.dp, Teal.copy(alpha = 0.5f), RoundedCornerShape(18.dp)).clickable { chat.send(b) }.padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center) { Text(b, style = body(14, FontWeight.SemiBold, Teal)) }
+                }
+            }
+        }
     }
 }
 
@@ -663,6 +712,7 @@ private val icReply by lazy { vec("reply", "M10 6L4 12l6 6M4 12h10a6 6 0 0 1 6 6
 private val icForward by lazy { vec("fwd", "M14 6l6 6-6 6M20 12H10a6 6 0 0 0-6 6v1") }
 private val icTrash by lazy { vec("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6") }
 private val icDown by lazy { vec("down", "M6 9l6 6 6-6", 2.2f) }
+private val icMenu by lazy { vec("menu", "M4 6h16M4 12h16M4 18h10") }
 
 @Composable
 fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false, f: Friend = Friends.main) {
