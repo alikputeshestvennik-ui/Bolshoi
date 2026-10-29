@@ -77,15 +77,23 @@ fun App(voice: Voice) {
     val tgCtx = androidx.compose.ui.platform.LocalContext.current
     val tgScope = androidx.compose.runtime.rememberCoroutineScope()
     val life = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    // после установки новой версии процесс стартует заново — строки «скачиваю/скачал сборку» больше не нужны
+    val verCtx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (Updater.cleaned) return@LaunchedEffect
+        Updater.cleaned = true
+        val v = runCatching { verCtx.packageManager.getPackageInfo(verCtx.packageName, 0).let { pi -> if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong() } }.getOrDefault(0L)
+        if (v != 0L && Prefs.lastVer != v) { Prefs.lastVer = v; Chat.main.dropUpd() }
+    }
     androidx.compose.runtime.DisposableEffect(life) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
             if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 SkyDrift.reroll(); tgScope.launch { SkyWeather.refresh() }
                 tgScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    runCatching { BuildWatch.check(tgCtx) }.getOrNull()?.let { m -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.note(m) } }
+                    runCatching { BuildWatch.check(tgCtx) }.getOrNull()?.let { m -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.noteUpd(m) } }
                 }
             }
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured) tgScope.launch {
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured && Prefs.tgDigest) tgScope.launch {
                 Tg.start(tgCtx)
                 var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)
                 runCatching { Tg.newPrivate() }.getOrNull()?.let { Chat.main.note("💬 Личные в Telegram:\n$it") }

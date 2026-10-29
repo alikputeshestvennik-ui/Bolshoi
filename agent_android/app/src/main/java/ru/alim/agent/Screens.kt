@@ -591,19 +591,6 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
     Screen("Настройки", back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // баланс — сразу на виду
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AccentSoft).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Баланс GPTunnel", style = body(13, color = AccentSoftInk))
-                    Text(balance.ifBlank { "—" }, style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                }
-                IconTile(Icons.Filled.Refresh, "Обновить баланс", {
-                    scope.launch {
-                        withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }?.let { balance = rub(it); Prefs.lastBalance = balance }
-                    }
-                })
-            }
-
             Section("Быстрый доступ", "выделить текст · поделиться · шторка") {
                 Text("• Выдели текст в любом приложении → в меню «Пилот».\n• Из любого приложения «Поделиться» → «Пилот» (ссылка, скриншот, текст).\n• Шторка поверх всего — по плитке «Спросить» или по боковой кнопке.",
                     style = body(13, color = Muted), lineHeight = 19.sp)
@@ -617,26 +604,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 }, bg = Card, fg = Ink, border = Line)
             }
 
-            Section("Модели", "${Agent.short(fast)} · ${Agent.short(smart)} · фон ${Agent.short(bgm)}") {
-                if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
-                Text("Выбери модель для каждой роли. Яндекс — бесплатно и без VPN, Google — бесплатно с VPN, Claude — платно, но самый толковый.", style = body(12, color = Muted), lineHeight = 16.sp)
-                ModelEditor("Чат — обычные сообщения и простые просьбы", "fast", fast, fastIn, fastOut,
-                    { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
-                ModelEditor("Руки — сложные дела (Ozon, много шагов)", "smart", smart, smartIn, smartOut,
-                    { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
-                ModelEditor("Фон — уведомления, сводки, сам пишет, поиск фото", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
-                var fl by remember { mutableStateOf(Prefs.fastLane) }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Быстрые ответы", style = body(15, FontWeight.SemiBold))
-                        Text("Простую болтовню Пилот отвечает сразу лёгкой моделью, с печатью по словам. Дела по-прежнему делает агент.", style = body(12, color = Muted), lineHeight = 16.sp)
-                    }
-                    Toggle(fl) { fl = it; Prefs.fastLane = it }
-                }
-                if (fl) {
-                    var lane by remember { mutableStateOf(Prefs.laneModel) }
-                    ModelEditor("Быстрая полоса — простая болтовня", "lane", lane, "0", "0", { lane = it; Prefs.laneModel = it }, {}, {})
-                }
+            Section("Поведение", "сигналы важного · вибро · 3D") {
                 var hap by remember { mutableStateOf(Prefs.haptics) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -676,26 +644,14 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     Toggle(f3) { f3 = it; Prefs.flight3d = it; if (it) Flight3D.failed = false }
                 }
                 if (Flight3D.info.isNotBlank()) Text("3D: " + Flight3D.info, style = body(11, color = Muted), lineHeight = 14.sp)
-                Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
-                    style = body(12, color = Muted), lineHeight = 17.sp)
-                BigButton("Проверить связь", {
-                    check = "Проверяю…"
-                    scope.launch {
-                        check = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val r = Llm.chat(Prefs.fastModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user")
-                                    .put("content", "Ответь JSON {\"ok\": true}")), 50)
-                                "${Agent.short(Prefs.fastModel)} отвечает (${rub(r.cost(Prefs.fastModel))})"
-                            }.getOrElse { "быстрая: ${it.message}" }
-                        }
-                        fast = Prefs.fastModel; smart = Prefs.smartModel
-                        if (Prefs.smartModel.isNotBlank()) withContext(Dispatchers.IO) {
-                            runCatching { Llm.chat(Prefs.smartModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", "ok")), 5, false) }
-                        }.onSuccess { smart = Prefs.smartModel; check = "$check\n${Agent.short(Prefs.smartModel)} отвечает" }
-                            .onFailure { check = "$check\nсильная: ${it.message}" }
+                var dig by remember { mutableStateOf(Prefs.tgDigest) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Сводка Telegram при открытии", style = body(15, FontWeight.SemiBold))
+                        Text("Список новых личных сообщений в чате, когда открываешь Пилота. Выключено — спроси сам: «что в телеграме?».", style = body(12, color = Muted), lineHeight = 16.sp)
                     }
-                }, bg = Card, fg = Ink, border = Line)
-                check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+                    Toggle(dig) { dig = it; Prefs.tgDigest = it }
+                }
             }
 
             fun eng(e: String) = when (e) { "yandex" -> "Яндекс"; "google" -> "Google"; else -> "телефон" }
@@ -778,6 +734,60 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }, bg = Card, fg = Ink, border = Line)
             }
+            Section("Для разработчика", "модели · расходы · квоты", Muted) {
+                // баланс — сразу на виду
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AccentSoft).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Баланс GPTunnel", style = body(13, color = AccentSoftInk))
+                        Text(balance.ifBlank { "—" }, style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+                    }
+                    IconTile(Icons.Filled.Refresh, "Обновить баланс", {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }?.let { balance = rub(it); Prefs.lastBalance = balance }
+                        }
+                    })
+                }
+                if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
+                Text("Выбери модель для каждой роли. Яндекс — бесплатно и без VPN, Google — бесплатно с VPN, Claude — платно, но самый толковый.", style = body(12, color = Muted), lineHeight = 16.sp)
+                ModelEditor("Чат — обычные сообщения и простые просьбы", "fast", fast, fastIn, fastOut,
+                    { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
+                ModelEditor("Руки — сложные дела (Ozon, много шагов)", "smart", smart, smartIn, smartOut,
+                    { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
+                ModelEditor("Фон — уведомления, сводки, сам пишет, поиск фото", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
+                var fl by remember { mutableStateOf(Prefs.fastLane) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Быстрые ответы", style = body(15, FontWeight.SemiBold))
+                        Text("Простую болтовню Пилот отвечает сразу лёгкой моделью, с печатью по словам. Дела по-прежнему делает агент.", style = body(12, color = Muted), lineHeight = 16.sp)
+                    }
+                    Toggle(fl) { fl = it; Prefs.fastLane = it }
+                }
+                if (fl) {
+                    var lane by remember { mutableStateOf(Prefs.laneModel) }
+                    ModelEditor("Быстрая полоса — простая болтовня", "lane", lane, "0", "0", { lane = it; Prefs.laneModel = it }, {}, {})
+                }
+                Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
+                    style = body(12, color = Muted), lineHeight = 17.sp)
+                BigButton("Проверить связь", {
+                    check = "Проверяю…"
+                    scope.launch {
+                        check = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val r = Llm.chat(Prefs.fastModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user")
+                                    .put("content", "Ответь JSON {\"ok\": true}")), 50)
+                                "${Agent.short(Prefs.fastModel)} отвечает (${rub(r.cost(Prefs.fastModel))})"
+                            }.getOrElse { "быстрая: ${it.message}" }
+                        }
+                        fast = Prefs.fastModel; smart = Prefs.smartModel
+                        if (Prefs.smartModel.isNotBlank()) withContext(Dispatchers.IO) {
+                            runCatching { Llm.chat(Prefs.smartModel, org.json.JSONArray().put(org.json.JSONObject().put("role", "user").put("content", "ok")), 5, false) }
+                        }.onSuccess { smart = Prefs.smartModel; check = "$check\n${Agent.short(Prefs.smartModel)} отвечает" }
+                            .onFailure { check = "$check\nсильная: ${it.message}" }
+                    }
+                }, bg = Card, fg = Ink, border = Line)
+                check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+            }
+
             Gap(8)
         }
     }

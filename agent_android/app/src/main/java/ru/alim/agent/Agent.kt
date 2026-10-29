@@ -40,6 +40,25 @@ object Agent {
         return x
     }
 
+    /** Утверждение «я сделал X» → какие инструменты должны были реально отработать. */
+    private val CLAIMS = listOf(
+        Regex("(отправил|написал|переслал|ответил)\\w*\\s+(ему|ей|им|сообщени|смс|sms|в телеграм|в tg|в whatsapp|письм|фото)", RegexOption.IGNORE_CASE) to
+            setOf("sms_send", "tg_send", "whatsapp_write", "message_reply", "delegate", "photos_send", "attachment_send", "file_send", "yoomoney_send"),
+        Regex("(создал|сохранил|сделал|собрал|составил)\\w*\\s+(таблиц|файл|документ|excel|word|xlsx|docx)", RegexOption.IGNORE_CASE) to setOf("file_create"),
+        Regex("(постав|завел|завёл|установил)\\w*\\s+(будильник|таймер|напоминан)|напомню (тебе )?(в|через|завтра)", RegexOption.IGNORE_CASE) to setOf("alarm_set", "timer_set", "note_add", "event_create"),
+        Regex("(добавил|записал|внес|внёс)\\w*\\s+(в календар|встреч|событи)", RegexOption.IGNORE_CASE) to setOf("event_create"),
+        Regex("(добавил|записал)\\w*\\s+(в заметк|в список|в дела|задач)", RegexOption.IGNORE_CASE) to setOf("note_add", "note_done"),
+        Regex("\\bзапомнил\\b", RegexOption.IGNORE_CASE) to setOf("memory_save"),
+        Regex("(перевел|перевёл|оплатил|отправил)\\w*\\s+\\d[\\d\\s]*(₽|руб)", RegexOption.IGNORE_CASE) to setOf("yoomoney_transfer", "yoomoney_send"),
+        Regex("(включил|выключил)\\w*\\s+(фонарик|не беспокоить|энергосбережени|звук|беззвучн)", RegexOption.IGNORE_CASE) to setOf("flashlight", "do_not_disturb", "power_saver", "phone_volume", "phone_ringer"),
+        Regex("(поручил|начал переписку|связался|договорил)", RegexOption.IGNORE_CASE) to setOf("delegate", "delegate_answer", "delegate_finish", "delegate_list"),
+        Regex("(слежу|начал слежку|буду проверять каждые)", RegexOption.IGNORE_CASE) to setOf("watch_start", "watch_list"),
+    )
+
+    /** Что в ответе заявлено как сделанное, но инструмент не отработал. null — всё честно. */
+    fun unbacked(answer: String, done: Set<String>): String? =
+        CLAIMS.firstOrNull { (re, tools) -> re.containsMatchIn(answer) && tools.none { it in done } }?.let { (re, tools) -> re.find(answer)!!.value + " → нужен " + tools.first() }
+
     enum class Phase { IDLE, WORKING, CONFIRM, DONE }
 
     class Step(val text: String) {
@@ -299,6 +318,8 @@ object Agent {
             var smart = smartStart
             var final: String? = null
             val calls = HashMap<String, Int>()
+            val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
+            var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
             try {
                 var i = 0
@@ -374,9 +395,17 @@ object Agent {
                     } catch (e: CancellationException) { throw e } catch (e: Exception) { "ошибка: ${e.message}" }
                     step.done = true
                     step.detail = res.take(500)
+                    if (!Regex("^(ошибка|не получилось|не удалось|нет разрешения|не нашёл|не нашел|не подключ|нужно|нужен|нужна)", RegexOption.IGNORE_CASE).containsMatchIn(res.trim())) doneOk += tool
                     msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: ${res.take(3000)}"))
                 }
                 // добросовестность: перед ответом сверяем каждый пункт просьбы; не доделано — доделываем (один заход)
+                // честность: «отправил/создал/поставил» — только если инструмент реально отработал
+                final?.let { f -> if (honesty < 1 && i < 14) unbacked(f, doneOk)?.let { why ->
+                    honesty++
+                    msgs.put(msg("user", "ПРОВЕРКА ЧЕСТНОСТИ: в ответе сказано «${why.substringBefore(" →")}», но в этой задаче это действие не выполнено (инструмент не вызывался или вернул ошибку). Либо сделай его сейчас инструментом, либо перепиши ответ честно: что сделано, а что нет и почему. Никогда не пиши «сделал», если не сделал."))
+                    final = null
+                } }
+                if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
                 if (fin == null || audits >= 1 || i >= 13 || !(calls.values.sum() >= 2 || looksHard(text))) break
                 audits++

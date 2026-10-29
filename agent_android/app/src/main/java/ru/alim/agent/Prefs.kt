@@ -30,6 +30,8 @@ object Prefs {
     var haptics: Boolean get() = b("haptics", true); set(v) = putB("haptics", v)
     /** Объёмная 3D-сцена полёта на экране задачи (WebView + WebGL). */
     var flight3d: Boolean get() = b("flight3d", true); set(v) = putB("flight3d", v)
+    var lastVer: Long get() = sp.getLong("last_ver", 0L); set(v) = sp.edit().putLong("last_ver", v).apply()
+    var tgDigest: Boolean get() = b("tg_digest", false); set(v) = putB("tg_digest", v)
     var alertVoice: Boolean get() = b("al_voice", true); set(v) = putB("al_voice", v)
     var alertFlash: Boolean get() = b("al_flash", true); set(v) = putB("al_flash", v)
     var alertWake: Boolean get() = b("al_wake", true); set(v) = putB("al_wake", v)

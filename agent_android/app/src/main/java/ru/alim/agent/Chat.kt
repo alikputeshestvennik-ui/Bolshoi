@@ -351,6 +351,14 @@ class ChatStore(val fid: String) {
 
     /** Служебная строка посередине ленты. */
     fun note(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), note = true))
+
+    /** Служебные строки об обновлении — всегда одна, свежая; после установки исчезают. */
+    private val UPD = listOf("⬇️ Скачиваю свежую", "🛠 ")
+    fun noteUpd(text: String) = onMain {
+        msgs.removeAll { it.note && UPD.any { p -> it.text.startsWith(p) } }
+        msgs.add(Msg(newId(), false, text, System.currentTimeMillis(), note = true)); save()
+    }
+    fun dropUpd() = onMain { if (msgs.removeAll { it.note && UPD.any { p -> it.text.startsWith(p) } }) save() }
     /** Обычная реплика Пилота в ленте (отчёты поручений и т.п.). */
     fun say(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), status = "read"))
 
@@ -410,7 +418,7 @@ class ChatStore(val fid: String) {
     /** Разобрать ответ лёгкой модели: #task/отказ — в агента, иначе показать как реплику Пилота. */
     private fun handleFast(c: Agent.Core, prompt: String, bubbleId: Long, text: String, streamedShown: Boolean) {
         val t = Agent.dropCliche(text.trimStart())
-        if (t.isBlank() || t.startsWith("#task", true) || looksRefusal(t)) {
+        if (t.isBlank() || t.startsWith("#task", true) || looksRefusal(t) || Agent.unbacked(t, emptySet()) != null) {
             if (streamedShown) delete(listOf(bubbleId)) // убрать показанный пузырь, ответит агент
             c.followUp(prompt); return
         }

@@ -171,14 +171,15 @@ object Updater {
         val filler = setOf("", "пожалуйста", "давай", "ты", "уже", "плиз", "ка", "-ка")
         return rest.split(Regex("\\s+")).all { it in filler } || Regex("нов|верси|сборк|обновлен|приложени|пилот|себя|отказал|еще раз|снова").containsMatchIn(rest)
     }
+    @Volatile var cleaned = false
     fun run(ctx: Context) {
         if (busy) return
         busy = true
-        Chat.main.note("⬇️ Скачиваю свежую сборку…")
+        Chat.main.noteUpd("⬇️ Скачиваю свежую сборку…")
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             val r = runCatching { Git.installLatest(ctx) }.getOrElse { "не получилось: ${it.message}" }
             busy = false
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.note("🛠 " + r.replaceFirstChar { it.uppercase() }) }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.noteUpd("🛠 " + r.replaceFirstChar { it.uppercase() }) }
         }
     }
 }
