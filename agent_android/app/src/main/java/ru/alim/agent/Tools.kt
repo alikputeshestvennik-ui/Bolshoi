@@ -524,10 +524,12 @@ object Tools {
             Deleg.stop(ctx, a.optLong("id").takeIf { it > 0 })
         },
 
-        Tool("watch_start", "{\"topic\": \"Крымский мост\", \"what\": \"что именно отслеживать: открыт/закрыт, ограничения, пробки\", \"sources\": [\"@ник_канала\", \"https://…\", \"поисковый запрос\"], \"every_min\": 30, \"until\": \"ГГГГ-ММ-ДДTЧЧ:ММ (пусто — до конца дня)\"} — СЛЕЖКА: Пилот сам проверяет тему каждые N минут (≥15) в нескольких источниках, первый результат присылает сразу, дальше — ТОЛЬКО при изменениях, до указанного времени. Для «проверяй каждые …», «следи за …», «сообщай, если изменится». Источники подбери сами: официальный канал + новости + поиск") t@{ ctx, a ->
+        Tool("watch_start", "{\"topic\": \"Крымский мост\", \"what\": \"что именно отслеживать: открыт/закрыт, ограничения, пробки\", \"sources\": [\"@ник_канала\", \"https://…\", \"поисковый запрос\"], \"every_min\": 30, \"until\": \"ГГГГ-ММ-ДДTЧЧ:ММ (пусто — до конца дня)\", \"feed\": \"название или @ник Telegram-канала/группы — режим ЛЕНТЫ\"} — СЛЕЖКА. Режим ЛЕНТЫ (feed): «смотри посты в тг-группе …, присылай новое с фото/видео» — каждый новый пост приходит в чат с текстом и медиа. Иначе — СОСТОЯНИЕ: Пилот сам проверяет тему каждые N минут (≥15) в нескольких источниках, первый результат присылает сразу, дальше — ТОЛЬКО при изменениях, до указанного времени. Для «проверяй каждые …», «следи за …», «сообщай, если изменится». Источники подбери сами: официальный канал + новости + поиск") t@{ ctx, a ->
             val topic = a.optString("topic").trim().ifBlank { return@t "за чем следить?" }
             val src = a.optJSONArray("sources")?.let { s -> (0 until s.length()).map { s.optString(it) } }
                 ?: a.optString("sources").split(',', ';').map { it.trim() }
+            val feed = a.optString("feed").trim()
+            if (feed.isNotEmpty()) return@t Watch.startFeed(ctx, feed, a.optInt("every_min", 15), Deleg.parseWhen(a.optString("until")) ?: 0L)
             Watch.start(ctx, topic, a.optString("what").trim(), src, a.optInt("every_min", 60), Deleg.parseWhen(a.optString("until")) ?: 0L)
         },
         Tool("watch_stop", "{\"id\": 123} — остановить слежку («хватит следить», «больше не проверяй»)") t@{ ctx, a -> Watch.stop(ctx, a.optLong("id").takeIf { it > 0 }) },
@@ -876,7 +878,10 @@ object Tools {
             withContext(Dispatchers.Main) {
                 // пересобрал тот же файл в этой задаче — старую карточку убираем, остаётся одна, свежая
                 val base = ref.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "")
-                Agent.cur().files.removeAll { it.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "") == base }
+                Agent.cur().files.removeAll { f ->
+                    val b = f.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "")
+                    f.name.substringAfterLast('.') == ref.name.substringAfterLast('.') && b.length >= 6 && (b == base || base.startsWith(b) || b.startsWith(base))
+                }
                 Agent.cur().files.add(0, ref)
             }
             "создал «${ref.name}» в Загрузки/Свои — карточка на экране, нажатием открывается, там же «Отправить»."

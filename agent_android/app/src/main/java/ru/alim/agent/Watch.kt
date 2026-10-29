@@ -26,7 +26,9 @@ object Watch {
         var state: String = "", var key: String = "", var src: String = "",
         var nextAt: Long = 0, var runs: Int = 0, var changes: Int = 0,
         var status: String = "active", var err: String = "",
-    ) { val title get() = "Слежка #${id % 1000}: $topic" }
+        /** "state" — состояние темы; "feed" — новые посты Telegram-канала/группы. */
+        val mode: String = "state", val chatId: Long = 0, var lastMsg: Long = 0,
+    ) { val title get() = (if (mode == "feed") "Лента #" else "Слежка #") + "${id % 1000}: $topic" }
 
     val items = ArrayList<Item>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -47,7 +49,7 @@ object Watch {
                 val src = o.optJSONArray("src")?.let { s -> (0 until s.length()).map { s.optString(it) } }.orEmpty()
                 items += Item(o.getLong("id"), o.optString("topic"), o.optString("what"), src, o.optInt("every", 60), o.optLong("until"),
                     o.optString("state"), o.optString("key"), o.optString("from"), o.optLong("next"), o.optInt("runs"), o.optInt("chg"),
-                    o.optString("st", "active"), o.optString("err"))
+                    o.optString("st", "active"), o.optString("err"), o.optString("mode", "state"), o.optLong("chat"), o.optLong("lastMsg"))
             }
         }
     }
@@ -58,7 +60,7 @@ object Watch {
         val a = JSONArray()
         for (it in keep) a.put(JSONObject().put("id", it.id).put("topic", it.topic).put("what", it.what).put("src", JSONArray(it.sources))
             .put("every", it.everyMin).put("until", it.until).put("state", it.state).put("key", it.key).put("from", it.src)
-            .put("next", it.nextAt).put("runs", it.runs).put("chg", it.changes).put("st", it.status).put("err", it.err))
+            .put("next", it.nextAt).put("runs", it.runs).put("chg", it.changes).put("st", it.status).put("err", it.err).put("mode", it.mode).put("chat", it.chatId).put("lastMsg", it.lastMsg))
         runCatching { file(ctx).writeText(a.toString()) }
     }
 
@@ -78,10 +80,28 @@ object Watch {
         return "начал слежку «$topic»: проверяю каждые ${every} мин в ${maxOf(it.sources.size, 1) + 1} источниках до ${Deleg.whenText(end)}. Первый результат пришлю сейчас, дальше — только при изменениях."
     }
 
+    /** Лента Telegram: каждые N минут присылать новые посты с фото/видео. */
+    suspend fun startFeed(ctx: Context, chat: String, everyMin: Int, until: Long): String {
+        init(ctx)
+        if (Tg.state != Tg.St.READY) return "личный Telegram не подключён — ленту смотреть не могу"
+        val (cid, title) = Tg.resolveChat(chat) ?: return "не нашёл в Telegram «$chat» — уточни название или @ник"
+        if (items.any { it.status == "active" && it.mode == "feed" && it.chatId == cid }) return "за лентой «$title» уже слежу"
+        if (items.count { it.status == "active" } >= 5) return "уже идут 5 слежек — останови одну (watch_stop)"
+        val now = System.currentTimeMillis()
+        val every = everyMin.coerceIn(15, 24 * 60)
+        val end = if (until > now) until else endOfDay(now)
+        val it = Item(now, title, "новые посты", emptyList(), every, end, mode = "feed", chatId = cid)
+        it.nextAt = now + every * 60_000L
+        items += it; save(); Planner.plan(ctx)
+        scope.launch { check(it, first = true) }
+        return "смотрю ленту «$title»: проверяю каждые $every мин до ${Deleg.whenText(end)}. Последний пост пришлю сейчас, дальше — каждый новый с фото/видео."
+    }
+
     fun stop(ctx: Context, id: Long?): String {
         init(ctx)
+        if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.status != "active" }?.let { x -> return "«${x.title}» уже не идёт" }
         val it = (if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.status == "active" } else items.lastOrNull { x -> x.status == "active" })
-            ?: return "активных слежек нет"
+            ?: return "активных слежек нет — нечего останавливать"
         it.status = "stopped"; save(); Planner.plan(ctx)
         return "остановил слежку «${it.topic}»" + (if (it.state.isNotBlank()) ". Последнее: ${it.state}" else "")
     }
@@ -110,8 +130,34 @@ object Watch {
         app?.let { Planner.plan(it) }
     }
 
+    private suspend fun checkFeed(it: Item, first: Boolean) {
+        val ctx = app ?: return
+        if (Tg.state != Tg.St.READY) { runCatching { Tg.start(ctx) }; kotlinx.coroutines.delay(8000) }
+        val posts = runCatching { Tg.feed(it.chatId, if (first) 0L else it.lastMsg) }.getOrDefault(emptyList())
+        it.runs++
+        if (first) it.lastMsg = maxOf(it.lastMsg, runCatching { Tg.lastId(it.chatId) }.getOrDefault(0L))
+        if (first && posts.isEmpty()) { save(); tell(it, "📡 ${it.title}\nПостов пока не вижу. Проверяю каждые ${it.everyMin} мин до ${Deleg.whenText(it.until)}.", "смотрю ленту"); return }
+        for ((k, p) in posts.withIndex()) {
+            it.lastMsg = maxOf(it.lastMsg, p.id)
+            if (!first) it.changes++
+            val head = (if (first) "📡 ${it.title} — последний пост" else "🆕 ${it.topic}") + " · ${Tg.postTime(p.date)}"
+            val tail = if (first && k == posts.lastIndex) "\n\nДальше пришлю каждый новый пост, до ${Deleg.whenText(it.until)}." else ""
+            post(it, "$head\n${p.text.ifBlank { "(без текста)" }}$tail", p.media)
+        }
+        save()
+    }
+
+    private fun post(it: Item, text: String, media: List<String>) {
+        val ctx = app ?: return
+        scope.launch(Dispatchers.Main) {
+            runCatching { Chat.main.add(Msg(Chat.main.newId(), false, text, System.currentTimeMillis(), status = "read", tgPhotos = media.joinToString("\n"))) }
+        }
+        Monitor.notify(ctx, 7500 + (it.id % 50).toInt(), it.topic, text.lines().drop(1).joinToString(" ").take(200), open = "chat:main")
+    }
+
     private suspend fun check(it: Item, first: Boolean) = lock.withLock {
         val ctx = app ?: return@withLock
+        if (it.mode == "feed") { checkFeed(it, first); return@withLock }
         val got = gather(ctx, it)
         it.runs++
         if (got.isBlank()) {
@@ -147,11 +193,17 @@ object Watch {
         if (first || changed || it.state.isBlank()) { it.state = line; it.key = key; it.src = src }
         it.err = ""; save()
         when {
-            first -> tell(it, "👁 ${it.title}\nСейчас: $line" + (if (src.isNotBlank()) " ($src)" else "") +
+            first -> tell(it, "👁 ${it.title}\nСейчас: $line" + srcTail(line, src) +
                 "\nПроверяю каждые ${it.everyMin} мин до ${Deleg.whenText(it.until)}, напишу только если изменится.", line)
             changed -> { it.changes++; save()
-                tell(it, "🔔 ${it.topic}: $line" + (if (src.isNotBlank()) " ($src)" else "") + (if (prev.isNotBlank()) "\nБыло: $prev" else ""), line) }
+                tell(it, "🔔 ${it.topic}: $line" + srcTail(line, src) + (if (prev.isNotBlank()) "\nБыло: $prev" else ""), line) }
         }
+    }
+
+    private fun srcTail(line: String, src: String): String {
+        if (src.isBlank() || src.contains("нет данных", true)) return ""
+        val key = src.substringBefore(',').substringBefore(" —").trim().lowercase()
+        return if (key.length >= 3 && line.lowercase().contains(key.take(12))) "" else " ($src)"
     }
 
     /** Собираем данные: каналы (@ник), страницы (http…), плюс поиск по теме. */
@@ -167,7 +219,15 @@ object Watch {
             }
             if (r != null) parts += "ИСТОЧНИК $s:\n" + r.take(2500)
         }
-        tool("web_search", JSONObject().put("query", "${it.topic} сейчас"))?.let { r -> parts += "ПОИСК:\n" + r.take(2500) }
+        val urls = LinkedHashSet<String>()
+        for (q in listOf("${it.topic} сейчас", "${it.topic} ${it.what}".take(120)).distinct()) {
+            tool("web_search", JSONObject().put("query", q))?.let { r ->
+                parts += "ПОИСК «$q»:\n" + r.take(2500)
+                Regex("https?://[^\\s)\\]>\"]+").findAll(r).map { m -> m.value.trimEnd('.', ',') }.filterNot { u -> u.contains("yandex.ru/search") || u.contains("duckduckgo") }.take(2).forEach { u -> urls += u }
+            }
+        }
+        // свежие цифры обычно в самой статье, а не в сниппете — читаем лучшую ссылку
+        for (u in urls.take(if (it.sources.isEmpty()) 2 else 1)) tool("web_read", JSONObject().put("url", u))?.let { r -> parts += "СТАТЬЯ $u:\n" + r.take(3000) }
         return parts.joinToString("\n\n=====\n\n")
     }
 

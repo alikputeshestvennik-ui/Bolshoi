@@ -321,6 +321,57 @@ object Tg {
 
     private fun bestPhoto(p: TdApi.Photo?): Int? = p?.sizes?.maxByOrNull { it.width * it.height }?.photo?.id
 
+    class Post(val id: Long, val date: Int, val text: String, val media: List<String>)
+
+    /** Найти чат/канал: по названию, затем публичный @ник. */
+    suspend fun resolveChat(query: String): Pair<Long, String>? {
+        if (state != St.READY) return null
+        val q = query.trim()
+        val id = (if (!q.startsWith("@")) call<TdApi.Chats>(TdApi.SearchChats(q, null, 1))?.chatIds?.firstOrNull() else null)
+            ?: call<TdApi.Chat>(TdApi.SearchPublicChat(q.removePrefix("@").removePrefix("https://t.me/").substringBefore('/')))?.id
+            ?: call<TdApi.Chats>(TdApi.SearchChatsOnServer(q, null, 1))?.chatIds?.firstOrNull()
+            ?: return null
+        return id to chatTitle(id)
+    }
+
+    /** Лента: посты новее [afterId] (старые → новые), альбомы склеены в один пост, медиа скачаны. afterId=0 — только последний пост. */
+    suspend fun feed(chatId: Long, afterId: Long, max: Int = 5): List<Post> {
+        if (state != St.READY) return emptyList()
+        call<TdApi.Ok>(TdApi.OpenChat(chatId))
+        var hist = call<TdApi.Messages>(TdApi.GetChatHistory(chatId, 0, 0, 40, false))?.messages?.toList().orEmpty()
+        if (hist.size < 3) { kotlinx.coroutines.delay(1500); hist = call<TdApi.Messages>(TdApi.GetChatHistory(chatId, 0, 0, 40, false))?.messages?.toList().orEmpty() }
+        call<TdApi.Ok>(TdApi.CloseChat(chatId))
+        val fresh = hist.filter { it.id > afterId }.sortedBy { it.id }
+        // группируем альбомы
+        val groups = ArrayList<MutableList<TdApi.Message>>()
+        for (m in fresh) {
+            val last = groups.lastOrNull()
+            if (last != null && m.mediaAlbumId != 0L && last.first().mediaAlbumId == m.mediaAlbumId) last += m else groups += mutableListOf(m)
+        }
+        val pick = if (afterId == 0L) groups.takeLast(1) else groups.takeLast(max)
+        val out = ArrayList<Post>()
+        for (g in pick) {
+            val text = g.map { m -> when (val c = m.content) { is TdApi.MessageText -> c.text.text; is TdApi.MessagePhoto -> c.caption.text; is TdApi.MessageVideo -> c.caption.text
+                is TdApi.MessageAnimation -> c.caption.text; else -> "" } }.firstOrNull { it.isNotBlank() }
+                ?: g.firstOrNull()?.let { m -> contentText(m.content) }.orEmpty()
+            val media = ArrayList<String>()
+            for (m in g.take(6)) {
+                val c = m.content
+                val cover = when (c) { is TdApi.MessagePhoto -> bestPhoto(c.photo); is TdApi.MessageVideo -> bestPhoto(c.cover) ?: c.video?.thumbnail?.file?.id
+                    is TdApi.MessageAnimation -> c.animation?.thumbnail?.file?.id; else -> null } ?: continue
+                val vid = (c as? TdApi.MessageVideo)?.video?.video?.id
+                download(cover)?.let { path -> media += if (vid != null) "$path\tvid=$vid" else path }
+            }
+            out += Post(g.last().id, g.last().date, text.take(1500), media)
+        }
+        return out
+    }
+
+    /** id последнего сообщения в чате (для старта ленты). */
+    suspend fun lastId(chatId: Long): Long = call<TdApi.Chat>(TdApi.GetChat(chatId))?.lastMessage?.id ?: 0L
+
+    fun postTime(date: Int): String = hhmm(date)
+
     /** Последние медиа в чате/паблике: подписи + локальные пути к скачанным фото (включая обложки видео). */
     /** kind: "video" — только ролики, "photo" — только фото, "all"/прочее — и то и другое. */
     suspend fun chatMedia(query: String, count: Int = 12, day: String = "", kind: String = "all"): Pair<String, List<String>> {
