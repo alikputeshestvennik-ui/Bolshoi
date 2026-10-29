@@ -84,8 +84,9 @@ fun DashScreen(go: (Scr) -> Unit) {
                 }
             }
 
-            // ——— панель ———
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 12.dp),
+            // ——— панель (края плавно уходят в фон под шапкой и полем ввода) ———
+            Box(Modifier.weight(1f)) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 14.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 val t = tick   // перечитываем состояние поручений/слежек раз в несколько секунд
 
@@ -161,13 +162,16 @@ fun DashScreen(go: (Scr) -> Unit) {
                     SecTitle("Готово", Muted)
                     done.forEach { m -> ResultCard(m, compact = true) { ChatJump.to(m.id); go(Scr.Journal) } }
                     doneDeleg.forEach { d ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(ChatJump.find(chat, d.who)); go(Scr.Journal) }.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(8.dp).clip(CircleShape).background(Th.c.online)); Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(d.who + " · поручение", style = body(14, FontWeight.Bold))
-                                Text(d.report.ifBlank { "готово" }, style = body(13, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Th.c.card).clickable { ChatJump.to(ChatJump.find(chat, d.who)); go(Scr.Journal) }.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(8.dp).clip(CircleShape).background(Th.c.online)); Spacer(Modifier.width(10.dp))
+                                Text(d.who + " · поручение", style = body(15, FontWeight.Bold), modifier = Modifier.weight(1f))
+                                ShareBtn { shareText(ctx, "${d.who}: ${d.report}") }
                             }
+                            Text(d.report.ifBlank { "готово" }, style = body(14, color = Ink.copy(alpha = 0.82f)).copy(lineHeight = 20.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text("готово в " + SimpleDateFormat("HH:mm", Locale.US).format(Date(maxOf(d.lastIn, d.lastOut, d.created))), style = body(11, color = Th.c.meta),
+                                modifier = Modifier.align(Alignment.End))
                         }
                     }
                 }
@@ -177,6 +181,12 @@ fun DashScreen(go: (Scr) -> Unit) {
                         Text("Пока тихо", style = TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, color = Ink))
                         Text("Дай команду — найду, сравню, поручу или буду следить.", style = body(14, color = Muted))
                     }
+            }
+            val fade = Th.c.bg
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(22.dp)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade, fade.copy(alpha = 0f)))))
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(30.dp)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade.copy(alpha = 0f), fade))))
             }
 
             // ——— ввод ———
@@ -318,31 +328,48 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
     val shape = RoundedCornerShape(20.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).then(if (lit) Modifier.border(1.dp, Teal, shape) else Modifier)
         .clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (parts.title.isNotBlank()) Text(parts.title, style = TextStyle(fontFamily = Fonts.display, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = Ink))
+        val xls = files.firstOrNull { it.mime == Docs.XLSX }
+        val open: (Docs.FileRef) -> Unit = { f ->
+            runCatching { ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+        val share: () -> Unit = {
+            runCatching {
+                val i = if (files.size == 1) android.content.Intent(android.content.Intent.ACTION_SEND).setType(files[0].mime).putExtra(android.content.Intent.EXTRA_STREAM, files[0].uri)
+                    else android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).setType("*/*").putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, ArrayList(files.map { it.uri }))
+                ctx.startActivity(android.content.Intent.createChooser(i.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }
+        Row(verticalAlignment = Alignment.Top) {
+            Text(parts.title.ifBlank { files.firstOrNull()?.name?.substringBeforeLast('.').orEmpty() },
+                style = TextStyle(fontFamily = Fonts.display, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = Ink), modifier = Modifier.weight(1f))
+            if (files.isNotEmpty()) { Spacer(Modifier.width(10.dp)); ShareBtn(share) }
+        }
         if (parts.body.isNotBlank()) Text(parts.body, style = body(14, color = Ink.copy(alpha = 0.82f)).copy(lineHeight = 20.sp),
             maxLines = if (compact) 3 else 40, overflow = TextOverflow.Ellipsis)
-        preview?.takeIf { it.size >= 2 }?.let { rows -> MiniTable(rows) }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            files.forEach { f ->
+        val rows = preview?.takeIf { it.size >= 2 }
+        // таблица — сама кнопка: тап открывает Excel
+        if (rows != null && xls != null) Box(Modifier.clickable(onClickLabel = "Открыть таблицу") { open(xls) }) { MiniTable(rows) }
+        val rest = files.filter { rows == null || it != xls }
+        if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            rest.forEach { f ->
                 val xl = f.mime == Docs.XLSX
                 Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (xl) Color(0xFF1E7A4C) else Color(0xFF2B579A))
-                    .clickable(onClickLabel = "Открыть ${f.name}") {
-                        runCatching { ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
-                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    }, contentAlignment = Alignment.Center) { Text(if (xl) "XLS" else "DOC", style = body(11, FontWeight.Bold, Color.White)) }
-            }
-            if (files.isNotEmpty()) Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить") {
-                runCatching {
-                    val i = if (files.size == 1) android.content.Intent(android.content.Intent.ACTION_SEND).setType(files[0].mime).putExtra(android.content.Intent.EXTRA_STREAM, files[0].uri)
-                        else android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).setType("*/*").putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, ArrayList(files.map { it.uri }))
-                    ctx.startActivity(android.content.Intent.createChooser(i.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    .clickable(onClickLabel = "Открыть ${f.name}") { open(f) }, contentAlignment = Alignment.Center) {
+                    Text(if (xl) "XLS" else "DOC", style = body(11, FontWeight.Bold, Color.White))
                 }
-            }, contentAlignment = Alignment.Center) {
-                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icPlane), "Отправить", tint = Teal, modifier = Modifier.size(20.dp))
             }
-            Spacer(Modifier.weight(1f))
-            Text(parts.stamp.ifBlank { SimpleDateFormat("HH:mm", Locale.US).format(Date(m.ts)) }, style = body(11, color = Th.c.meta), maxLines = 1)
         }
+        Text(parts.stamp.ifBlank { SimpleDateFormat("HH:mm", Locale.US).format(Date(m.ts)) }, style = body(11, color = Th.c.meta), maxLines = 1,
+            modifier = Modifier.align(Alignment.End))
+    }
+}
+
+@Composable
+private fun ShareBtn(onClick: () -> Unit) {
+    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить", onClick = onClick),
+        contentAlignment = Alignment.Center) {
+        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icPlane), "Отправить", tint = Teal, modifier = Modifier.size(19.dp))
     }
 }
 
