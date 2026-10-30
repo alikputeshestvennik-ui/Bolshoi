@@ -330,6 +330,12 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { tablePreview(ctx, f.uri) }.getOrNull() }
         }
     }
+    // «Лучший выбор» из самой таблицы: столбец «Итого/Всего» — минимум побеждает (не зависит от того, отдала ли модель best)
+    val tableBest by androidx.compose.runtime.produceState("", m.files) {
+        value = files.firstOrNull { it.mime == Docs.XLSX }?.let { f ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { bestFromTable(ctx, f.uri) }.getOrNull() }
+        }.orEmpty()
+    }
     val shape = RoundedCornerShape(20.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).then(if (lit) Modifier.border(1.dp, Teal, shape) else Modifier)
         .clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -355,7 +361,7 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         val rows = preview?.takeIf { it.size >= 2 }
         // таблица — сама кнопка: тап открывает Excel
         if (rows != null && xls != null) Box(Modifier.clickable(onClickLabel = "Открыть таблицу") { open(xls) }) { MiniTable(rows) }
-        val best = remember(m.best, m.text) { m.best.ifBlank { deriveBest(m.text) } }
+        val best = remember(m.best, m.text, tableBest) { m.best.ifBlank { tableBest.ifBlank { deriveBest(m.text) } } }
         if (best.isNotBlank()) BestBlock(best)
         val rest = files.filter { rows == null || it != xls }
         if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -539,7 +545,8 @@ private val icPlane by lazy {
 
 /** Если модель не дала best — достаём из текста «Самый выгодный — Ташкент (≈50 348 ₽)». */
 fun deriveBest(text: String): String {
-    val m = Regex("(?:самый выгодн\\w*(?: вариант)?|выгоднее всего|лучший (?:вариант|выбор))\\s*[—:–-]\\s*([^(,.;\\n]{2,40}?)\\s*\\(\\s*(≈?\\s*[\\d\\s ]{3,}\\s*₽)", RegexOption.IGNORE_CASE).find(text)
+    val head = "(?:самый выгодн\\w*(?: вариант)?|выгоднее всего|лучший (?:вариант|выбор)|оптимальн\\w*(?: вариант)?)\\s*[—:–-]?\\s*"
+    val m = Regex(head + "([^(,.;:\\n]{2,40}?)\\s*(?:\\(\\s*|[:—–-]\\s*)(≈?\\s*[\\d\\s ]{3,}\\s*₽)", RegexOption.IGNORE_CASE).find(text)
         ?: return ""
     return org.json.JSONObject().put("name", m.groupValues[1].trim()).put("value", m.groupValues[2].replace(Regex("\\s+"), " ").trim()).toString()
 }
@@ -594,4 +601,37 @@ object Formula {
             }
         }
     }
+}
+
+
+/** Лучший вариант по таблице: строка с минимальным «Итого» + две следующие с разницей. */
+private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): String {
+    val j = ctx.contentResolver.openInputStream(uri)?.use { Docs.readXlsx(it) } ?: return ""
+    val rows = j.optJSONArray("sheets")?.optJSONObject(0)?.optJSONArray("rows") ?: return ""
+    val grid = (0 until rows.length()).map { i -> val r = rows.optJSONArray(i); (0 until (r?.length() ?: 0)).map { c -> r?.opt(c) } }
+    if (grid.size < 3) return ""
+    val head = grid[0].map { it?.toString().orEmpty().lowercase() }
+    val totalCol = head.indexOfFirst { Regex("^(итого|всего|итог|total|сумма)").containsMatchIn(it.trim()) || Regex("итого|всего на").containsMatchIn(it) }
+    if (totalCol < 0) return ""
+    fun num(v: Any?): Double? = when (v) {
+        is Number -> v.toDouble()
+        is String -> if (v.startsWith("=")) Formula.eval(v.drop(1), grid) else v.replace(Regex("[^\\d.,]"), "").replace(',', '.').toDoubleOrNull()
+        else -> null
+    }
+    val cityCol = head.indexOfFirst { it.contains("город") }
+    val data = grid.drop(1).mapNotNull { r ->
+        val t = num(r.getOrNull(totalCol)) ?: return@mapNotNull null
+        if (t <= 0) return@mapNotNull null
+        val name0 = r.getOrNull(0)?.toString().orEmpty().trim()
+        val city = if (cityCol > 0) r.getOrNull(cityCol)?.toString().orEmpty().trim() else ""
+        val name = listOf(name0, city).filter { it.isNotBlank() && !it.all { ch -> ch.isDigit() } }.distinct().joinToString(" · ")
+        if (name.isBlank()) null else name to t
+    }
+    if (data.size < 2) return ""
+    val sorted = data.sortedBy { it.second }
+    fun rub(d: Double) = "%,d".format(d.toLong()).replace(',', ' ') + " ₽"
+    val win = sorted[0]
+    val alt = org.json.JSONArray()
+    sorted.drop(1).take(2).forEach { (n, t) -> alt.put(org.json.JSONObject().put("name", n).put("value", rub(t)).put("diff", "+" + rub(t - win.second))) }
+    return org.json.JSONObject().put("name", win.first).put("value", rub(win.second)).put("note", grid[0].getOrNull(totalCol)?.toString().orEmpty().lowercase()).put("alt", alt).toString()
 }
