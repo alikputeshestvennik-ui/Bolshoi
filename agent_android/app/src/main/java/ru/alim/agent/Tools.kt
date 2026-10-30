@@ -218,7 +218,7 @@ object Tools {
             NotifStore.reply(ctx, a.optInt("id"), a.optString("text"))
         },
 
-        Tool("alarm_set", "{\"hour\": 7, \"minute\": 30, \"label\": \"…\"} — поставить будильник") { ctx, a ->
+        Tool("alarm_set", "{\"hour\": 7, \"minute\": 30, \"label\": \"…\"} — будильник на ближайшие сутки (дату не принимает!). Напоминание на конкретную дату — только event_create") { ctx, a ->
             val i = Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, a.optInt("hour"))
                 .putExtra(AlarmClock.EXTRA_MINUTES, a.optInt("minute")).putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             a.optString("label").takeIf { it.isNotBlank() }?.let { i.putExtra(AlarmClock.EXTRA_MESSAGE, it) }
@@ -919,6 +919,23 @@ object Tools {
             if (!a.has("sheets") && a.has("rows")) a.put("sheets", org.json.JSONArray().put(org.json.JSONObject().put("name", "Лист1").put("rows", a.opt("rows"))))
             a.optJSONArray("sheets")?.let { sh -> for (k in 0 until sh.length()) (sh.opt(k) as? String)?.let { s -> runCatching { sh.put(k, org.json.JSONObject(s)) } } }
             val type = a.optString("type").lowercase().ifBlank { if (a.has("sheets") || a.has("rows")) "xlsx" else "docx" }
+            // «≈12 350 ₽», «16 000», «~3500 руб» — это числа: пишем числом, иначе формулы «Итог» дают 0
+            var textNums = 0; val badRefs = ArrayList<String>()
+            if (type == "xlsx") a.optJSONArray("sheets")?.let { sh -> for (k in 0 until sh.length()) sh.optJSONObject(k)?.optJSONArray("rows")?.let { rows ->
+                for (r in 1 until rows.length()) rows.optJSONArray(r)?.let { row -> for (c in 0 until row.length()) (row.opt(c) as? String)?.let { v ->
+                    val m = Regex("^\\s*[≈~±]?\\s*(\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+|\\d+)(?:[.,](\\d+))?\\s*(₽|руб\\.?|р\\.?)?\\s*$").find(v)
+                    if (m != null && !v.startsWith("=")) { row.put(c, (m.groupValues[1].replace(Regex("\\D"), "") + (m.groupValues[2].takeIf { it.isNotEmpty() }?.let { ".$it" } ?: "")).toDouble()); textNums++ }
+                } }
+                // формулы, которые ссылаются на ячейки с текстом вроде «≈10 500 ₽ (Арт-Отель)», — посчитают 0
+                for (r in 1 until rows.length()) rows.optJSONArray(r)?.let { row -> for (c in 0 until row.length()) (row.opt(c) as? String)?.takeIf { it.startsWith("=") }?.let { f ->
+                    Regex("([A-Z]{1,2})(\\d+)").findAll(f.uppercase()).forEach { ref ->
+                        val ci = ref.groupValues[1].fold(0) { acc, ch -> acc * 26 + (ch - 'A' + 1) } - 1
+                        val ri = ref.groupValues[2].toInt() - 1
+                        val tv = rows.optJSONArray(ri)?.opt(ci)
+                        if (tv is String && !tv.startsWith("=") && Regex("\\d").containsMatchIn(tv)) badRefs += ref.value
+                    }
+                } }
+            } } }
             // таблица из одних заголовков — не сохраняем и не даём сказать «таблица готова»
             if (type == "xlsx") a.optJSONArray("sheets")?.let { sh ->
                 val dataRows = (0 until sh.length()).sumOf { k -> ((sh.optJSONObject(k)?.optJSONArray("rows")?.length() ?: 0) - 1).coerceAtLeast(0) }
@@ -937,7 +954,8 @@ object Tools {
                 }
                 Agent.cur().files.add(0, ref)
             }
-            "создал «${ref.name}» в Загрузки/Свои — карточка на экране, нажатием открывается, там же «Отправить»."
+            "создал «${ref.name}» в Загрузки/Свои — карточка на экране, нажатием открывается, там же «Отправить»." +
+                (if (badRefs.isNotEmpty()) "\nВНИМАНИЕ: формулы ссылаются на ячейки с ТЕКСТОМ (${badRefs.distinct().take(6).joinToString()}) — Excel посчитает их как 0, итог неверный. Пересоздай файл (тот же name): числа (цены) — отдельными столбцами только числом, пояснения — в соседнем столбце." else "")
         },
 
         Tool("file_read", "{\"n\": 1, \"from\": \"attachment\" | \"made\"} — прочитать .docx/.xlsx (из вложений Алима или из файлов, сделанных агентом), чтобы ответить по ним или поправить") t@{ ctx, a ->
