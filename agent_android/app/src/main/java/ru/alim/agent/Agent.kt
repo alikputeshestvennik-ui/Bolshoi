@@ -335,7 +335,7 @@ object Agent {
             var truncRetry = 0
             var maxTok = 12000          // потолок ответа: платим только за реально написанное, так что не жмёмся
             val hard0 = hardText(text)
-            var cap = if (hard0) 30 else 18   // шагов на задачу: сложному подбору нужно место для обходов
+            var cap = if (hard0) 40 else 18   // шагов на задачу: сложному подбору нужно место для обходов
             var wrap = false            // шаги кончились — даём собрать итог из найденного
             var emptyRetry = 0
             var junkRetry = 0
@@ -432,7 +432,7 @@ object Agent {
                         continue
                     }
                     val used = (calls[tool] ?: 0) + 1; calls[tool] = used
-                    val tcap = when (tool) { "shop_search" -> 3; "web_search" -> if (hard0) 14 else 8; "web_read", "web_page" -> if (hard0) 16 else 10; "file_create" -> 6; else -> 8 }
+                    val tcap = when (tool) { "shop_search" -> 3; "web_search" -> if (hard0) 20 else 8; "web_read", "web_page" -> if (hard0) 24 else 10; "file_create" -> 6; else -> 8 }
                     if (used > tcap) {
                         msgs.put(msg("user", "Ты уже вызывал $tool ${used - 1} раз(а) — лимит поиска на задачу. Больше не ищи. Доделай задачу из того, что уже узнал: если просили таблицу или файл — ОБЯЗАТЕЛЬНО создай его, недостающее пиши «нет данных». Потом дай итог Алиму и честно скажи, чего не нашёл."))
                         continue
@@ -463,7 +463,7 @@ object Agent {
                     step.detail = res.take(500)
                     if (!Regex("^(ошибка|не получилось|не удалось|нет разрешения|не нашёл|не нашел|не подключ|нужно|нужен|нужна)", RegexOption.IGNORE_CASE).containsMatchIn(res.trim())) doneOk += tool
                     msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: ${res.take(if (tool == "file_read") 14000 else 8000)}"))
-                    shrinkOld(msgs)
+                    if (!hard0) shrinkOld(msgs)   // в тяжёлой задаче ничего не урезаем: найденные цены нужны до самого итога
                 }
                 // добросовестность: перед ответом сверяем каждый пункт просьбы; не доделано — доделываем (один заход)
                 // честность: «отправил/создал/поставил» — только если инструмент реально отработал
