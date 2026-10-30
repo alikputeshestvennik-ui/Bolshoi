@@ -106,10 +106,12 @@ object Shop {
     /** Подозрение на подделку: кричащие значки «−91%/осталось N ед» или цена ниже реальной для бренда. Пусто — норм. */
     fun suspect(it: Item, query: String): String {
         val text = (it.title + " " + it.badges).lowercase()
-        SHOUT.find(text)?.let { m -> return "значок «${m.value.trim()}»" }
+        // «реплика/копия/1:1» — подделка всегда; кричащие скидки и «осталось N ед» — только у брендовых вещей (у безымянных это обычный маркетинг)
+        Regex("реплик|копия|1:1", RegexOption.IGNORE_CASE).find(text)?.let { m -> return "значок «${m.value.trim()}»" }
         val r = rub(it.price)
         val q = query.lowercase()
         val floor = BRAND_FLOOR.entries.firstOrNull { q.contains(it.key) || text.contains(it.key) } ?: return ""
+        SHOUT.find(text)?.let { m -> return "значок «${m.value.trim()}»" }
         // порог из таблицы — для обуви и курток; мелкие вещи бренда стоят дешевле
         val k = when {
             Regex("носк|кепк|бейсболк|шапк|трус|бель|напульсник|сумк|рюкзак|шнурк|стельк").containsMatchIn(q + " " + text) -> 0.15

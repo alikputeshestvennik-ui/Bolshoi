@@ -19,6 +19,11 @@ object Llm {
     @Volatile private var bearer = false
 
     val key: String get() = BuildConfig.GPTUNNEL_KEY.trim()
+    /** Какая модель реально ответила на последний запрос (Google при лимите тихо переключается на соседнюю или запасную). */
+    @Volatile var lastUsed = ""
+    /** Когда GPTunnel последний раз сказал «нет денег» — 15 минут его не трогаем как запасной. */
+    @Volatile var brokeAt = 0L
+    val broke: Boolean get() = System.currentTimeMillis() - brokeAt < 15 * 60_000L
 
     class Reply(val text: String, val inTok: Int, val outTok: Int, private val apiCost: Double) {
         /** Цена в рублях: из ответа gptunnel, если он её прислал, иначе по ценам из настроек. */
@@ -44,7 +49,7 @@ object Llm {
 
     /** Запасная модель, если Google не ответил (нет VPN, лимит): Claude через gptunnel, иначе Яндекс. */
     private fun fallback(): String = when {
-        key.isNotBlank() -> "claude-5.5-haiku"
+        key.isNotBlank() && !broke -> "claude-5.5-haiku"
         YaCloud.llmKey.isNotBlank() -> "yc:aliceai-llm-flash"
         else -> ""
     }
@@ -88,6 +93,7 @@ object Llm {
         val j = JSONObject(r.second)
         val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
         val u = j.optJSONObject("usage") ?: JSONObject()
+        lastUsed = "google:$id"
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
 
@@ -134,6 +140,7 @@ object Llm {
             if (r.first !in setOf(429, 500, 502, 503, 504)) break
             Thread.sleep(1200L * (attempt + 1))
         }
+        if (r.first in 200..299) lastUsed = model
         if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
         if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
@@ -209,12 +216,13 @@ object Llm {
         if (r.first == 404 || r.second.contains("invalid_model_error") || r.second.contains("Model not found", true))
             throw ModelNotFound("модель «$model» не найдена")
         if (r.first == 402 || r.second.contains("Insufficient quota", true) || r.second.contains("balance is too low", true))
-            throw NoMoney("на GPTunnel закончился баланс")
+            { brokeAt = System.currentTimeMillis(); throw NoMoney("на GPTunnel закончился баланс") }
         if (r.first !in 200..299) error("модель «$model» ответила ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
         val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
         val u = j.optJSONObject("usage") ?: JSONObject()
         val apiCost = u.optDouble("total_cost", 0.0).let { if (it.isNaN()) 0.0 else it }
+        lastUsed = model
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), apiCost)
     }
 

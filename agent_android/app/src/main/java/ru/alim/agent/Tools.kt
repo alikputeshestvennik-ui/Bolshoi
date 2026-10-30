@@ -885,9 +885,14 @@ object Tools {
         },
 
         Tool("file_create", "{\"type\": \"docx\", \"name\": \"Список дел\", \"text\": \"# Заголовок\\n## Раздел\\n- пункт\\n**жирный**\\n| Колонка | Колонка |\\n| a | b |\"} или {\"type\": \"xlsx\", \"name\": \"Бюджет\", \"sheets\": [{\"name\": \"Октябрь\", \"rows\": [[\"Статья\", \"Сумма\"], [\"Еда\", 15000], [\"Итого\", \"=SUM(B2:B2)\"]]}]} — создать документ Word или таблицу Excel (формулы через =). Сохраняется в Загрузки/Свои, карточка на экране") t@{ ctx, a ->
+            // модели (Alice Flash) иногда кладут sheets строкой или лист — строкой JSON: чиним, а не падаем непонятной ошибкой
+            (a.opt("sheets") as? String)?.let { s -> runCatching { a.put("sheets", org.json.JSONArray(s)) } }
+            if (!a.has("sheets") && a.has("rows")) a.put("sheets", org.json.JSONArray().put(org.json.JSONObject().put("name", "Лист1").put("rows", a.opt("rows"))))
+            a.optJSONArray("sheets")?.let { sh -> for (k in 0 until sh.length()) (sh.opt(k) as? String)?.let { s -> runCatching { sh.put(k, org.json.JSONObject(s)) } } }
             val type = a.optString("type").lowercase().ifBlank { if (a.has("sheets") || a.has("rows")) "xlsx" else "docx" }
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
-            val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, Docs.xlsx(a))
+            val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, runCatching { Docs.xlsx(a) }.getOrElse { e ->
+                    return@t "ошибка формата таблицы (${e.message?.take(80)}). Нужно: \"sheets\": [{\"name\": \"Сравнение\", \"rows\": [[\"Город\", \"Цена\"], [\"Казань\", 12000]]}] — массив объектов, rows — массив массивов. Повтори file_create в этом формате." })
                 else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
             withContext(Dispatchers.Main) {
                 // пересобрал тот же файл в этой задаче — старую карточку убираем, остаётся одна, свежая

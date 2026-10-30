@@ -274,6 +274,7 @@ object Agent {
             append("- Сравнение вариантов (что выгоднее, что выбрать) — в финальном JSON добавь \"best\": {\"name\": \"Обычный · ОАЭ\", \"value\": \"234 085 ₽\", \"note\": \"с перелётом\", \"alt\": [{\"name\": \"Сенсорный · ОАЭ\", \"value\": \"299 085 ₽\", \"diff\": \"+65 тыс\"}]} — только из найденных цифр, до 2 alt. Нет сравнения — не добавляй.\n")
             append("- Если в задаче просят вывод, совет или «куда лучше» — финальный ответ ОБЯЗАТЕЛЬНО его содержит (1–2 предложения), а не только «таблица готова». Вывод КОНКРЕТНЫЙ: что выбрать и почему, с цифрами («выгоднее всего — обычный Pro в ОАЭ: ≈234 тыс ₽ с перелётом, на 75 тыс дешевле сенсорного»). «Выбор за тобой», «зависит от твоих задач» — это не вывод.\n")
             append("- Даты без года («после 10 января», «в мае») — ближайшие В БУДУЩЕМ от сегодняшней даты (сегодня ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date())}). Не пиши прошедший год в названиях и ответе.\n")
+            append("- Время в поездках проверяй по часам: рейс/поезд подходит, только если отправление ПОЗЖЕ, чем Алим реально доберётся до аэропорта/вокзала (с учётом работы и дороги), а обратный путь укладывается в срок. Неподходящий по времени вариант не называй «вписывается» — пометь «не успеваю» и ищи другой. В таблице — столбец «Успеваю?» с расчётом по часам.\n")
             append("- Сложный подбор с жёсткими условиями (сроки, бюджет) — после ответа дай в buttons 1-3 уточнения, которые сильнее всего меняют результат («Могу выехать в четверг», «Вернуться можно к обеду»).\n")
             append("- Бюджет задан — варианты сверх бюджета не предлагай как подходящие (или явно пометь «не влезает»).\n")
             append("- Подбор поездки/покупки: цены ТОЧНЫЕ с первого раза — билеты через flights (конкретный рейс, дата, цена), отели через web_search «отель <город> цена за ночь <месяц>» + web_read (название отеля и цена), еда/развлечения — найденные средние с источником. Круглые прикидки «35 000» без источника — нельзя.\n")
@@ -338,6 +339,8 @@ object Agent {
             var cap = if (hard0) 40 else 18   // шагов на задачу: сложному подбору нужно место для обходов
             var wrap = false            // шаги кончились — даём собрать итог из найденного
             var emptyRetry = 0
+            var noMoneyAlt: String? = null   // GPTunnel пуст — дальше вся задача на этой модели, без повторных попыток
+            var announced = ""
             var junkRetry = 0
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
@@ -357,15 +360,26 @@ object Agent {
                             "Иначе сразу финальный ответ (tool null). Честно отметь, чего не успел найти."))
                     }
                     i++
-                    var m = if (smart) smart() else fast()
+                    var m = noMoneyAlt ?: if (smart) smart() else fast()
                     model = m
                     var r = try { withContext(Dispatchers.IO) { Llm.chat(m, msgs, maxTok) } }
                     catch (e: Llm.NoMoney) {
-                        // на GPTunnel кончились деньги — продолжаем на бесплатной/своей модели (Google, Яндекс), если есть
-                        val alt = listOf(fast(), smart(), Prefs.bgModel).firstOrNull { (Llm.isGoogle(it) || Llm.isYandex(it)) } ?: throw e
-                        steps.add(Step("На GPTunnel кончился баланс — продолжаю на ${Agent.short(alt)}").also { it.done = true })
+                        // на GPTunnel кончились деньги — продолжаем на своей модели (Яндекс, Google), один раз и до конца задачи
+                        val alt = (listOf(fast(), smart(), Prefs.bgModel).filter { Llm.isYandex(it) || Llm.isGoogle(it) } + "yc:aliceai-llm-flash")
+                            .firstOrNull { it != m && (Llm.isYandex(it) || Llm.isGoogle(it)) }?.takeIf { Llm.isGoogle(it) || YaCloud.llmKey.isNotBlank() } ?: throw e
+                        noMoneyAlt = alt
+                        steps.add(Step("На GPTunnel нет денег — дальше задачу делает ${Agent.short(alt)}").also { it.done = true })
                         m = alt; model = alt
                         withContext(Dispatchers.IO) { Llm.chat(alt, msgs, maxTok) }
+                    }
+                    // кто ответил на самом деле: у Gemini дневной лимит, тогда отвечает соседняя или запасная модель — говорим это прямо
+                    Llm.lastUsed.takeIf { it.isNotBlank() }?.let { used ->
+                        if (Agent.short(used) != Agent.short(m) && used != announced) {
+                            announced = used
+                            steps.add(Step("Отвечает ${Agent.short(used)} вместо ${Agent.short(m)}" +
+                                if (Llm.isGoogle(m)) " — у неё кончился дневной лимит" else if (Llm.broke) " — на GPTunnel нет денег" else "").also { it.done = true })
+                        }
+                        model = used
                     }
                     // модель-заглушка отказалась (чаще YandexGPT) — переспрашиваем Claude
                     if (refusal(r.text) && !m.contains("claude", true) && Llm.key.isNotBlank()) {
@@ -426,6 +440,12 @@ object Agent {
                     }
                     val t = Tools.byName(tool)
                     if (t == null) { msgs.put(msg("user", "Нет инструмента «$tool». Выбери из списка.")); continue }
+                    // открыть приложение/сайт — только если Алим сам сказал «открой»: результат должен остаться в чате
+                    if (tool in setOf("shop_open", "flights_open", "web_open", "open_app", "play_open", "kion_open") &&
+                        !Regex("откр|запуст|перейди|покажи в приложени", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                        msgs.put(msg("user", "Алим не просил открывать приложение или сайт — не открывай. Карточки и так в чате; продолжай задачу."))
+                        continue
+                    }
                     if (wrap && tool != "file_create") { msgs.put(msg("user", "Шаги кончились — инструменты, кроме file_create, недоступны. Дай финальный ответ из найденного (tool null).")); continue }
                     if (!isMain && tool !in Tools.FRIEND_TOOLS) {
                         msgs.put(msg("user", "Инструмент «$tool» — у главного (${Friends.main.name}). Вызови ask_main с просьбой, а Алиму коротко скажи, что передал."))
