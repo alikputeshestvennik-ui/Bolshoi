@@ -198,18 +198,7 @@ fun DashScreen(go: (Scr) -> Unit) {
             // ——— низ: четыре кнопки разделов и ввод — плавают, как в журнале ———
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { compH = it.height }
                 .navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    listOf(Triple(icChat, "Журнал", Scr.Journal), Triple(icClock, "История", Scr.History),
-                        Triple(icSun, "Сводки", Scr.Digest), Triple(icGear, "Настройки", Scr.Settings)).forEach { (ic, label, to) ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
-                            modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = label) { go(to) }.padding(horizontal = 8.dp, vertical = 2.dp)) {
-                            Box(Modifier.size(50.dp).glassDash(haze, CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = Ink, modifier = Modifier.size(22.dp))
-                            }
-                            Text(label, style = body(11, FontWeight.SemiBold, Muted))
-                        }
-                    }
-                }
+                NavBar(haze, Scr.Home, go)
                 Composer(haze, chat, chat.friend)
             }
     }
@@ -410,6 +399,33 @@ private fun BestBlock(json: String) {
         }
     }
 }
+
+/** Нижние кнопки разделов — одинаковые на главной и в журнале. */
+@Composable
+fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, onSearch: (() -> Unit)? = null) {
+    val items = buildList {
+        add(Triple(if (here == Scr.Home) icChat else icHome, if (here == Scr.Home) "Журнал" else "Главная", if (here == Scr.Home) Scr.Journal else Scr.Home))
+        add(Triple(icClock, "История", Scr.History))
+        add(Triple(icSun, "Сводки", Scr.Digest))
+        add(Triple(icGear, "Настройки", Scr.Settings))
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        items.forEach { (ic, label, to) -> NavDot(haze, ic, label) { go(to) } }
+        if (onSearch != null) NavDot(haze, icSearch, "Поиск", onSearch)
+    }
+}
+
+@Composable
+private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Row(Modifier.height(34.dp).glassDash(haze, RoundedCornerShape(17.dp)).clickable(onClickLabel = label, onClick = onClick).padding(horizontal = 11.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = Ink, modifier = Modifier.size(16.dp))
+        Text(label, style = body(11, FontWeight.SemiBold, Ink.copy(alpha = 0.8f)), maxLines = 1)
+    }
+}
+
+private val icHome by lazy { ico("home", "M4 11l8-7 8 7M6 9.5V20h12V9.5") }
+private val icSearch by lazy { ico("search", "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14M20 20l-4-4") }
 
 private fun Modifier.glassDash(h: HazeState, shape: androidx.compose.ui.graphics.Shape): Modifier =
     this.clip(shape).hazeChild(h, shape).background(Th.c.glass.copy(alpha = if (Th.c.dark) 0.35f else 0.30f)).border(1.dp, Th.c.glassLine, shape)

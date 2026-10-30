@@ -229,10 +229,6 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     }
                 }
             }
-            HGap(8)
-            Box(Modifier.size(48.dp).glass(haze, CircleShape).clickable(onClickLabel = "Меню") { Panel.open = true }, contentAlignment = Alignment.Center) {
-                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icMenu), "Меню", tint = Ink, modifier = Modifier.size(22.dp))
-            }
         }
 
         // ——— ввод ———
@@ -252,7 +248,10 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), null, tint = Ink, modifier = Modifier.size(22.dp)); HGap(8)
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
-            } else Composer(haze, chat, f)
+            } else {
+                if (fid == Friends.MAIN && Prefs.dashboard && search == null) { NavBar(haze, Scr.Journal, go) { search = "" }; Spacer(Modifier.height(10.dp)) }
+                Composer(haze, chat, f)
+            }
         }
 
         // ——— кнопка «вниз»: над микрофоном, того же размера ———

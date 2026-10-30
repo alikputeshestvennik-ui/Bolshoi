@@ -49,6 +49,7 @@ object Agent {
         Regex("(добавил|записал|внес|внёс)\\w*\\s+(в календар|встреч|событи)", RegexOption.IGNORE_CASE) to setOf("event_create"),
         Regex("(добавил|записал)\\w*\\s+(в заметк|в список|в дела|задач)", RegexOption.IGNORE_CASE) to setOf("note_add", "note_done"),
         Regex("\\bзапомнил\\b", RegexOption.IGNORE_CASE) to setOf("memory_save"),
+        Regex("(качаю|скачиваю|скачал|устанавливаю|обновляюсь)\\w*\\s+(свеж|нов|сборк|обновлен|верси)", RegexOption.IGNORE_CASE) to setOf("gh_update", "gh_build"),
         Regex("(перевел|перевёл|оплатил|отправил)\\w*\\s+\\d[\\d\\s]*(₽|руб)", RegexOption.IGNORE_CASE) to setOf("yoomoney_transfer", "yoomoney_send"),
         Regex("(включил|выключил)\\w*\\s+(фонарик|не беспокоить|энергосбережени|звук|беззвучн)", RegexOption.IGNORE_CASE) to setOf("flashlight", "do_not_disturb", "power_saver", "phone_volume", "phone_ringer"),
         Regex("(поручил|начал переписку|связался|договорил)", RegexOption.IGNORE_CASE) to setOf("delegate", "delegate_answer", "delegate_finish", "delegate_list"),
@@ -270,6 +271,8 @@ object Agent {
             append("- ВНИМАНИЕ: держи в голове его дела (блоки ИДУЩИЕ ПОРУЧЕНИЯ, СЛЕЖКА ниже). Если к месту — одним предложением свяжи ответ с ними («кстати, Леонов пока молчит»). Не чаще раза за ответ и только если это полезно.\n")
             append("- Сравнение вариантов (что выгоднее, что выбрать) — в финальном JSON добавь \"best\": {\"name\": \"Обычный · ОАЭ\", \"value\": \"234 085 ₽\", \"note\": \"с перелётом\", \"alt\": [{\"name\": \"Сенсорный · ОАЭ\", \"value\": \"299 085 ₽\", \"diff\": \"+65 тыс\"}]} — только из найденных цифр, до 2 alt. Нет сравнения — не добавляй.\n")
             append("- Если в задаче просят вывод, совет или «куда лучше» — финальный ответ ОБЯЗАТЕЛЬНО его содержит (1–2 предложения), а не только «таблица готова». Вывод КОНКРЕТНЫЙ: что выбрать и почему, с цифрами («выгоднее всего — обычный Pro в ОАЭ: ≈234 тыс ₽ с перелётом, на 75 тыс дешевле сенсорного»). «Выбор за тобой», «зависит от твоих задач» — это не вывод.\n")
+            append("- Подбор поездки/покупки: цены ТОЧНЫЕ с первого раза — билеты через flights (конкретный рейс, дата, цена), отели через web_search «отель <город> цена за ночь <месяц>» + web_read (название отеля и цена), еда/развлечения — найденные средние с источником. Круглые прикидки «35 000» без источника — нельзя.\n")
+            append("- Каждая часть просьбы — отдельный пункт результата: просили «что посмотреть/куда сходить» — колонка или раздел с конкретными местами по каждому варианту; просили «итог» — отдельный итог.\n")
             append("- Цифры в таблицах и ответе — только из найденного инструментами (цены, рейсы, характеристики). Не нашёл точную — пиши оценку с «≈» и источником или «нет данных», не выдумывай круглые числа.\n")
             append("- Для простого (одно-два действия) хватает тебя. Если задача сложная (несколько приложений, покупки, длинная цепочка, тонкий текст) — первым шагом вызови escalate.\n")
             Deleg.summary().takeIf { it.isNotBlank() }?.let { append("ИДУЩИЕ ПОРУЧЕНИЯ:\n").append(it).append("\n") }
@@ -411,7 +414,7 @@ object Agent {
                 } }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
-                if (fin == null || audits >= 1 || i >= 13 || !(calls.values.sum() >= 2 || looksHard(text))) break
+                if (fin == null || audits >= (if (looksHard(text)) 2 else 1) || i >= 13 || !(calls.values.sum() >= 2 || looksHard(text))) break
                 audits++
                 val miss = runCatching { audit(text, fin, steps.map { it.text }, files.map { it.name }) }.getOrNull()
                 if (miss.isNullOrBlank()) break
@@ -480,12 +483,19 @@ object Agent {
         /** Проверка полноты: какие пункты просьбы не закрыты (null/пусто — всё сделано). Модель без цензуры Яндекса, если есть. */
         private suspend fun audit(ask: String, answer: String, steps: List<String>, files: List<String>): String? {
             val m = listOf(smart(), Prefs.bgModel, fast()).firstOrNull { !Llm.isYandex(it) } ?: smart()
+            val fileText = if (files.isEmpty()) "" else withContext(Dispatchers.IO) {
+                Docs.made.firstOrNull()?.let { f -> runCatching { "\nСОДЕРЖИМОЕ ФАЙЛА «${f.name}»:\n" + Docs.read(Agent.app, f.uri, f.name).take(2500) }.getOrNull() }.orEmpty()
+            }
             val q = JSONArray()
                 .put(msg("system", "Ты строгий проверяющий. Разбей ПРОСЬБУ на пункты (что найти, что сравнить, какой файл сделать, какой вывод дать). " +
                     "Сверь с ОТВЕТОМ и сделанными шагами. Пункт считается сделанным, если в ответе есть результат по нему или честное «не нашёл/нет данных» с причиной. " +
                     "Просили вывод/совет/сравнение — вывод должен быть конкретным (что выбрать, с цифрами); «выбор за тобой» — это НЕ сделано. " +
+                    "Просили подобрать/найти с ценами, а в файле круглые прикидки (25 000, 30 000, 35 000…) без конкретных рейсов/отелей/источника — это НЕ сделано: «нужны точные цены из поиска». " +
+                    "Каждая часть просьбы («что посмотреть», «итог», «таблица», «питание и развлечения») — отдельный пункт; нет в файле и ответе — НЕ сделано. " +
                     "Ответ ТОЛЬКО JSON: {\"missing\": [\"что именно не сделано, коротко\"]} — пустой список, если всё выполнено."))
-                .put(msg("user", "ПРОСЬБА: $ask\n\nСДЕЛАННЫЕ ШАГИ: ${steps.joinToString("; ").take(1500)}\nСОЗДАННЫЕ ФАЙЛЫ: ${files.joinToString(", ").ifBlank { "нет" }}\n\nОТВЕТ: ${answer.take(2500)}"))
+                .put(msg("user", "ПРОСЬБА: $ask\n\nСДЕЛАННЫЕ ШАГИ: ${steps.joinToString("; ").take(1500)}\nСОЗДАННЫЕ ФАЙЛЫ: ${files.joinToString(", ").ifBlank { "нет" }}" +
+                    fileText +
+                    "\n\nОТВЕТ: ${answer.take(2500)}"))
             val r = withContext(Dispatchers.IO) { Llm.chat(m, q, 400) }
             val j = parse(r.text) ?: return null
             val miss = j.optJSONArray("missing")?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotBlank() } }.orEmpty()
