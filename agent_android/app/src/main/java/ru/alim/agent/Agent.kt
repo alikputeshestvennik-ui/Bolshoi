@@ -329,6 +329,7 @@ object Agent {
             var final: String? = null
             val calls = HashMap<String, Int>()
             var truncRetry = 0
+            var maxTok = 6000
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
@@ -340,7 +341,7 @@ object Agent {
                     i++
                     val m = if (smart) smart() else fast()
                     model = m
-                    var r = withContext(Dispatchers.IO) { Llm.chat(m, msgs, 6000) }
+                    var r = withContext(Dispatchers.IO) { Llm.chat(m, msgs, maxTok) }
                     // модель-заглушка отказалась (чаще YandexGPT) — переспрашиваем Claude
                     if (refusal(r.text) && !m.contains("claude", true) && Llm.key.isNotBlank()) {
                         model = "claude-5.5-sonnet"
@@ -355,7 +356,9 @@ object Agent {
                         val raw = r.text.trim()
                         if (Regex("^\\s*(```(json)?\\s*)?\\{\\s*\"(step|tool)\"").containsMatchIn(raw) && truncRetry < 2) {
                             truncRetry++
-                            msgs.put(msg("user", "Твой ответ оборвался — JSON не закрыт (слишком длинно). Повтори тот же шаг КОРОЧЕ: в file_create короткие ячейки (до 60 символов), без лишних столбцов; формулы можно. Только JSON."))
+                            // 1-й раз — просто даём модели больше места (у «думающих» моделей рассуждения съедают лимит), 2-й — просим компактнее
+                            if (truncRetry == 1) { maxTok = 16000; msgs.put(msg("user", "Твой ответ оборвался — JSON не закрыт. Повтори тот же шаг целиком, только JSON.")) }
+                            else msgs.put(msg("user", "Ответ снова оборвался. Повтори тот же шаг компактнее: ячейки без длинных пояснений (пояснения — в ответ Алиму), все строки и столбцы оставь. Только JSON."))
                             continue
                         }
                         final = if (raw.startsWith("{")) "Не смог собрать ответ — модель оборвала таблицу. Повтори просьбу или поставь в «Руки» другую модель." else raw.take(500).ifBlank { "Готово." }
