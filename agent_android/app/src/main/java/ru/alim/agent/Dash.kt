@@ -384,7 +384,7 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
 
 /** «Лучший выбор» — как в макете Г: победитель крупнее и с плашкой, остальные меньше и тише. Есть шаги покупки — тап открывает их. */
 @Composable
-private fun BestBlock(json: String) {
+fun BestBlock(json: String) {
     val b = remember(json) { runCatching { org.json.JSONObject(json) }.getOrNull() } ?: return
     val alt = b.optJSONArray("alt")?.let { a -> (0 until minOf(2, a.length())).mapNotNull { a.optJSONObject(it) } }.orEmpty()
     var sheet by remember { mutableStateOf<org.json.JSONObject?>(null) }

@@ -425,7 +425,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
 private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStore) {
     val text = m.text.trim()
     val cut = Regex("[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1
-    val title = if (cut > 0) text.take(cut).trim().trimEnd('.') else ""
+    val title = if (cut > 0) text.take(cut).replace("**", "").trim().trimEnd('.') else ""
     val rest = if (cut > 0) text.drop(cut).trim() else text
     val shape = RoundedCornerShape(22.dp)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -443,6 +443,8 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
             if (m.ytVideos.isNotBlank()) YtGrid(m.ytVideos.split('\n').filter { it.isNotBlank() })
             if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
             if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
+            // «Лучший выбор» с кнопками покупки — и в листе без таблицы
+            if (m.best.isNotBlank()) BestBlock(m.best)
             if (m.meta.isNotBlank()) Text(m.meta, style = body(11, color = Th.c.meta), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (showButtons && m.buttons.isNotEmpty()) {
