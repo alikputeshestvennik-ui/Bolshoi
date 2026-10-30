@@ -362,7 +362,15 @@ object Agent {
                     i++
                     var m = noMoneyAlt ?: if (smart) smart() else fast()
                     model = m
-                    var r = try { withContext(Dispatchers.IO) { Llm.chat(m, msgs, maxTok) } }
+                    var r = try { withContext(Dispatchers.IO) {
+                        // обрыв или таймаут посреди задачи — не бросаем собранное: две повторные попытки с паузой
+                        var tries = 0
+                        while (true) {
+                            try { return@withContext Llm.chat(m, msgs, maxTok) }
+                            catch (e: java.io.IOException) { if (++tries > 2) throw e; Thread.sleep(4000L * tries) }
+                        }
+                        @Suppress("UNREACHABLE_CODE") error("")
+                    } }
                     catch (e: Llm.NoMoney) {
                         // на GPTunnel кончились деньги — продолжаем на своей модели (Яндекс, Google), один раз и до конца задачи
                         val alt = (listOf(fast(), smart(), Prefs.bgModel).filter { Llm.isYandex(it) || Llm.isGoogle(it) } + "yc:aliceai-llm-flash")

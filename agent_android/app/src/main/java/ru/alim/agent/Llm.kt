@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 /** Запросы к gptunnel (формат OpenAI) — как в Маршруте: ключ из секрета GPTUNNEL_KEY, оплата с личного счёта. */
 object Llm {
     private val http = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).callTimeout(120, TimeUnit.SECONDS).build()
+        .connectTimeout(20, TimeUnit.SECONDS).readTimeout(200, TimeUnit.SECONDS).callTimeout(300, TimeUnit.SECONDS).build()   // тяжёлый ход DeepSeek с большим контекстом думает дольше 2 минут
     private val JSON = "application/json; charset=utf-8".toMediaType()
     private const val BASE = "https://gptunnel.ru/v1"
 
