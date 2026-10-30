@@ -61,7 +61,15 @@ object Tools {
     /** Все поиски YouTube за текущую задачу — в конце на экране оставляем только выбранные ролики. */
     val taskVideos = ArrayList<List<YouTube.Video>>()
     private val ru = Locale("ru")
-    private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).callTimeout(25, TimeUnit.SECONDS).build()
+    /** Куки в памяти: без них часть сайтов (Туту) гоняет по кругу редиректов — «Too many follow-up requests». */
+    private val jar = object : okhttp3.CookieJar {
+        private val store = java.util.concurrent.ConcurrentHashMap<String, List<okhttp3.Cookie>>()
+        override fun saveFromResponse(url: okhttp3.HttpUrl, cookies: List<okhttp3.Cookie>) {
+            val h = url.host; store[h] = (store[h].orEmpty().filter { o -> cookies.none { it.name == o.name } } + cookies).takeLast(40)
+        }
+        override fun loadForRequest(url: okhttp3.HttpUrl): List<okhttp3.Cookie> = store[url.host].orEmpty().filter { it.matches(url) }
+    }
+    private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).callTimeout(25, TimeUnit.SECONDS).cookieJar(jar).build()
 
     private fun has(ctx: Context, p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
     private fun digits(s: String) = s.filter { it.isDigit() || it == '+' }
@@ -224,10 +232,14 @@ object Tools {
             if (launch(ctx, i)) "таймер запущен" else "часы не открылись"
         },
 
-        Tool("weather", "{\"place\": \"Ялта\"} — погода сейчас и на 7 дней (место можно не указывать)") { _, a ->
-            val place = a.optString("place").ifBlank { Prefs.homeCity }
-            runCatching { weather(place) }.getOrElse { e1 ->
-                runCatching { wttr(place) }.getOrElse { e2 -> "погода не пришла: open-meteo — ${e1.message}; wttr.in — ${e2.message}" }
+        Tool("weather", "{\"place\": \"Ялта\" или \"Казань, Петербург\", \"from\": \"ГГГГ-ММ-ДД\", \"to\": \"ГГГГ-ММ-ДД\"} — погода: прогноз на 16 дней; даты дальше — ориентир по тем же дням трёх прошлых лет. Несколько городов — через запятую в одном вызове. from/to необязательны") { _, a ->
+            val places = a.optString("place").ifBlank { Prefs.homeCity }.split(Regex("\\s*(,|;|\\s+и\\s+)\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(5)
+            val from = a.optString("from").trim().takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }
+            val to = a.optString("to").trim().takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) } ?: from
+            places.joinToString("\n\n") { place ->
+                runCatching { weather(place, from, to) }.getOrElse { e1 ->
+                    runCatching { wttr(place) }.getOrElse { e2 -> "$place: погода не пришла: open-meteo — ${e1.message}; wttr.in — ${e2.message}" }
+                }
             }
         },
 
@@ -631,7 +643,7 @@ object Tools {
             val errs = ArrayList<String>()
             for (engine in listOf(YaSearch::search, ::ddgHtml, ::ddgLite, ::bing)) {
                 val r = runCatching { engine(q) }.onFailure { errs += it.message ?: "ошибка" }.getOrNull()
-                if (!r.isNullOrEmpty()) return@t r.take(6).joinToString("\n\n")
+                if (!r.isNullOrEmpty()) return@t r.take(8).joinToString("\n\n")
             }
             "поиск ничего не дал" + if (errs.isNotEmpty()) " (${errs.joinToString("; ").take(300)})" else ""
         },
@@ -643,7 +655,7 @@ object Tools {
             val pub = SrcTime.fromHtml(html); SrcTime.note(pub)
             val body = html.replace(Regex("<(script|style|noscript)[^>]*>.*?</\\1>", RegexOption.DOT_MATCHES_ALL), " ")
             (pub?.let { "[Опубликовано: ${SrcTime.label(it)}]\n" } ?: "[Дата публикации не указана]\n") +
-                clean(body).replace(Regex("\\s{2,}"), " ").take(4000).ifBlank { "страница пустая" }
+                clean(body).replace(Regex("\\s{2,}"), " ").take(9000).ifBlank { "страница пустая" }
         },
 
         Tool("yoomoney_balance", "{} — баланс кошелька ЮMoney") { ctx, _ -> Yoo.balance(ctx) },
@@ -1054,7 +1066,7 @@ object Tools {
         return w.split(',', ' ', ';').mapNotNull { it.trim().toIntOrNull() }.mapNotNull { lastPhotos.getOrNull(it - 1) }.distinct()
     }
 
-    private fun weather(place: String): String {
+    private fun weather(place: String, from: String? = null, to: String? = null): String {
         val g = http.newCall(Request.Builder().url("https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name=" +
             URLEncoder.encode(place, "UTF-8")).build()).execute().use { it.body?.string().orEmpty() }
         val p = JSONObject(g).optJSONArray("results")?.optJSONObject(0) ?: return "не нашёл место «$place»"
@@ -1062,7 +1074,7 @@ object Tools {
         val f = http.newCall(Request.Builder().url("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
             "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation" +
             "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code" +
-            "&timezone=auto&forecast_days=7&wind_speed_unit=ms").build()).execute().use { it.body?.string().orEmpty() }
+            "&timezone=auto&forecast_days=16&wind_speed_unit=ms").build()).execute().use { it.body?.string().orEmpty() }
         val j = JSONObject(f)
         val c = j.optJSONObject("current") ?: return "погода не пришла"
         val d = j.optJSONObject("daily")
@@ -1070,14 +1082,41 @@ object Tools {
         if (d != null) {
             val dates = d.optJSONArray("time")
             for (k in 0 until (dates?.length() ?: 0)) {
-                days.append("\n${dates!!.optString(k)}: ${d.optJSONArray("temperature_2m_min")?.optDouble(k)?.toInt()}…" +
+                val day = dates!!.optString(k)
+                if (from != null && (day < from || day > (to ?: from))) continue
+                if (from == null && k >= 7) break
+                days.append("\n${dates.optString(k)}: ${d.optJSONArray("temperature_2m_min")?.optDouble(k)?.toInt()}…" +
                     "${d.optJSONArray("temperature_2m_max")?.optDouble(k)?.toInt()}°, осадки ${d.optJSONArray("precipitation_probability_max")?.optInt(k)}%, " +
                     code(d.optJSONArray("weather_code")?.optInt(k) ?: 0))
             }
         }
+        // запрошенные даты дальше горизонта прогноза — честно говорим и даём ориентир по прошлым годам
+        val last = d?.optJSONArray("time")?.let { it.optString(it.length() - 1) }.orEmpty()
+        if (from != null && last.isNotEmpty() && (to ?: from) > last) {
+            val start = if (from > last) from else last
+            days.append("\nТочного прогноза на ${if (from > last) "эти даты" else "даты после $last"} ещё нет (горизонт — 16 дней). " +
+                runCatching { climate(lat, lon, start, to ?: from) }.getOrElse { "Ориентир по прошлым годам не пришёл." })
+        }
         return "${p.optString("name")}: сейчас ${c.optDouble("temperature_2m").toInt()}° (ощущается ${c.optDouble("apparent_temperature").toInt()}°), " +
             "${code(c.optInt("weather_code"))}, ветер ${c.optDouble("wind_speed_10m").toInt()} м/с$days" +
             "\n(источник: Open-Meteo, данные на " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + ")"
+    }
+
+    /** Те же дни трёх прошлых лет (архив Open-Meteo) — ориентир, когда до дат больше 16 дней. */
+    private fun climate(lat: Double, lon: Double, from: String, to: String): String {
+        val f = java.time.LocalDate.parse(from); val t = java.time.LocalDate.parse(to)
+        val mins = ArrayList<Double>(); val maxs = ArrayList<Double>(); val rain = ArrayList<Double>()
+        for (y in 1..3) {
+            val j = JSONObject(httpGet("https://archive-api.open-meteo.com/v1/archive?latitude=$lat&longitude=$lon" +
+                "&start_date=${f.minusYears(y.toLong())}&end_date=${t.minusYears(y.toLong())}" +
+                "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto")).optJSONObject("daily") ?: continue
+            fun arr(n: String, into: ArrayList<Double>) { j.optJSONArray(n)?.let { a -> for (k in 0 until a.length()) if (!a.isNull(k)) into += a.optDouble(k) } }
+            arr("temperature_2m_min", mins); arr("temperature_2m_max", maxs); arr("precipitation_sum", rain)
+        }
+        if (mins.isEmpty()) return "Ориентир по прошлым годам не нашёлся."
+        val wet = rain.count { it >= 1.0 } * 100 / rain.size.coerceAtLeast(1)
+        return "Ориентир — эти же дни за 3 прошлых года: ночью ≈${mins.average().toInt()}°, днём ≈${maxs.average().toInt()}° " +
+            "(от ${mins.min().toInt()}° до ${maxs.max().toInt()}°), дождливых дней ≈$wet%. Это не прогноз, а норма."
     }
 
     /** Запасной источник погоды: wttr.in. */

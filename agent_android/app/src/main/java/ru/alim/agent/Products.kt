@@ -140,7 +140,7 @@ fun md(text: String): AnnotatedString = buildAnnotatedString {
         if (heading) withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(line.replace("**", "")) }
         else {
             val parts = line.split("**")
-            parts.forEachIndexed { i, p -> if (i % 2 == 1) withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) { append(p) } else append(p) }
+            parts.forEachIndexed { i, p -> if (i % 2 == 1) withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(p) } else append(p) }
         }
         if (li < lines.size - 1) append("\n")
     }

@@ -363,7 +363,8 @@ class ChatStore(val fid: String) {
     /** Обычная реплика Пилота в ленте (отчёты поручений и т.п.). */
     fun say(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), status = "read"))
 
-    private fun dispatch(m: Msg) {
+    /** queued — сообщение пришло, пока шла задача: это продолжение той задачи, отдаём агенту с её контекстом, а не быстрой полосе. */
+    private fun dispatch(m: Msg, queued: Boolean = false) {
         val c = core
         if (c.busy || c.fastBusy) { if (m.id !in queue) queue += m.id; return }
         if (m.note && m.from.isNotBlank()) {
@@ -394,7 +395,7 @@ class ChatStore(val fid: String) {
         // «обновись / установи» — без модели, сразу качаем и ставим (модель могла сочинить «я уже обновлён»)
         if (m.att.isBlank() && Updater.isCommand(m.text)) { Updater.run(Agent.app); drainQueue(); return }
         // Быстрая полоса: простую болтовню отвечаем сразу лёгкой моделью с потоковым выводом, минуя агента.
-        if (Prefs.fastLane && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
+        if (Prefs.fastLane && !queued && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
         else c.followUp(prompt)
     }
 
@@ -473,7 +474,7 @@ class ChatStore(val fid: String) {
         main.postDelayed({
             val next = queue.firstOrNull() ?: return@postDelayed
             queue.removeAt(0)
-            msgs.firstOrNull { it.id == next }?.let { dispatch(it) }
+            msgs.firstOrNull { it.id == next }?.let { dispatch(it, queued = true) }
         }, 300)
     }
 
@@ -525,7 +526,7 @@ class ChatStore(val fid: String) {
         main.postDelayed({
             val next = queue.firstOrNull() ?: return@postDelayed
             queue.removeAt(0)
-            msgs.firstOrNull { it.id == next }?.let { dispatch(it) }
+            msgs.firstOrNull { it.id == next }?.let { dispatch(it, queued = true) }
         }, 300)
     }
 

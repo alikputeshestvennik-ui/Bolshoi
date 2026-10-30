@@ -64,6 +64,11 @@ object Avia {
         if (!dre.matches(date)) return "дата «$date» не подходит: нужна одна дата ГГГГ-ММ-ДД или месяц ГГГГ-ММ. На выходные — вызови отдельно на каждый день"
         if (returnDate.isNotBlank() && !dre.matches(returnDate)) return "дата обратно «$returnDate» не подходит: нужна ГГГГ-ММ-ДД или ГГГГ-ММ"
         if (date.length == 10 && date < java.time.LocalDate.now().toString()) return "дата $date уже прошла — возьми будущую"
+        // Крым: аэропорт Симферополя закрыт — сразу ищем из Сочи и говорим про дорогу
+        val crimea = Regex("ялт|севастоп|симфероп|алушт|евпатор|феодос|керч|судак|крым|^sip$", RegexOption.IGNORE_CASE).containsMatchIn(from.trim())
+        if (crimea) return "Аэропорт Симферополя закрыт для гражданских рейсов — из Крыма летают через Сочи (Адлер): " +
+            "автобус из Ялты через Крымский мост ≈15 ч, учти его в расписании. Ищу из Сочи:\n" +
+            search("Сочи", to, date, returnDate, direct)
         val o = place(from) ?: return "не понял город вылета «$from»"
         val d = place(to) ?: return "не понял город прилёта «$to»"
         val oneWay = returnDate.isBlank()

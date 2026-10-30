@@ -50,6 +50,23 @@ object Llm {
     }
 
     class GoogleLimit(val daily: Boolean, msg: String) : Exception(msg)
+    /** На счёте gptunnel кончились деньги (402) — повтор не поможет, нужна другая модель или пополнение. */
+    class NoMoney(msg: String) : Exception(msg)
+
+    /**
+     * Текст ответа. Некоторые модели (Qwen) вместо content присылают null и родной вызов функции (tool_calls) —
+     * переводим его в наш JSON-формат, иначе в чат уходило слово «null».
+     */
+    fun content(m: JSONObject): String {
+        if (!m.isNull("content")) { val t = m.optString("content", ""); if (t.isNotBlank() && t != "null") return t }
+        val tc = m.optJSONArray("tool_calls")?.optJSONObject(0)?.optJSONObject("function")
+        if (tc != null) {
+            val args = runCatching { JSONObject(tc.optString("arguments", "{}")) }.getOrDefault(JSONObject())
+            val name = tc.optString("name")
+            return JSONObject().put("step", name).put("tool", name).put("args", args).put("say", "").put("done", false).toString()
+        }
+        return ""
+    }
 
     private fun googleChat(id: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val k = Call.key
@@ -69,7 +86,7 @@ object Llm {
         }
         if (r.first !in 200..299) error("Google ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
-        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
         val u = j.optJSONObject("usage") ?: JSONObject()
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
@@ -100,7 +117,7 @@ object Llm {
             val f = YaCloud.folder; if (f.isBlank()) error("нет ID каталога Yandex Cloud")
             "gpt://$f/${model.removePrefix("yandex:").removePrefix("yc:")}"
         }
-        fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens).put("messages", messages)
+        fun body(js: Boolean) = JSONObject().put("model", uri).put("temperature", 0.2).put("max_tokens", maxTokens.coerceAtMost(8000)).put("messages", messages)
             .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
         val keys = (listOf(k) + YaCloud.all).distinct()
         fun sendWith(key: String, b: JSONObject) = http.newCall(Request.Builder().url("https://llm.api.cloud.yandex.net/v1/chat/completions")
@@ -120,7 +137,7 @@ object Llm {
         if (r.first == 401 || r.first == 403) error("YandexGPT: у ключа нет доступа к моделям (роль ai.languageModels.user)")
         if (r.first !in 200..299) error("YandexGPT ответил ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
-        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
         val u = j.optJSONObject("usage") ?: JSONObject()
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
@@ -191,9 +208,11 @@ object Llm {
         if (r.first == 400 && json) { b = body(false); r = post("$BASE/chat/completions", b, bearer) }
         if (r.first == 404 || r.second.contains("invalid_model_error") || r.second.contains("Model not found", true))
             throw ModelNotFound("модель «$model» не найдена")
+        if (r.first == 402 || r.second.contains("Insufficient quota", true) || r.second.contains("balance is too low", true))
+            throw NoMoney("на GPTunnel закончился баланс")
         if (r.first !in 200..299) error("модель «$model» ответила ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
-        val text = j.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "")
+        val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
         val u = j.optJSONObject("usage") ?: JSONObject()
         val apiCost = u.optDouble("total_cost", 0.0).let { if (it.isNaN()) 0.0 else it }
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), apiCost)

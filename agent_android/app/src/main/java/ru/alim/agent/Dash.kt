@@ -615,7 +615,10 @@ private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): S
     if (totalCol < 0) return ""
     fun num(v: Any?): Double? = when (v) {
         is Number -> v.toDouble()
-        is String -> if (v.startsWith("=")) Formula.eval(v.drop(1), grid) else v.replace(Regex("[^\\d.,]"), "").replace(',', '.').toDoubleOrNull()
+        // из «≈15 700 ₽ (7 368 ₽ + 300-500 ₽…)» берём только первое число, а не склейку всех цифр
+        is String -> if (v.startsWith("=")) Formula.eval(v.drop(1), grid)
+            else Regex("\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?").find(v)?.value
+                ?.replace(Regex("[ \\u00A0\\u202F]"), "")?.replace(',', '.')?.toDoubleOrNull()
         else -> null
     }
     val cityCol = head.indexOfFirst { it.contains("город") }
