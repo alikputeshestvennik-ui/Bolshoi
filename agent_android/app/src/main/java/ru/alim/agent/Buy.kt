@@ -25,7 +25,8 @@ object Buy {
             for (k in 0 until minOf(6, src.length())) {
                 val it = src.optJSONObject(k) ?: continue
                 val kind = it.optString("type").lowercase().ifBlank { "link" }
-                val label = it.optString("label").trim().ifBlank { continue }
+                val label = it.optString("label").trim()
+                if (label.isEmpty()) continue
                 val url = when (kind) {
                     "flight", "avia", "рейс" -> flight(it)
                     else -> it.optString("url").trim().takeIf { u -> u.startsWith("http") && seen.contains(u.take(60)) }
