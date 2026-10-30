@@ -76,8 +76,15 @@ object Git {
         val artId = art.optLong("id")
         // артефакт — zip, внутри .apk
         val apk = File(ctx.cacheDir, "update.apk")
-        get("https://api.github.com/repos/$OWNER/$REPO/actions/artifacts/$artId/zip").use { r ->
-            if (!r.isSuccessful) return "не скачалось: GitHub ${r.code}"
+        // GitHub иногда отвечает 502/503 на секунду-другую — пробуем ещё, с паузой
+        var resp = get("https://api.github.com/repos/$OWNER/$REPO/actions/artifacts/$artId/zip")
+        var tries = 1
+        while (!resp.isSuccessful && resp.code >= 500 && tries < 4) {
+            resp.close(); Thread.sleep(3000L * tries); tries++
+            resp = get("https://api.github.com/repos/$OWNER/$REPO/actions/artifacts/$artId/zip")
+        }
+        resp.use { r ->
+            if (!r.isSuccessful) return if (r.code >= 500) "GitHub сейчас сбоит (${r.code}) — сборка цела, попробуй «обновись» через пару минут" else "не скачалось: GitHub ${r.code}"
             ZipInputStream(r.body!!.byteStream()).use { zip ->
                 var e = zip.nextEntry
                 var found = false
