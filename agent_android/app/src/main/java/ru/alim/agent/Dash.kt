@@ -31,6 +31,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateListOf
+import kotlinx.coroutines.launch
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -378,30 +382,76 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
     }
 }
 
-/** «Лучший выбор» — как в макете Г: победитель крупнее и с плашкой, остальные меньше и тише. */
+/** «Лучший выбор» — как в макете Г: победитель крупнее и с плашкой, остальные меньше и тише. Есть шаги покупки — тап открывает их. */
 @Composable
 private fun BestBlock(json: String) {
     val b = remember(json) { runCatching { org.json.JSONObject(json) }.getOrNull() } ?: return
     val alt = b.optJSONArray("alt")?.let { a -> (0 until minOf(2, a.length())).mapNotNull { a.optJSONObject(it) } }.orEmpty()
+    var sheet by remember { mutableStateOf<org.json.JSONObject?>(null) }
     Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         val ok = Th.c.online
         val shape = RoundedCornerShape(18.dp)
-        Column(Modifier.weight(3f).fillMaxSize().clip(shape).background(ok.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)).border(2.dp, ok, shape).padding(14.dp),
+        val wBuy = Buy.items(b)
+        Column(Modifier.weight(3f).fillMaxSize().clip(shape).background(ok.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)).border(2.dp, ok, shape)
+            .then(if (wBuy.isNotEmpty()) Modifier.clickable(onClickLabel = "Купить") { sheet = b } else Modifier).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically)) {
             Text("ЛУЧШИЙ ВЫБОР", style = body(10, FontWeight.Bold, if (Th.c.dark) Color(0xFF062018) else Color.White).copy(letterSpacing = 0.8.sp),
                 modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(ok).padding(horizontal = 7.dp, vertical = 3.dp))
             Text(b.optString("name"), style = body(13, FontWeight.Bold, Ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(b.optString("value"), style = TextStyle(fontFamily = Fonts.display, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = Ink), maxLines = 1)
             if (b.optString("note").isNotBlank()) Text(b.optString("note"), style = body(12, color = Muted), maxLines = 2)
+            if (wBuy.isNotEmpty()) Text("Купить · ${wBuy.size} ${steps(wBuy.size)} ›", style = body(12, FontWeight.Bold, ok),
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(ok.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 4.dp))
         }
         if (alt.isNotEmpty()) Column(Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             alt.forEach { a ->
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.bg.copy(alpha = 0.7f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                val aBuy = Buy.items(a)
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.bg.copy(alpha = 0.7f))
+                    .then(if (aBuy.isNotEmpty()) Modifier.clickable(onClickLabel = "Купить") { sheet = a } else Modifier).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(a.optString("name"), style = body(12, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(a.optString("value"), style = TextStyle(fontFamily = Fonts.display, fontSize = 14.sp, color = Ink.copy(alpha = 0.8f)), maxLines = 1)
                     if (a.optString("diff").isNotBlank()) Text(a.optString("diff"), style = body(12, color = Muted), maxLines = 1)
+                    if (aBuy.isNotEmpty()) Text("Купить ›", style = body(11, FontWeight.Bold, Th.c.accent))
                 }
             }
+        }
+    }
+    sheet?.let { o -> BuySheet(o) { sheet = null } }
+}
+
+private fun steps(n: Int) = if (n % 10 == 1 && n % 100 != 11) "шаг" else if (n % 10 in 2..4 && n % 100 !in 12..14) "шага" else "шагов"
+
+/** Шаги покупки варианта: каждый — своя ссылка, «Открыть всё» — все вкладки разом (приложение, если оно есть). */
+@Composable
+private fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val items = remember(o) { Buy.items(o) }
+    val opened = remember { mutableStateListOf<Int>() }
+    androidx.compose.ui.window.Dialog(onDismissRequest = close) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Th.c.card).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(o.optString("name"), style = TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+            Text("${o.optString("value")} · ${items.size} ${steps(items.size)} покупки по порядку поездки", style = body(12, color = Muted))
+            items.forEachIndexed { k, (kind, label, url) ->
+                val done = k in opened
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.bg).clickable { Buy.open(ctx, url); if (!done) opened += k }.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(when (kind) { "flight", "avia", "рейс" -> "✈"; "bus" -> "🚌"; "train" -> "🚆"; "hotel" -> "🏨"; else -> "🔗" }, style = body(18))
+                    Column(Modifier.weight(1f)) {
+                        Text(label, style = body(13, FontWeight.Medium, Ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(when { url.contains("aviasales") -> "Авиасейлс"; url.contains("yandex.ru/search") -> "поиск — точной ссылки не нашёл"; else -> Uri.parse(url).host.orEmpty().removePrefix("www.") },
+                            style = body(11, color = Muted), maxLines = 1)
+                    }
+                    Text(if (done) "✓" else "›", style = body(16, FontWeight.Bold, if (done) Th.c.online else Th.c.accent))
+                }
+            }
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.accent).clickable {
+                scope.launch { items.forEachIndexed { k, it -> Buy.open(ctx, it.third); if (k !in opened) opened += k; kotlinx.coroutines.delay(700) } }
+            }.padding(14.dp), contentAlignment = Alignment.Center) {
+                Text("Открыть всё (${items.size})", style = body(14, FontWeight.Bold, Th.c.onAccent))
+            }
+            Text("Цены — из поиска; точная будет на сайте при покупке. Платишь сам — Пилот ничего не покупает.", style = body(11, color = Muted))
         }
     }
 }

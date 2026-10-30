@@ -21,6 +21,8 @@ object Avia {
     val ready: Boolean get() = token.isNotBlank()
 
     /** Ссылки на последние найденные рейсы — чтобы открыть «второй» в приложении Авиасейлса. */
+    /** Найденные в поисках рейсы: «SU1153» → точная ссылка на предложение (для кнопок покупки). */
+    val byFlight = java.util.concurrent.ConcurrentHashMap<String, String>()
     var lastLinks: List<String>
         get() = Prefs.aviaLinks.split('\n').filter { it.isNotBlank() }
         private set(v) { Prefs.aviaLinks = v.joinToString("\n") }
@@ -97,6 +99,7 @@ object Avia {
             if (!oneWay) f.optString("return_at").takeIf { it.length >= 16 }?.let { r -> sb.append(" · обратно ${r.substring(8, 10)}.${r.substring(5, 7)} ${r.substring(11, 16)}") }
             sb.append(" · ${"%,d".format(f.optInt("price")).replace(',', ' ')} ₽\n")
             links += "https://www.aviasales.ru" + f.optString("link")
+            byFlight[(al + f.optString("flight_number")).uppercase().replace(Regex("[^A-Z0-9А-Я]"), "")] = links.last()
         }
         lastLinks = links
         sb.append("(цены из поисков на Авиасейлсе за последние ~2 суток; точную цену покажет Авиасейлс при открытии)")
