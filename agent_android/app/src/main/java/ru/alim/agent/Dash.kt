@@ -377,11 +377,11 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
 private fun BestBlock(json: String) {
     val b = remember(json) { runCatching { org.json.JSONObject(json) }.getOrNull() } ?: return
     val alt = b.optJSONArray("alt")?.let { a -> (0 until minOf(2, a.length())).mapNotNull { a.optJSONObject(it) } }.orEmpty()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         val ok = Th.c.online
         val shape = RoundedCornerShape(18.dp)
-        Column(Modifier.weight(3f).clip(shape).background(ok.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)).border(2.dp, ok, shape).padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.weight(3f).fillMaxSize().clip(shape).background(ok.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)).border(2.dp, ok, shape).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically)) {
             Text("ЛУЧШИЙ ВЫБОР", style = body(10, FontWeight.Bold, if (Th.c.dark) Color(0xFF062018) else Color.White).copy(letterSpacing = 0.8.sp),
                 modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(ok).padding(horizontal = 7.dp, vertical = 3.dp))
             Text(b.optString("name"), style = body(13, FontWeight.Bold, Ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
