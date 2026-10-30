@@ -491,7 +491,12 @@ private fun splitResult(text: String): ResultParts {
     if (title.length !in 8..120) return ResultParts("", t, stamp)
     // тело — исходный текст с переносами строк, без того, что ушло в заголовок
     var body = t
-    if (pick == title || pick.startsWith(title)) body = body.replaceFirst(pick, if (pick.length > title.length) pick.removePrefix(title).trimStart(',', ';', ' ', '—', '-').replaceFirstChar { it.uppercase() } else "")
+    if (pick == title || pick.startsWith(title)) {
+        val rest = pick.removePrefix(title).trimStart(',', ';', ' ', '—', '-', '.', ':').trim()
+        body = body.replaceFirst(pick, if (rest.length > 3) rest.replaceFirstChar { it.uppercase() } else "")
+    }
+    // хвосты после выноса заголовка: строка из одной точки, «. Если…»
+    body = body.lines().map { it.trim().removePrefix(". ").trim() }.filter { it != "." && it != "," }.joinToString("\n")
     body = body.replace(Regex("\\n{3,}"), "\n\n").trim()
     return ResultParts(title, body, stamp)
 }
@@ -500,13 +505,15 @@ private fun splitResult(text: String): ResultParts {
 private fun tablePreview(ctx: android.content.Context, uri: android.net.Uri): List<List<String>>? {
     val j = ctx.contentResolver.openInputStream(uri)?.use { Docs.readXlsx(it) } ?: return null
     val rows = j.optJSONArray("sheets")?.optJSONObject(0)?.optJSONArray("rows") ?: return null
-    fun cell(v: Any?): String = when (v) {
+    val grid = (0 until rows.length()).map { i -> val r = rows.optJSONArray(i); (0 until (r?.length() ?: 0)).map { c -> r?.opt(c) } }
+    fun num(d: Double) = if (d == Math.floor(d) && kotlin.math.abs(d) < 1e12) "%,d".format(d.toLong()).replace(',', ' ') else "%.1f".format(d)
+    fun cell(v: Any?, depth: Int = 0): String = when (v) {
         null -> ""
-        is Number -> { val d = v.toDouble(); if (d == Math.floor(d) && kotlin.math.abs(d) < 1e12) "%,d".format(d.toLong()).replace(',', ' ') else "%.2f".format(d) }
-        is String -> if (v.startsWith("=")) "—" else v
+        is Number -> num(v.toDouble())
+        is String -> if (v.startsWith("=")) Formula.eval(v.drop(1), grid, depth)?.let { num(it) } ?: "—" else v
         else -> v.toString()
     }
-    val all = (0 until minOf(rows.length(), 8)).map { i -> val r = rows.optJSONArray(i); (0 until (r?.length() ?: 0)).map { c -> cell(r?.opt(c)) } }
+    val all = (0 until minOf(grid.size, 8)).map { i -> grid[i].map { v -> cell(v) } }
         .filter { r -> r.count { it.isNotBlank() } >= 2 }   // строки-примечания (одна ячейка) — не в превью
     if (all.size < 2) return all
     val n = all.maxOf { it.size }
@@ -535,4 +542,56 @@ fun deriveBest(text: String): String {
     val m = Regex("(?:самый выгодн\\w*(?: вариант)?|выгоднее всего|лучший (?:вариант|выбор))\\s*[—:–-]\\s*([^(,.;\\n]{2,40}?)\\s*\\(\\s*(≈?\\s*[\\d\\s ]{3,}\\s*₽)", RegexOption.IGNORE_CASE).find(text)
         ?: return ""
     return org.json.JSONObject().put("name", m.groupValues[1].trim()).put("value", m.groupValues[2].replace(Regex("\\s+"), " ").trim()).toString()
+}
+
+
+/** Мини-вычислитель формул Excel для превью: + − × ÷, скобки, ссылки A1, SUM(A1:B3). Остальное — null («—»). */
+object Formula {
+    fun eval(expr: String, grid: List<List<Any?>>, depth: Int = 0): Double? = runCatching { P(expr.replace(" ", "").uppercase(), grid, depth).run() }.getOrNull()
+
+    private class P(val s: String, val g: List<List<Any?>>, val depth: Int) {
+        var i = 0
+        fun run(): Double? { val v = expr(); return if (i == s.length) v else null }
+        fun expr(): Double? { var v = term() ?: return null
+            while (i < s.length && (s[i] == '+' || s[i] == '-')) { val op = s[i++]; val r = term() ?: return null; v = if (op == '+') v + r else v - r }
+            return v }
+        fun term(): Double? { var v = factor() ?: return null
+            while (i < s.length && (s[i] == '*' || s[i] == '/')) { val op = s[i++]; val r = factor() ?: return null; v = if (op == '*') v * r else if (r == 0.0) return null else v / r }
+            return v }
+        fun factor(): Double? {
+            if (i >= s.length) return null
+            val c = s[i]
+            if (c == '-') { i++; return factor()?.let { -it } }
+            if (c == '(') { i++; val v = expr(); if (i < s.length && s[i] == ')') i++ else return null; return v }
+            if (s.startsWith("SUM(", i)) {
+                i += 4; var total = 0.0
+                while (i < s.length && s[i] != ')') {
+                    val a = ref() ?: return null
+                    val b = if (i < s.length && s[i] == ':') { i++; ref() ?: return null } else a
+                    for (r in minOf(a.first, b.first)..maxOf(a.first, b.first)) for (cc in minOf(a.second, b.second)..maxOf(a.second, b.second)) total += value(r, cc) ?: 0.0
+                    if (i < s.length && (s[i] == ',' || s[i] == ';')) i++
+                }
+                if (i < s.length) i++
+                return total
+            }
+            if (c.isDigit() || c == '.') { val st = i; while (i < s.length && (s[i].isDigit() || s[i] == '.')) i++; return s.substring(st, i).toDoubleOrNull() }
+            if (c.isLetter()) { val (r, cc) = ref() ?: return null; return value(r, cc) }
+            return null
+        }
+        /** «D2» → (строка 1, столбец 3), с нуля. */
+        fun ref(): Pair<Int, Int>? {
+            val m = Regex("\\$?([A-Z]{1,3})\\$?(\\d{1,5})").find(s, i)?.takeIf { it.range.first == i } ?: return null
+            i = m.range.last + 1
+            val col = m.groupValues[1].fold(0) { acc, ch -> acc * 26 + (ch - 'A' + 1) } - 1
+            return (m.groupValues[2].toInt() - 1) to col
+        }
+        fun value(r: Int, c: Int): Double? {
+            val v = g.getOrNull(r)?.getOrNull(c) ?: return 0.0
+            return when (v) {
+                is Number -> v.toDouble()
+                is String -> if (v.startsWith("=")) { if (depth > 6) null else eval(v.drop(1), g, depth + 1) } else v.replace(" ", "").replace(',', '.').toDoubleOrNull() ?: 0.0
+                else -> 0.0
+            }
+        }
+    }
 }
