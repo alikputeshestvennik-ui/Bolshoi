@@ -409,18 +409,18 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, onSearch: (() -> Unit)
         add(Triple(icSun, "Сводки", Scr.Digest))
         add(Triple(icGear, "Настройки", Scr.Settings))
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        items.forEach { (ic, label, to) -> NavDot(haze, ic, label) { go(to) } }
-        if (onSearch != null) NavDot(haze, icSearch, "Поиск", onSearch)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f)) { go(to) } }
+        if (onSearch != null) NavDot(haze, icSearch, "", Modifier.width(34.dp), onSearch)
     }
 }
 
 @Composable
-private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Row(Modifier.height(34.dp).glassDash(haze, RoundedCornerShape(17.dp)).clickable(onClickLabel = label, onClick = onClick).padding(horizontal = 11.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = Ink, modifier = Modifier.size(16.dp))
-        Text(label, style = body(11, FontWeight.SemiBold, Ink.copy(alpha = 0.8f)), maxLines = 1)
+private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Row(modifier.height(34.dp).glassDash(haze, RoundedCornerShape(17.dp)).clickable(onClickLabel = label.ifBlank { "Поиск" }, onClick = onClick).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
+        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label.ifBlank { "Поиск" }, tint = Ink, modifier = Modifier.size(16.dp))
+        if (label.isNotBlank()) Text(label, style = body(11, FontWeight.SemiBold, Ink.copy(alpha = 0.8f)), maxLines = 1, softWrap = false)
     }
 }
 
@@ -471,15 +471,21 @@ private fun splitResult(text: String): ResultParts {
     var t = text.trim()
     var stamp = ""
     Regex("\\n?\\s*(🕓|🕐|⏰)\\s*([^\\n]+)").find(t)?.let { m -> stamp = m.groupValues[2].trim(); t = t.removeRange(m.range).trim() }
-    val sentences = Regex("[^.!?\\n]+[.!?]*").findAll(t).map { it.value.trim() }.filter { it.isNotBlank() }.toMutableList()
+    t = t.replace("**", "").replace("__", "")
+    // режем по точке/!/? только перед пробелом и заглавной (или концом), чтобы «15.01» и «9.3» не ломались
+    val sentences = t.split(Regex("(?<=[.!?])\\s+(?=[А-ЯЁA-Z«\"(0-9])|\\n+")).map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
     // служебные фразы про файл («Обновил файл в Загрузках», «Таблица готова», «Теперь там…») — не вывод
     val service = Regex("(файл|таблиц|документ|загрузк|xlsx|docx)", RegexOption.IGNORE_CASE)
-    val verb = Regex("(готов|создал|сделал|сохранил|обновил|положил|собрал|теперь там|там есть|внёс|внес)", RegexOption.IGNORE_CASE)
+    val verb = Regex("(готов|создал|сделал|сохранил|обновил|положил|собрал|теперь там|там есть|внёс|внес|лежит|открывается|в загрузк)", RegexOption.IGNORE_CASE)
     while (sentences.size > 1 && service.containsMatchIn(sentences[0]) && verb.containsMatchIn(sentences[0])) sentences.removeAt(0)
     // вывод «самый выгодный — …» поднимаем в заголовок
     sentences.indexOfFirst { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор", RegexOption.IGNORE_CASE).containsMatchIn(it) }
         .takeIf { it > 0 }?.let { i -> sentences.add(0, sentences.removeAt(i)) }
-    val title = sentences.firstOrNull()?.takeIf { it.length in 8..170 }?.trimEnd('.').orEmpty()
+    // заголовок короткий: «Самый выгодный вариант: Отель Дарчи-Палас» — до первой запятой после двоеточия
+    val first = sentences.firstOrNull().orEmpty()
+    val title = (if (first.length > 90 && first.contains(':')) first.substringBefore(',').takeIf { it.length >= 12 } ?: first else first)
+        .takeIf { it.length in 8..170 }?.trimEnd('.').orEmpty()
+    if (title.isNotBlank() && title.length < first.length) { sentences[0] = first.removePrefix(title).trimStart(',', ' ').replaceFirstChar { it.uppercase() } ; return ResultParts(title, sentences.joinToString(" "), stamp) }
     val body = if (title.isNotBlank()) sentences.drop(1).joinToString(" ") else sentences.joinToString(" ")
     return ResultParts(title, body, stamp)
 }
@@ -494,8 +500,20 @@ private fun tablePreview(ctx: android.content.Context, uri: android.net.Uri): Li
         is String -> if (v.startsWith("=")) "—" else v
         else -> v.toString()
     }
-    return (0 until minOf(rows.length(), 6)).map { i -> val r = rows.optJSONArray(i); (0 until (r?.length() ?: 0)).map { c -> cell(r?.opt(c)) } }
-        .filter { r -> r.any { it.isNotBlank() } }
+    val all = (0 until minOf(rows.length(), 8)).map { i -> val r = rows.optJSONArray(i); (0 until (r?.length() ?: 0)).map { c -> cell(r?.opt(c)) } }
+        .filter { r -> r.count { it.isNotBlank() } >= 2 }   // строки-примечания (одна ячейка) — не в превью
+    if (all.size < 2) return all
+    val n = all.maxOf { it.size }
+    val body = all.drop(1)
+    // столбцы, где во всех строках одно и то же (маршрут, один рейс), и «№» — неинтересны в превью
+    val keep = (0 until n).filter { c ->
+        val vals = body.map { it.getOrNull(c).orEmpty() }
+        val head = all[0].getOrNull(c).orEmpty().trim()
+        vals.any { it.isNotBlank() } && vals.distinct().size > 1 && head != "№" && !head.equals("n", true)
+    }.ifEmpty { (0 until n).toList() }
+    // имя (первый оставшийся) + последние 3 — обычно там итоги
+    val cols = if (keep.size <= 4) keep else listOf(keep.first()) + keep.takeLast(3)
+    return all.take(6).map { r -> cols.map { c -> r.getOrNull(c).orEmpty() } }
 }
 
 private val icPlane by lazy {
