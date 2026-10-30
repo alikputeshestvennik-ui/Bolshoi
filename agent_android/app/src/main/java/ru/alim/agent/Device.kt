@@ -235,17 +235,65 @@ object Device {
         return "не нашёл такую заметку"
     }
 
-    /** Разобрать время вида «завтра 15:00», «сегодня 9», «в 18:30» → миллисекунды (местное). null — не понял. */
-    fun parseWhen(spec: String): Long? {
-        val s = spec.lowercase()
-        val c = Calendar.getInstance()
-        when { s.contains("послезавтра") -> c.add(Calendar.DAY_OF_YEAR, 2)
-               s.contains("завтра") -> c.add(Calendar.DAY_OF_YEAR, 1) }
-        val m = Regex("(\\d{1,2})[:.\\s]?(\\d{2})?").find(s) ?: return null
-        val h = m.groupValues[1].toIntOrNull() ?: return null
-        val min = m.groupValues[2].toIntOrNull() ?: 0
-        c.set(Calendar.HOUR_OF_DAY, h); c.set(Calendar.MINUTE, min); c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0)
-        if (c.timeInMillis < System.currentTimeMillis() - 60_000 && !s.contains("завтра") && !s.contains("послезавтра")) c.add(Calendar.DAY_OF_YEAR, 1)
-        return c.timeInMillis
+    /** Номер месяца по слову («декабря», «мая», «март») или null. */
+    private fun month(w: String): Int? = when {
+        w.startsWith("январ") -> 1; w.startsWith("феврал") -> 2; w.startsWith("март") -> 3; w.startsWith("апрел") -> 4
+        w == "май" || w == "мая" -> 5; w.startsWith("июн") -> 6; w.startsWith("июл") -> 7; w.startsWith("август") -> 8
+        w.startsWith("сентябр") -> 9; w.startsWith("октябр") -> 10; w.startsWith("ноябр") -> 11; w.startsWith("декабр") -> 12
+        else -> null
     }
+
+    /**
+     * Дата и время из слов модели → миллисекунды (местное). Понимает «2026-12-01 10:00», «2026-12-01T10:00», «01.12.2026 10:00»,
+     * «01.12 10:00», «1 декабря 10:00», «1 декабря» (тогда 10:00), «завтра 15:00», «в 18:30», «18:30». Дата без года в прошлом — следующий год.
+     * Дата названа, но не разобрана — null (раньше «1 декабря» превращалось в 01:00 сегодня).
+     */
+    fun parseWhen(spec: String): Long? = parseWhenAt(spec, java.time.LocalDateTime.now())?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+
+    fun parseWhenAt(spec: String, now: java.time.LocalDateTime): java.time.LocalDateTime? {
+        var rest = " " + spec.lowercase().replace('ё', 'е').replace('t', ' ').trim() + " "
+        if (rest.isBlank()) return null
+        var date: java.time.LocalDate? = null
+        var yearGiven = false
+        fun cut(v: String) { rest = rest.replaceFirst(v, " ") }
+        Regex("(\\d{4})-(\\d{1,2})-(\\d{1,2})").find(rest)?.let { m ->
+            date = runCatching { java.time.LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }.getOrNull() ?: return null
+            yearGiven = true; cut(m.value)
+        }
+        if (date == null) Regex("(\\d{1,2})\\.(\\d{1,2})\\.(\\d{2,4})").find(rest)?.let { m ->
+            var y = m.groupValues[3].toInt(); if (y < 100) y += 2000
+            date = runCatching { java.time.LocalDate.of(y, m.groupValues[2].toInt(), m.groupValues[1].toInt()) }.getOrNull() ?: return null
+            yearGiven = true; cut(m.value)
+        }
+        if (date == null) Regex("(\\d{1,2})\\s+([а-я]+)(?:\\s+(\\d{4}))?").findAll(rest).firstOrNull { month(it.groupValues[2]) != null }?.let { m ->
+            val y = m.groupValues[3].toIntOrNull()?.also { yearGiven = true } ?: now.year
+            date = runCatching { java.time.LocalDate.of(y, month(m.groupValues[2])!!, m.groupValues[1].toInt()) }.getOrNull() ?: return null
+            cut(m.value)
+        }
+        // «01.12 10:00» — дата, только если рядом есть время через двоеточие (иначе «18.30» — это время)
+        if (date == null && Regex("\\d{1,2}:\\d{2}").containsMatchIn(rest)) Regex("(?<![\\d:])(\\d{1,2})\\.(\\d{1,2})(?![\\d:])").find(rest)?.let { m ->
+            date = runCatching { java.time.LocalDate.of(now.year, m.groupValues[2].toInt(), m.groupValues[1].toInt()) }.getOrNull()
+            if (date != null) cut(m.value)
+        }
+        if (date == null) date = when {
+            rest.contains("послезавтра") -> now.toLocalDate().plusDays(2)
+            rest.contains("завтра") -> now.toLocalDate().plusDays(1)
+            rest.contains("сегодня") -> now.toLocalDate()
+            else -> null
+        }
+        // месяц словом есть, а дата не собралась — лучше переспросить, чем поставить не туда
+        if (date == null && Regex("[а-я]+").findAll(rest).any { month(it.value) != null }) return null
+        val tm = Regex("(?<!\\d)(\\d{1,2})[:.](\\d{2})(?!\\d)").find(rest) ?: Regex("(?:^|\\s)(?:в|к)\\s+(\\d{1,2})(?!\\d)").find(rest)
+        val h = tm?.groupValues?.get(1)?.toIntOrNull()
+        val mi = tm?.groupValues?.getOrNull(2)?.toIntOrNull() ?: 0
+        if (h != null && (h > 23 || mi > 59)) return null
+        if (date == null && h == null) return null
+        var dt = (date ?: now.toLocalDate()).atTime(h ?: 10, mi)
+        if (date == null && dt.isBefore(now.minusMinutes(1))) dt = dt.plusDays(1)
+        if (date != null && !yearGiven && dt.toLocalDate().isBefore(now.toLocalDate())) dt = dt.plusYears(1)
+        return dt
+    }
+
+    /** Как дату увидит Алим: «1 декабря 2026, вт, 10:00». */
+    fun whenLabel(ms: Long): String = java.text.SimpleDateFormat("d MMMM yyyy, EEE, HH:mm", java.util.Locale("ru")).format(java.util.Date(ms))
 }

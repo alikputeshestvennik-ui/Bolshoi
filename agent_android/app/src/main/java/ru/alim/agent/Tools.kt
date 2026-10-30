@@ -404,11 +404,13 @@ object Tools {
             YaMusic.myPlaylists()
         },
 
-        Tool("event_create", "{\"title\": \"встреча с Егором\", \"when\": \"завтра 15:00\", \"duration_min\": 60, \"place\": \"\"} — создать событие в календаре Алима",
-            confirm = { a -> "В календарь: «${a.optString("title")}» на ${a.optString("when")}?" }) t@{ ctx, a ->
+        Tool("event_create", "{\"title\": \"встреча с Егором\", \"when\": \"ГГГГ-ММ-ДД ЧЧ:ММ\" (или «завтра 15:00»), \"duration_min\": 60, \"place\": \"\"} — создать событие в календаре Алима. Дату пиши полностью: 2026-12-01 10:00",
+            // в карточке — дата так, как её понял Пилот, а не слова модели: ошибку видно до «Да»
+            confirm = { a -> Device.parseWhen(a.optString("when"))?.let { "В календарь: «${a.optString("title")}» — ${Device.whenLabel(it)}?" } }) t@{ ctx, a ->
             val title = a.optString("title").trim(); if (title.isEmpty()) return@t "что за событие?"
-            val start = Device.parseWhen(a.optString("when")) ?: return@t "не понял время — скажи как «завтра 15:00»"
-            Device.createEvent(ctx, title, start, start + a.optInt("duration_min", 60) * 60_000L, a.optString("place"))
+            val start = Device.parseWhen(a.optString("when")) ?: return@t "не понял дату «${a.optString("when")}» — передай when как ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-12-01 10:00"
+            if (start < System.currentTimeMillis() - 60_000) return@t "дата ${Device.whenLabel(start)} уже прошла — проверь when"
+            Device.createEvent(ctx, title, start, start + a.optInt("duration_min", 60) * 60_000L, a.optString("place")) + " (${Device.whenLabel(start)})"
         },
         Tool("event_list", "{\"day\": \"today|tomorrow|ГГГГ-ММ-ДД\"} — события календаря на день («что у меня завтра»)") t@{ ctx, a ->
             val c = java.util.Calendar.getInstance()
@@ -890,6 +892,11 @@ object Tools {
             if (!a.has("sheets") && a.has("rows")) a.put("sheets", org.json.JSONArray().put(org.json.JSONObject().put("name", "Лист1").put("rows", a.opt("rows"))))
             a.optJSONArray("sheets")?.let { sh -> for (k in 0 until sh.length()) (sh.opt(k) as? String)?.let { s -> runCatching { sh.put(k, org.json.JSONObject(s)) } } }
             val type = a.optString("type").lowercase().ifBlank { if (a.has("sheets") || a.has("rows")) "xlsx" else "docx" }
+            // таблица из одних заголовков — не сохраняем и не даём сказать «таблица готова»
+            if (type == "xlsx") a.optJSONArray("sheets")?.let { sh ->
+                val dataRows = (0 until sh.length()).sumOf { k -> ((sh.optJSONObject(k)?.optJSONArray("rows")?.length() ?: 0) - 1).coerceAtLeast(0) }
+                if (dataRows == 0) return@t "ошибка: в таблице только заголовки, строк с данными нет. Заполни строки найденными данными (по строке на вариант) и повтори file_create."
+            }
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
             val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, runCatching { Docs.xlsx(a) }.getOrElse { e ->
                     return@t "ошибка формата таблицы (${e.message?.take(80)}). Нужно: \"sheets\": [{\"name\": \"Сравнение\", \"rows\": [[\"Город\", \"Цена\"], [\"Казань\", 12000]]}] — массив объектов, rows — массив массивов. Повтори file_create в этом формате." })
