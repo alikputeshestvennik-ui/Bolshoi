@@ -468,25 +468,31 @@ private class ResultParts(val title: String, val body: String, val stamp: String
 
 /** Вывод — заголовком. «Таблица готова…» — служебное, тогда заголовок — следующая фраза. Строка 🕓 — в подпись. */
 private fun splitResult(text: String): ResultParts {
-    var t = text.trim()
+    var t = text.trim().replace("**", "").replace("__", "")
     var stamp = ""
     Regex("\\n?\\s*(🕓|🕐|⏰)\\s*([^\\n]+)").find(t)?.let { m -> stamp = m.groupValues[2].trim(); t = t.removeRange(m.range).trim() }
-    t = t.replace("**", "").replace("__", "")
-    // режем по точке/!/? только перед пробелом и заглавной (или концом), чтобы «15.01» и «9.3» не ломались
-    val sentences = t.split(Regex("(?<=[.!?])\\s+(?=[А-ЯЁA-Z«\"(0-9])|\\n+")).map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
-    // служебные фразы про файл («Обновил файл в Загрузках», «Таблица готова», «Теперь там…») — не вывод
+    // предложения режем только перед пробелом и заглавной — «15.01» и «9.3» целы
+    val split = Regex("(?<=[.!?])\\s+(?=[А-ЯЁA-Z«\"(])|\\n+")
+    fun sentences(x: String) = x.split(split).map { it.trim() }.filter { it.isNotBlank() }
+    // служебные фразы про файл («Обновил файл в Загрузках», «Таблица лежит…») — выкидываем из текста целиком
     val service = Regex("(файл|таблиц|документ|загрузк|xlsx|docx)", RegexOption.IGNORE_CASE)
     val verb = Regex("(готов|создал|сделал|сохранил|обновил|положил|собрал|теперь там|там есть|внёс|внес|лежит|открывается|в загрузк)", RegexOption.IGNORE_CASE)
-    while (sentences.size > 1 && service.containsMatchIn(sentences[0]) && verb.containsMatchIn(sentences[0])) sentences.removeAt(0)
-    // вывод «самый выгодный — …» поднимаем в заголовок
-    sentences.indexOfFirst { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор", RegexOption.IGNORE_CASE).containsMatchIn(it) }
-        .takeIf { it > 0 }?.let { i -> sentences.add(0, sentences.removeAt(i)) }
-    // заголовок короткий: «Самый выгодный вариант: Отель Дарчи-Палас» — до первой запятой после двоеточия
-    val first = sentences.firstOrNull().orEmpty()
-    val title = (if (first.length > 90 && first.contains(':')) first.substringBefore(',').takeIf { it.length >= 12 } ?: first else first)
-        .takeIf { it.length in 8..170 }?.trimEnd('.').orEmpty()
-    if (title.isNotBlank() && title.length < first.length) { sentences[0] = first.removePrefix(title).trimStart(',', ' ').replaceFirstChar { it.uppercase() } ; return ResultParts(title, sentences.joinToString(" "), stamp) }
-    val body = if (title.isNotBlank()) sentences.drop(1).joinToString(" ") else sentences.joinToString(" ")
+    sentences(t).filter { service.containsMatchIn(it) && verb.containsMatchIn(it) && it.length < 200 }.forEach { sv -> t = t.replaceFirst(sv, "") }
+    t = t.replace(Regex("[ \\t]+\\n"), "\n").replace(Regex("\\n{3,}"), "\n\n").trim()
+    val ss = sentences(t)
+    // заголовок — вывод «самый выгодный — …», иначе первая фраза; длинный — режем по запятой/тире
+    val pick = ss.firstOrNull { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор|оптимальн", RegexOption.IGNORE_CASE).containsMatchIn(it) } ?: ss.firstOrNull().orEmpty()
+    var title = pick
+    if (title.length > 80) {
+        val cut = Regex("[,;](\\s)|\\s[—–-]\\s").findAll(title).map { it.range.first }.firstOrNull { it in 20..80 }
+        title = if (cut != null) title.substring(0, cut) else title
+    }
+    title = title.trim().trimEnd('.', ',', ':')
+    if (title.length !in 8..120) return ResultParts("", t, stamp)
+    // тело — исходный текст с переносами строк, без того, что ушло в заголовок
+    var body = t
+    if (pick == title || pick.startsWith(title)) body = body.replaceFirst(pick, if (pick.length > title.length) pick.removePrefix(title).trimStart(',', ';', ' ', '—', '-').replaceFirstChar { it.uppercase() } else "")
+    body = body.replace(Regex("\\n{3,}"), "\n\n").trim()
     return ResultParts(title, body, stamp)
 }
 
