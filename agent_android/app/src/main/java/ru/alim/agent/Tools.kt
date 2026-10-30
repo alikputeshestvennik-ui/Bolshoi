@@ -935,7 +935,7 @@ object Tools {
                         if (tv is String && !tv.startsWith("=") && Regex("\\d").containsMatchIn(tv)) badRefs += ref.value
                     }
                 } }
-            } } }
+            } }
             // таблица из одних заголовков — не сохраняем и не даём сказать «таблица готова»
             if (type == "xlsx") a.optJSONArray("sheets")?.let { sh ->
                 val dataRows = (0 until sh.length()).sumOf { k -> ((sh.optJSONObject(k)?.optJSONArray("rows")?.length() ?: 0) - 1).coerceAtLeast(0) }
