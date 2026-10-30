@@ -406,7 +406,7 @@ object Tools {
 
         Tool("event_create", "{\"title\": \"встреча с Егором\", \"when\": \"ГГГГ-ММ-ДД ЧЧ:ММ\" (или «завтра 15:00»), \"duration_min\": 60, \"place\": \"\"} — создать событие в календаре Алима. Дату пиши полностью: 2026-12-01 10:00",
             // в карточке — дата так, как её понял Пилот, а не слова модели: ошибку видно до «Да»
-            confirm = { a -> Device.parseWhen(a.optString("when"))?.let { "В календарь: «${a.optString("title")}» — ${Device.whenLabel(it)}?" } }) t@{ ctx, a ->
+            confirm = { a -> Device.parseWhen(a.optString("when"))?.let { "В календарь: «${a.optString("title")}» — ${Device.whenLabel(it)}?" } ?: "" }) t@{ ctx, a ->
             val title = a.optString("title").trim(); if (title.isEmpty()) return@t "что за событие?"
             val start = Device.parseWhen(a.optString("when")) ?: return@t "не понял дату «${a.optString("when")}» — передай when как ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-12-01 10:00"
             if (start < System.currentTimeMillis() - 60_000) return@t "дата ${Device.whenLabel(start)} уже прошла — проверь when"
