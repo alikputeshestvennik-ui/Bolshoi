@@ -446,7 +446,10 @@ object Agent {
                             .orEmpty().filter { it.isNotBlank() && it.length <= 40 }
                         break
                     }
-                    val args = j.optJSONObject("args") ?: JSONObject()
+                    // аргументы бывают строкой JSON (Gemini Lite) или прямо рядом с tool — разбираем все варианты, иначе «пустой запрос»
+                    val args = j.optJSONObject("args")
+                        ?: (j.opt("args") as? String)?.let { s -> runCatching { JSONObject(s) }.getOrNull() }
+                        ?: JSONObject().also { o -> j.keys().forEach { k -> if (k !in setOf("step", "tool", "say", "done", "buttons", "best", "args")) o.put(k, j.opt(k)) } }
                     val stepText = j.optString("step").trim().ifBlank { tool }
 
                     if (tool == "escalate") {

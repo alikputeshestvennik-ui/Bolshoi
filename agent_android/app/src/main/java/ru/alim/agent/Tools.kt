@@ -597,9 +597,14 @@ object Tools {
             val tos = to.split(Regex("\\s*(,|;|\\s+и\\s+)\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(5)
             val dates = date.split(Regex("\\s*[,;]\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(4)
             val ret = a.optString("return_date").trim(); val direct = a.optBoolean("direct", false)
-            if (tos.size == 1 && dates.size == 1) Avia.search(from, tos[0], dates[0], ret, direct)
+            val res = if (tos.size == 1 && dates.size == 1) Avia.search(from, tos[0], dates[0], ret, direct)
             else tos.flatMap { t -> dates.map { d -> runCatching { Avia.search(from, t, d, ret, direct) }.getOrElse { e -> "$from → $t, $d: ${e.message}" } } }
                 .joinToString("\n\n")
+            // Алим в Крыму, а вылет из Сочи/Краснодара — напоминаем про дорогу до аэропорта (модели забывают и пишут «6 часов»)
+            val crimeaHome = Regex("ялт|севастоп|симфероп|алушт|евпатор|феодос|керч|судак|крым", RegexOption.IGNORE_CASE).containsMatchIn(Prefs.homeCity)
+            if (crimeaHome && Regex("сочи|адлер|aer|краснодар|krr", RegexOption.IGNORE_CASE).containsMatchIn(from) && !res.startsWith("Аэропорт Симферополя"))
+                res + "\n\nПОМНИ: Алим в ${Prefs.homeCity}. До аэропорта Сочи автобус через Крымский мост ≈15 ч (найди точное расписание web_search «автобус Ялта аэропорт Сочи расписание»). Рейс подходит, только если Алим успевает к нему с учётом этого автобуса и своих ограничений по времени — посчитай time_calc, не на глаз."
+            else res
         },
 
         Tool("flights_open", "{\"n\": 1} — открыть рейс номер n из последнего поиска flights в приложении Авиасейлса (там покупка). Только по просьбе «открой»") t@{ ctx, a ->
@@ -661,8 +666,9 @@ object Tools {
         },
 
         Tool("web_search", "{\"query\": \"…\"} — поиск в интернете, вернёт заголовки, ссылки и отрывки. Потом прочитай лучшую ссылку через web_read") t@{ _, a ->
-            val q = a.optString("query").trim()
-            if (q.isEmpty()) return@t "пустой запрос"
+            val q = listOf("query", "q", "text", "search", "keywords").map { a.optString(it).trim() }.firstOrNull { it.isNotEmpty() }
+                ?: a.keys().asSequence().map { a.optString(it).trim() }.firstOrNull { it.length > 2 }.orEmpty()
+            if (q.isEmpty()) return@t "пустой запрос — передай args как {\"query\": \"текст поиска\"}"
             val errs = ArrayList<String>()
             for (engine in listOf(YaSearch::search, ::ddgHtml, ::ddgLite, ::bing)) {
                 val r = runCatching { engine(q) }.onFailure { errs += it.message ?: "ошибка" }.getOrNull()
