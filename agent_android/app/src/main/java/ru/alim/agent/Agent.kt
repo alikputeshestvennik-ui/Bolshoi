@@ -136,6 +136,8 @@ object Agent {
         var lastButtons: List<String> by mutableStateOf(emptyList()); private set
         /** Лучший вариант сравнения (JSON) — карточка «Лучший выбор» под таблицей. */
         var lastBest: String = ""; private set
+        /** Исходная задача, к которой относятся уточнения («а если вдвоём?») — для проверки полноты. */
+        private var rootTask = ""
 
         val isMain: Boolean get() = fid == Friends.MAIN
         /** Сейчас выполняется просьба, переданная другим другом. */
@@ -160,7 +162,7 @@ object Agent {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
             if (t.isEmpty() || busy) return
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList(); lastBest = ""
-            startedAt = System.currentTimeMillis(); endedAt = 0L
+            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t
             model = fast(); phase = Phase.WORKING
             lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             delegIntent = Regex("свяж(ись|итесь)|договор(ись|иться)|уточни у|спроси у|узнай у|напиши .{0,30}(и|чтобы) (уточни|спроси|узнай|договор)|переговор", RegexOption.IGNORE_CASE).containsMatchIn(t)
@@ -274,6 +276,7 @@ object Agent {
             append("- Сравнение вариантов (что выгоднее, что выбрать) — в финальном JSON добавь \"best\": {\"name\": \"Обычный · ОАЭ\", \"value\": \"234 085 ₽\", \"note\": \"с перелётом\", \"alt\": [{\"name\": \"Сенсорный · ОАЭ\", \"value\": \"299 085 ₽\", \"diff\": \"+65 тыс\"}]} — только из найденных цифр, до 2 alt. Нет сравнения — не добавляй.\n")
             append("- Если в задаче просят вывод, совет или «куда лучше» — финальный ответ ОБЯЗАТЕЛЬНО его содержит (1–2 предложения), а не только «таблица готова». Вывод КОНКРЕТНЫЙ: что выбрать и почему, с цифрами («выгоднее всего — обычный Pro в ОАЭ: ≈234 тыс ₽ с перелётом, на 75 тыс дешевле сенсорного»). «Выбор за тобой», «зависит от твоих задач» — это не вывод.\n")
             append("- Даты без года («после 10 января», «в мае») — ближайшие В БУДУЩЕМ от сегодняшней даты (сегодня ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date())}). Не пиши прошедший год в названиях и ответе.\n")
+            append("- Сложить время (отправление + в пути, разница между датами) — ВСЕГДА инструмент time_calc, не в уме.\n")
             append("- Время в поездках проверяй по часам: рейс/поезд подходит, только если отправление ПОЗЖЕ, чем Алим реально доберётся до аэропорта/вокзала (с учётом работы и дороги), а обратный путь укладывается в срок. Неподходящий по времени вариант не называй «вписывается» — пометь «не успеваю» и ищи другой. В таблице — столбец «Успеваю?» с расчётом по часам.\n")
             append("- Сложный подбор с жёсткими условиями (сроки, бюджет) — после ответа дай в buttons 1-3 уточнения, которые сильнее всего меняют результат («Могу выехать в четверг», «Вернуться можно к обеду»).\n")
             append("- Бюджет задан — варианты сверх бюджета не предлагай как подходящие (или явно пометь «не влезает»).\n")
@@ -328,7 +331,9 @@ object Agent {
                 catch (e: CancellationException) { throw e } catch (e: Exception) { "ВЛОЖЕНИЯ: не удалось прочитать (${e.message})" })
                     .also { st.done = true; st.detail = it.lines().drop(1).firstOrNull { l -> l.isNotBlank() }.orEmpty().take(200) }
             }
-            msgs.put(msg("user", if (extra.isBlank()) text else "$text\n\n$extra"))
+            val follow = base != null && rootTask.isNotBlank() && rootTask != text
+            val ask = if (follow) "$text\n\n(Это уточнение к задаче выше. Всё уже найденное — в переписке: используй его, заново ищи только то, что меняется от уточнения. Файл — обнови тот же или сделай новый с пересчётом. Дай вывод с цифрами.)" else text
+            msgs.put(msg("user", if (extra.isBlank()) ask else "$ask\n\n$extra"))
             lastMsgs = msgs
             var smart = smartStart
             var final: String? = null
@@ -342,6 +347,7 @@ object Agent {
             var noMoneyAlt: String? = null   // GPTunnel пуст — дальше вся задача на этой модели, без повторных попыток
             var announced = ""
             var junkRetry = 0
+            var conclRetry = 0
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
@@ -366,7 +372,7 @@ object Agent {
                         // обрыв или таймаут посреди задачи — не бросаем собранное: две повторные попытки с паузой
                         var tries = 0
                         while (true) {
-                            try { return@withContext Llm.chat(m, msgs, maxTok) }
+                            try { return@withContext Llm.chat(m, msgs, maxTok, patient = true) }
                             catch (e: java.io.IOException) { if (++tries > 2) throw e; Thread.sleep(4000L * tries) }
                         }
                         @Suppress("UNREACHABLE_CODE") error("")
@@ -384,8 +390,12 @@ object Agent {
                     Llm.lastUsed.takeIf { it.isNotBlank() }?.let { used ->
                         if (Agent.short(used) != Agent.short(m) && used != announced) {
                             announced = used
-                            steps.add(Step("Отвечает ${Agent.short(used)} вместо ${Agent.short(m)}" +
-                                if (Llm.isGoogle(m)) " — у неё кончился дневной лимит" else if (Llm.broke) " — на GPTunnel нет денег" else "").also { it.done = true })
+                            steps.add(Step("Отвечает ${Agent.short(used)} вместо ${Agent.short(m)}" + when {
+                                Llm.isGoogle(m) && Llm.whyNotWanted == "region" -> " — Gemini недоступен с этого VPN-сервера, смени сервер"
+                                Llm.isGoogle(m) && Llm.whyNotWanted == "error" -> " — Google не ответил (VPN?)"
+                                Llm.isGoogle(m) -> " — у неё кончился лимит"
+                                Llm.broke -> " — на GPTunnel нет денег"
+                                else -> "" }).also { it.done = true })
                         }
                         model = used
                     }
@@ -500,11 +510,20 @@ object Agent {
                     msgs.put(msg("user", "ПРОВЕРКА ЧЕСТНОСТИ: в ответе сказано «${why.substringBefore(" →")}», но в этой задаче это действие не выполнено (инструмент не вызывался или вернул ошибку). Либо сделай его сейчас инструментом, либо перепиши ответ честно: что сделано, а что нет и почему. Никогда не пиши «сделал», если не сделал."))
                     final = null
                 } }
+                // тяжёлая задача, а в ответе только «Всё готово!» — вывод словами обязателен
+                val fc = final
+                if (fc != null && conclRetry < 1 && (hard0 || follow) && (files.isNotEmpty() || calls.values.sum() >= 4) && dropCliche(fc).replace(Regex("🕓.*"), "").trim().length < 140) {
+                    conclRetry++
+                    steps.add(Step("Дописываю вывод").also { it.done = true })
+                    msgs.put(msg("user", "Финальный ответ слишком короткий. Напиши Алиму вывод словами: что выбрать и почему, ключевые цифры (итог, время, что не влезает), чего не нашёл. Не пересказывай таблицу целиком. tool null."))
+                    final = null; continue
+                }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
                 if (fin == null || wrap || audits >= (if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)) break
                 audits++
-                val miss = runCatching { audit(text, fin, steps.map { it.text }, files.map { it.name }) }.getOrNull()
+                val auditAsk = if (follow) "ИСХОДНАЯ ЗАДАЧА (уже выполнена раньше): $rootTask\n\nУТОЧНЕНИЕ, на которое сейчас отвечают (проверяй ТОЛЬКО его): $text" else text
+                val miss = runCatching { audit(auditAsk, fin, steps.map { it.text }, files.map { it.name }) }.getOrNull()
                 if (miss.isNullOrBlank()) break
                 steps.add(Step("Доделываю: ${miss.take(50)}").also { it.done = true })
                 msgs.put(msg("user", "ПРОВЕРКА ПЕРЕД ОТВЕТОМ: просьба Алима выполнена не полностью — не хватает: $miss. Доделай это сейчас (инструментами), затем дай ПОЛНЫЙ ответ. Файл уже создан — обнови ЕГО (тот же name), второй не делай. Не получается — честно скажи, чего именно не хватает и почему."))
@@ -581,6 +600,7 @@ object Agent {
                     "Просили подобрать/найти с ценами, а в файле круглые прикидки (25 000, 30 000, 35 000…) без конкретных рейсов/отелей/источника — это НЕ сделано: «нужны точные цены из поиска». " +
                     "Каждая часть просьбы («что посмотреть», «итог», «таблица», «питание и развлечения») — отдельный пункт; нет в файле и ответе — НЕ сделано. " +
                     "Просили несколько вариантов стран/направлений, а в файле одно направление (разные отели одного города) — НЕ сделано: «нужны разные направления». " +
+                    "Если дана ИСХОДНАЯ ЗАДАЧА и УТОЧНЕНИЕ — проверяй только ответ на уточнение; требования исходной задачи (разные направления, все пункты) к нему не применяй. " +
                     "Ответ ТОЛЬКО JSON: {\"missing\": [\"что именно не сделано, коротко\"]} — пустой список, если всё выполнено."))
                 .put(msg("user", "ПРОСЬБА: $ask\n\nСДЕЛАННЫЕ ШАГИ: ${steps.joinToString("; ").take(1500)}\nСОЗДАННЫЕ ФАЙЛЫ: ${files.joinToString(", ").ifBlank { "нет" }}" +
                     fileText +

@@ -23,6 +23,8 @@ object Llm {
     @Volatile var lastUsed = ""
     /** Когда GPTunnel последний раз сказал «нет денег» — 15 минут его не трогаем как запасной. */
     @Volatile var brokeAt = 0L
+    /** Почему ответила не выбранная модель: «limit», «region» (VPN-сервер в стране, где Gemini нет), «error». */
+    @Volatile var whyNotWanted = ""
     val broke: Boolean get() = System.currentTimeMillis() - brokeAt < 15 * 60_000L
 
     class Reply(val text: String, val inTok: Int, val outTok: Int, private val apiCost: Double) {
@@ -55,6 +57,7 @@ object Llm {
     }
 
     class GoogleLimit(val daily: Boolean, msg: String) : Exception(msg)
+    class GoogleRegion(msg: String) : Exception(msg)
     /** На счёте gptunnel кончились деньги (402) — повтор не поможет, нужна другая модель или пополнение. */
     class NoMoney(msg: String) : Exception(msg)
 
@@ -89,6 +92,8 @@ object Llm {
             val daily = r.second.contains("PerDay", true) || r.second.contains("per day", true) || r.second.contains("daily", true)
             throw GoogleLimit(daily, "Google: лимит ${if (daily) "на сутки" else "в минуту"}")
         }
+        if (r.first in listOf(400, 403) && Regex("location is not supported|not available in your (country|region)|unsupported_country|FAILED_PRECONDITION", RegexOption.IGNORE_CASE).containsMatchIn(r.second))
+            throw GoogleRegion("Gemini недоступен с этого VPN-сервера (Google не работает в его стране) — смени сервер VPN")
         if (r.first !in 200..299) error("Google ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
         val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
@@ -101,16 +106,23 @@ object Llm {
      * Google с учётом лимитов: берём выбранную модель, если влезает; иначе соседнюю бесплатную;
      * всё бесплатное на сегодня кончилось, нет VPN или Google упал — запасная платная.
      */
-    private fun googleRouted(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, maxWait: Long): Reply {
+    private fun googleRouted(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, maxWait: Long, stick: Boolean = false): Reply {
         val want = model.removePrefix("google:")
         var last: Exception? = null
-        for (i in 0 until 4) {
-            val id = Quota.pick(want, maxWait) ?: break
+        whyNotWanted = ""
+        for (i in 0 until (if (stick) 6 else 4)) {
+            val id = Quota.pick(want, maxWait, stick) ?: break
             Quota.take(id)
             try { return googleChat(id, messages, maxTokens, json) }
-            catch (e: GoogleLimit) { Quota.hit(id, e.daily); last = e }   // эта модель упёрлась — пробуем соседнюю
-            catch (e: Exception) { last = e; break }                        // нет VPN или Google сломался — сразу на запасную
+            catch (e: GoogleLimit) {
+                Quota.hit(id, e.daily); last = e; whyNotWanted = "limit"
+                // минутный лимит в задаче — ждём и пробуем ту же модель, а не соседнюю
+                if (stick && !e.daily && id == want) { Thread.sleep(20_000L); continue }
+            }
+            catch (e: GoogleRegion) { last = e; whyNotWanted = "region"; break }  // VPN не в той стране — соседние Gemini тоже не ответят
+            catch (e: Exception) { last = e; whyNotWanted = "error"; break }      // нет VPN или Google сломался — сразу на запасную
         }
+        if (whyNotWanted.isEmpty()) whyNotWanted = "limit"
         val fb = fallback()
         if (fb.isBlank()) throw last ?: IllegalStateException("бесплатный лимит Google на сегодня исчерпан")
         return chatRaw(fb, messages, maxTokens, json)
@@ -150,11 +162,11 @@ object Llm {
     }
 
     /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
-    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true): Reply {
+    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true, patient: Boolean = false): Reply {
         if (isGoogle(model)) {
-            // фон может подождать окно до 20 с, переписка — не больше 3 с
-            val wait = if (model == Prefs.bg && model != Prefs.fastModel) 20_000L else 3_000L
-            return googleRouted(model, messages, maxTokens, json, wait).also { Online.ok() }
+            // фон может подождать окно до 20 с, переписка — не больше 3 с, задача агента — до минуты на своей модели
+            val wait = if (patient) 65_000L else if (model == Prefs.bg && model != Prefs.fastModel) 20_000L else 3_000L
+            return googleRouted(model, messages, maxTokens, json, wait, patient).also { Online.ok() }
         }
         return try { chatRaw(model, messages, maxTokens, json).also { Online.ok() } }
         catch (e: java.io.IOException) { Online.fail(); throw e }

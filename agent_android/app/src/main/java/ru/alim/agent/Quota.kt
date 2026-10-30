@@ -94,7 +94,9 @@ object Quota {
      * Пусто — на сегодня всё израсходовано, пора на платную.
      * Если место есть только «через несколько секунд» — подождём до [maxWait] мс.
      */
-    fun pick(want: String, maxWait: Long): String? {
+    fun pick(want: String, maxWait: Long, stick: Boolean = false): String? {
+        // задача агента: лучше подождать свою модель до минуты, чем молча подменить её соседней
+        if (stick && dayLeft(want) && !minuteLeft(want) && waitMs(want) <= maxWait) { Thread.sleep(waitMs(want)); return want }
         val start = CHAIN.indexOf(want).let { if (it < 0) 0 else it }
         val order = listOf(want) + CHAIN.drop(start).filter { it != want } + CHAIN.take(start).reversed()
         val alive = order.filter { dayLeft(it) }

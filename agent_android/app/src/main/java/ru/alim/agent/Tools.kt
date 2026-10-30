@@ -412,6 +412,27 @@ object Tools {
             if (start < System.currentTimeMillis() - 60_000) return@t "дата ${Device.whenLabel(start)} уже прошла — проверь when"
             Device.createEvent(ctx, title, start, start + a.optInt("duration_min", 60) * 60_000L, a.optString("place")) + " (${Device.whenLabel(start)})"
         },
+        Tool("time_calc", "{\"start\": \"2027-01-02 16:55\", \"add\": \"1д 6ч 15м\"} — прибавить время в пути к отправлению; или {\"from\": \"2027-01-02 14:00\", \"to\": \"2027-01-03 07:35\"} — сколько между двумя моментами. Точный счёт по часам для цепочек поездки") t@{ _, a ->
+            val f = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            fun dt(x: String) = runCatching { java.time.LocalDateTime.parse(x.trim().replace('T', ' ').take(16), f) }.getOrNull()
+            fun lbl(d: java.time.LocalDateTime) = d.format(f) + " (" + d.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMMM", java.util.Locale("ru"))) + ")"
+            val st = a.optString("start"); val fr = a.optString("from")
+            if (st.isNotBlank()) {
+                val d0 = dt(st) ?: return@t "start нужен как ГГГГ-ММ-ДД ЧЧ:ММ"
+                val add = a.optString("add").lowercase()
+                fun n(re: String) = Regex("(\\d+)\\s*$re").find(add)?.groupValues?.get(1)?.toLong() ?: 0L
+                val mins = n("(д|дн|сут)") * 1440 + n("ч") * 60 + n("(м|мин)(?!е)")
+                if (mins == 0L) return@t "add нужен как «1д 6ч 15м»"
+                return@t "${lbl(d0)} + ${mins / 1440} д ${mins % 1440 / 60} ч ${mins % 60} м = ${lbl(d0.plusMinutes(mins))}"
+            }
+            if (fr.isNotBlank()) {
+                val a0 = dt(fr) ?: return@t "from нужен как ГГГГ-ММ-ДД ЧЧ:ММ"; val b0 = dt(a.optString("to")) ?: return@t "to нужен как ГГГГ-ММ-ДД ЧЧ:ММ"
+                val m = java.time.Duration.between(a0, b0).toMinutes()
+                val am = kotlin.math.abs(m)
+                return@t "от ${lbl(a0)} до ${lbl(b0)}: ${if (m < 0) "минус " else ""}${am / 1440} д ${am % 1440 / 60} ч ${am % 60} м" + if (m < 0) " — второй момент РАНЬШЕ первого, не успеваешь" else ""
+            }
+            "нужен start+add или from+to"
+        },
         Tool("event_list", "{\"day\": \"today|tomorrow|ГГГГ-ММ-ДД\"} — события календаря на день («что у меня завтра»)") t@{ ctx, a ->
             val c = java.util.Calendar.getInstance()
             when (a.optString("day").lowercase()) { "tomorrow", "завтра" -> c.add(java.util.Calendar.DAY_OF_YEAR, 1)
