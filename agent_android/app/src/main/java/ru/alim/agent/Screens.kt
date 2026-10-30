@@ -565,7 +565,7 @@ fun RulesScreen(back: () -> Unit) {
 // ————————————————— Подключения —————————————————
 
 @Composable
-fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openMusic: () -> Unit, openYt: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, openTg: () -> Unit, openMusic: () -> Unit, openYt: () -> Unit, open: (Scr) -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var fast by remember { mutableStateOf(Prefs.fastModel) }
@@ -591,6 +591,16 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
     Screen("Настройки", back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Пилот: память, характер, вид — то, что раньше было в меню
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)) {
+                listOf("Что Пилот помнит" to Scr.Memory, "Сам пишет первым" to Scr.Initiative, "Отвечать за меня" to Scr.Rules, "Оформление" to Scr.Look).forEachIndexed { i, (t, s) ->
+                    if (i > 0) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(Line))
+                    Row(Modifier.fillMaxWidth().clickable { open(s) }.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(t, style = body(15, FontWeight.SemiBold), modifier = Modifier.weight(1f))
+                        Text("›", style = body(20, color = Muted))
+                    }
+                }
+            }
             Section("Быстрый доступ", "выделить текст · поделиться · шторка") {
                 Text("• Выдели текст в любом приложении → в меню «Пилот».\n• Из любого приложения «Поделиться» → «Пилот» (ссылка, скриншот, текст).\n• Шторка поверх всего — по плитке «Спросить» или по боковой кнопке.",
                     style = body(13, color = Muted), lineHeight = 19.sp)

@@ -175,27 +175,43 @@ fun DashScreen(go: (Scr) -> Unit) {
             }
             }
 
-            // ——— шапка ———
-            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { headH = it.height }
-                .hazeChild(haze, androidx.compose.ui.graphics.RectangleShape).background(Th.c.bg.copy(alpha = 0.55f))
-                .statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.clickable(onClickLabel = "Профиль") { go(Scr.Profile) }) { Avatar(46.dp) }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Пилот", style = TextStyle(fontFamily = Fonts.display, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                    val now = remember(tick / 15) { SimpleDateFormat("EEE, d MMMM · HH:mm", Locale("ru")).format(Date()) }
-                    Text(if (core.busy) "работает · " + core.task.take(40) else now, style = body(12, color = if (core.busy) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Box(Modifier.size(46.dp).clip(CircleShape).background(Th.c.card).border(1.dp, Line, CircleShape).clickable(onClickLabel = "Меню") { Panel.open = true },
-                    contentAlignment = Alignment.Center) {
-                    Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icList), "Меню", tint = Ink, modifier = Modifier.size(22.dp))
+            // ——— края ленты плавно уходят в фон под стеклом, как в журнале ———
+            val fade = Th.c.bg
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { headH.toDp() } + 10.dp)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade.copy(alpha = 0.9f), fade.copy(alpha = 0.6f), fade.copy(alpha = 0f)))))
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { compH.toDp() } + 24.dp)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade.copy(alpha = 0f), fade.copy(alpha = 0.7f), fade.copy(alpha = 0.92f)))))
+            // шапка поверх градиента
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { headH = it.height }.statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp)) {
+                Row(Modifier.fillMaxWidth().height(60.dp).glassDash(haze, RoundedCornerShape(30.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
+                    .padding(start = 6.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(46.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Пилот", style = TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+                        val now2 = remember(tick / 15) { SimpleDateFormat("EEE, d MMMM · HH:mm", Locale("ru")).format(Date()) }
+                        Text(if (core.busy) "работает · " + core.task.take(40) else now2, style = body(12, color = if (core.busy) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
 
-            // ——— ввод (поверх ленты, под ним размытие) ———
+            // ——— низ: четыре кнопки разделов и ввод — плавают, как в журнале ———
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { compH = it.height }
-                .hazeChild(haze, androidx.compose.ui.graphics.RectangleShape).background(Th.c.bg.copy(alpha = 0.55f))
-                .navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(top = 8.dp, bottom = 10.dp)) { Composer(haze, chat, chat.friend) }
+                .navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    listOf(Triple(icChat, "Журнал", Scr.Journal), Triple(icClock, "История", Scr.History),
+                        Triple(icSun, "Сводки", Scr.Digest), Triple(icGear, "Настройки", Scr.Settings)).forEach { (ic, label, to) ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = label) { go(to) }.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                            Box(Modifier.size(50.dp).glassDash(haze, CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = Ink, modifier = Modifier.size(22.dp))
+                            }
+                            Text(label, style = body(11, FontWeight.SemiBold, Muted))
+                        }
+                    }
+                }
+                Composer(haze, chat, chat.friend)
+            }
     }
 }
 
@@ -297,11 +313,7 @@ fun SidePanel(scr: Scr, go: (Scr) -> Unit) {
                     if (scr == Scr.Home) add("Журнал" to { go(Scr.Journal) }) else add("Главная" to { go(Scr.Home) })
                     if (scr == Scr.Journal) add("Поиск" to { ChatJump.searchReq = true })
                     add("История и расходы" to { go(Scr.History) })
-                    add("Что Пилот помнит" to { go(Scr.Memory) })
                     add("Сводки дня" to { go(Scr.Digest) })
-                    add("Сам пишет первым" to { go(Scr.Initiative) })
-                    add("Отвечать за меня" to { go(Scr.Rules) })
-                    add("Оформление" to { go(Scr.Look) })
                     add("Настройки" to { go(Scr.Settings) })
                 }
                 items.forEachIndexed { i, (t, f) ->
@@ -354,7 +366,8 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         val rows = preview?.takeIf { it.size >= 2 }
         // таблица — сама кнопка: тап открывает Excel
         if (rows != null && xls != null) Box(Modifier.clickable(onClickLabel = "Открыть таблицу") { open(xls) }) { MiniTable(rows) }
-        if (m.best.isNotBlank()) BestBlock(m.best)
+        val best = remember(m.best, m.text) { m.best.ifBlank { deriveBest(m.text) } }
+        if (best.isNotBlank()) BestBlock(best)
         val rest = files.filter { rows == null || it != xls }
         if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             rest.forEach { f ->
@@ -398,6 +411,18 @@ private fun BestBlock(json: String) {
     }
 }
 
+private fun Modifier.glassDash(h: HazeState, shape: androidx.compose.ui.graphics.Shape): Modifier =
+    this.clip(shape).hazeChild(h, shape).background(Th.c.glass.copy(alpha = if (Th.c.dark) 0.35f else 0.30f)).border(1.dp, Th.c.glassLine, shape)
+
+private fun ico(name: String, path: String) = androidx.compose.ui.graphics.vector.ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+    addPath(androidx.compose.ui.graphics.vector.addPathNodes(path), stroke = SolidColor(Color.Black), strokeLineWidth = 1.8f,
+        strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
+}.build()
+private val icChat by lazy { ico("chat", "M4 5h16v11H9l-5 4z") }
+private val icClock by lazy { ico("clock", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7v5l3 2") }
+private val icSun by lazy { ico("sun", "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4") }
+private val icGear by lazy { ico("gear", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3a1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5a1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z") }
+
 @Composable
 private fun ShareBtn(onClick: () -> Unit) {
     Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить", onClick = onClick),
@@ -431,8 +456,13 @@ private fun splitResult(text: String): ResultParts {
     var stamp = ""
     Regex("\\n?\\s*(🕓|🕐|⏰)\\s*([^\\n]+)").find(t)?.let { m -> stamp = m.groupValues[2].trim(); t = t.removeRange(m.range).trim() }
     val sentences = Regex("[^.!?\\n]+[.!?]*").findAll(t).map { it.value.trim() }.filter { it.isNotBlank() }.toMutableList()
-    if (sentences.size > 1 && Regex("^(таблиц|файл|документ|сравнени|готово|создал|сделал)", RegexOption.IGNORE_CASE).containsMatchIn(sentences[0])
-        && Regex("готов|создал|сделал|сохранил", RegexOption.IGNORE_CASE).containsMatchIn(sentences[0])) sentences.removeAt(0)
+    // служебные фразы про файл («Обновил файл в Загрузках», «Таблица готова», «Теперь там…») — не вывод
+    val service = Regex("(файл|таблиц|документ|загрузк|xlsx|docx)", RegexOption.IGNORE_CASE)
+    val verb = Regex("(готов|создал|сделал|сохранил|обновил|положил|собрал|теперь там|там есть|внёс|внес)", RegexOption.IGNORE_CASE)
+    while (sentences.size > 1 && service.containsMatchIn(sentences[0]) && verb.containsMatchIn(sentences[0])) sentences.removeAt(0)
+    // вывод «самый выгодный — …» поднимаем в заголовок
+    sentences.indexOfFirst { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+        .takeIf { it > 0 }?.let { i -> sentences.add(0, sentences.removeAt(i)) }
     val title = sentences.firstOrNull()?.takeIf { it.length in 8..170 }?.trimEnd('.').orEmpty()
     val body = if (title.isNotBlank()) sentences.drop(1).joinToString(" ") else sentences.joinToString(" ")
     return ResultParts(title, body, stamp)
@@ -457,4 +487,12 @@ private val icPlane by lazy {
         addPath(androidx.compose.ui.graphics.vector.addPathNodes("M21 3L10 14M21 3l-7 18-4-7-7-4z"), stroke = SolidColor(Color.Black), strokeLineWidth = 1.9f,
             strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
     }.build()
+}
+
+
+/** Если модель не дала best — достаём из текста «Самый выгодный — Ташкент (≈50 348 ₽)». */
+fun deriveBest(text: String): String {
+    val m = Regex("(?:самый выгодн\\w*(?: вариант)?|выгоднее всего|лучший (?:вариант|выбор))\\s*[—:–-]\\s*([^(,.;\\n]{2,40}?)\\s*\\(\\s*(≈?\\s*[\\d\\s ]{3,}\\s*₽)", RegexOption.IGNORE_CASE).find(text)
+        ?: return ""
+    return org.json.JSONObject().put("name", m.groupValues[1].trim()).put("value", m.groupValues[2].replace(Regex("\\s+"), " ").trim()).toString()
 }

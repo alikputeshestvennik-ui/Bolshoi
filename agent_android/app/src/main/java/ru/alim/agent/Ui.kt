@@ -69,6 +69,7 @@ fun neededPerms(): Array<String> {
 fun App(voice: Voice) {
     var scr by remember { mutableStateOf(Scr.Home) }
     var taskBack by remember { mutableStateOf(Scr.Home) }
+    var subFrom by remember { mutableStateOf(Scr.Home) }
     val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
         if (!Prefs.askedPerms) { Prefs.askedPerms = true; perms.launch(neededPerms()) }
@@ -134,6 +135,7 @@ fun App(voice: Voice) {
     BackHandler(enabled = scr != Scr.Home) {
         when (scr) {
             Scr.Task -> { Agent.close(); scr = taskBack; taskBack = Scr.Home }
+            Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look -> { scr = subFrom; subFrom = Scr.Home }
             else -> scr = Scr.Home
         }
     }
@@ -165,17 +167,17 @@ fun App(voice: Voice) {
                 Scr.Home -> if (dash) DashScreen(go) else ChatScreen(Friends.MAIN, go)
                 Scr.Journal -> ChatScreen(Friends.MAIN, go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
-                Scr.Look -> LookScreen(home)
+                Scr.Look -> LookScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Tg -> TgScreen(home)
                 Scr.Music -> MusicScreen(home)
                 Scr.Yt -> YtScreen(home)
-                Scr.Initiative -> InitiativeScreen(home)
+                Scr.Initiative -> InitiativeScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }
-                Scr.Rules -> RulesScreen(home)
-                Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt })
+                Scr.Rules -> RulesScreen { scr = subFrom; subFrom = Scr.Home }
+                Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt }) { s -> subFrom = Scr.Settings; scr = s }
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
-                Scr.Memory -> MemoryScreen(home)
+                Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)
             }
             if (scr == Scr.Home || scr == Scr.Journal) SidePanel(scr, go) else if (Panel.open) Panel.open = false
