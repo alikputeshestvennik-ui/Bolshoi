@@ -53,8 +53,15 @@ object Hotels {
                 val raw = runCatching {
                     WebReader.run(ctx, url, JS, { t -> t.count { it == '₽' } >= 8 }, 40_000)
                 }.getOrDefault("")
-                val cut = around(raw)
-                "## ${s.name}\nссылка: $url\n" + cut.ifBlank { "цены не показались (сайт не дорисовал выдачу)" }
+                var cut = around(raw)
+                var link = url
+                // с датами выдача не нарисовалась — пробуем страницу города без параметров (там хотя бы цены «от»)
+                if (cut.isBlank()) {
+                    val raw2 = runCatching { WebReader.run(ctx, page, JS, { t -> t.count { it == '₽' } >= 6 }, 45_000) }.getOrDefault("")
+                    val c2 = around(raw2)
+                    if (c2.isNotBlank()) { cut = "(без дат — цены «от», на даты уточняй на сайте)\n$c2"; link = page }
+                }
+                "## ${s.name}\nссылка: $link\n" + cut.ifBlank { "цены не показались (сайт не дорисовал выдачу)" }
             }
         }.awaitAll()
         "Отели «$city», ${ci.format(dmy)}–${co.format(dmy)} ($nights ${if (nights in 2..4) "ночи" else if (nights == 1L) "ночь" else "ночей"}), гостей: $g. " +
