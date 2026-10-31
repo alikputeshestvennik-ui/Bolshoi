@@ -18,7 +18,8 @@ object Hotels {
 
     private val dmy = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     private val sites = listOf(
-        Site("Островок", "ostrovok.ru", "ostrovok.ru отели", Regex("/hotel/[a-z_-]+/[a-z0-9_-]+/?$")) { i, o, g -> "dates=${i.format(dmy)}-${o.format(dmy)}&guests=$g" },
+        // формат с сайта: /hotel/russia/st._petersburg/?search=yes&dates=05.01.2027-08.01.2027&guests=2 (в названии города бывает точка)
+        Site("Островок", "ostrovok.ru", "ostrovok.ru отели", Regex("/hotel/[a-z._-]+/[a-z0-9._-]+/?$")) { i, o, g -> "search=yes&dates=${i.format(dmy)}-${o.format(dmy)}&guests=$g" },
         Site("Яндекс Путешествия", "travel.yandex.ru", "travel.yandex.ru отели", Regex("/hotels/[a-z0-9_-]+/?$")) { i, o, g -> "checkinDate=$i&checkoutDate=$o&adults=$g" },
         Site("Ozon Travel", "ozon.ru", "ozon travel отели", Regex("/travel/.*hotel|/travel/hotels")) { i, o, g -> "checkIn=$i&checkOut=$o&dateFrom=$i&dateTo=$o&adults=$g&guests=$g" },
     )
