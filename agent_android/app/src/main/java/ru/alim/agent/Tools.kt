@@ -1046,6 +1046,16 @@ object Tools {
             Yoo.send(ctx)
         },
 
+        Tool("hotels", "{\"city\": \"Нижний Новгород\", \"checkin\": \"2026-12-17\", \"checkout\": \"2026-12-20\", \"guests\": 1} — отели на даты сразу на трёх сайтах: Островок, Яндекс Путешествия, Ozon Travel — с ценами и ссылками. Один и тот же отель на разных сайтах стоит по-разному — сравни и назови, где дешевле") t@{ ctx, a ->
+            val city = (a.optString("city").ifBlank { a.optString("q") }).trim()
+            if (city.isEmpty()) return@t "нужен city"
+            fun day(k: String) = a.optString(k).trim().let { s -> runCatching { java.time.LocalDate.parse(s.take(10)) }.getOrNull() ?: runCatching { Device.parseWhenAt(s, java.time.LocalDateTime.now())?.toLocalDate() }.getOrNull() }
+            val ci = day("checkin") ?: day("from") ?: return@t "нужен checkin как ГГГГ-ММ-ДД"
+            val co = day("checkout") ?: day("to") ?: ci.plusDays(1)
+            val g = a.optInt("guests", a.optInt("adults", 1)).coerceIn(1, 6)
+            Hotels.all(ctx, city, ci, co, g) { q -> listOf(YaSearch::search, ::ddgHtml, ::ddgLite, ::bing).firstNotNullOfOrNull { e -> runCatching { e(q) }.getOrNull()?.takeIf { it.isNotEmpty() } }.orEmpty() }
+        },
+
         Tool("web_page", "{\"url\": \"https://…\"} — прочитать сайт, который не открывается через web_read (тяжёлый, на JavaScript)") t@{ ctx, a ->
             val url = a.optString("url").trim()
             if (!url.startsWith("http")) return@t "нужна ссылка"

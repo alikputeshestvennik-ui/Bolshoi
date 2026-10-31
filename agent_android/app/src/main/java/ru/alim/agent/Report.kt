@@ -294,6 +294,41 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 }
             }
 
+            // ——— где жить: один отель — цены на разных сайтах, дешевле — зелёным, нажал — сайт ———
+            val stay = Rich.list(r.optJSONArray("stay")).take(3)
+            if (stay.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) { SecLabel("Где жить"); Spacer(Modifier.weight(1f)); Text("Островок · Яндекс · Ozon", style = body(10, color = Muted)) }
+                stay.forEach { h ->
+                    val prices = Rich.list(h.optJSONArray("prices")).filter { it.optString("price").isNotBlank() }
+                    val cheapest = prices.minByOrNull { Shop.rub(it.optString("price")).takeIf { v -> v > 0 } ?: Int.MAX_VALUE }
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Th.c.bg).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(36.dp).clip(CircleShape).background(AccentSoft), contentAlignment = Alignment.Center) {
+                                Icon(rememberVectorPainter(icBed), null, tint = Teal, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(h.optString("name"), style = body(14, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                if (h.optString("note").isNotBlank()) Text(h.optString("note"), style = body(12, color = Muted), maxLines = 2)
+                            }
+                        }
+                        if (prices.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            prices.forEach { pr ->
+                                val best = pr === cheapest && prices.size > 1
+                                val u = pr.optString("url")
+                                val cs = RoundedCornerShape(12.dp)
+                                Column(Modifier.clip(cs).background(if (best) soft(green) else Th.c.card).border(1.dp, if (best) green else Th.c.line, cs)
+                                    .then(if (u.startsWith("http")) Modifier.clickable(onClickLabel = "Открыть") { Buy.open(ctx, u) } else Modifier)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                    Text(pr.optString("site"), style = body(10, FontWeight.SemiBold, if (best) green else Muted))
+                                    Text(pr.optString("price"), style = body(13, FontWeight.Bold, Ink))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ——— что посмотреть: фото из Википедии ———
             val places = Rich.list(r.optJSONArray("places")).take(5)
             if (places.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
