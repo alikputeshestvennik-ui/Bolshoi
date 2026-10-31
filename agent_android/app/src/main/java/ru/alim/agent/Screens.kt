@@ -600,10 +600,14 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Пилот: память, характер, вид — то, что раньше было в меню
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)) {
-                listOf("Что Пилот помнит" to Scr.Memory, "Сам пишет первым" to Scr.Initiative, "Отвечать за меня" to Scr.Rules, "Оформление" to Scr.Look).forEachIndexed { i, (t, s) ->
+                listOf(Triple("Что Пилот помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
+                    Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules), Triple("Оформление", "Рассвет днём, Ночной рейс вечером", Scr.Look)).forEachIndexed { i, (t, sub, s) ->
                     if (i > 0) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(Line))
-                    Row(Modifier.fillMaxWidth().clickable { open(s) }.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(t, style = body(15, FontWeight.SemiBold), modifier = Modifier.weight(1f))
+                    Row(Modifier.fillMaxWidth().clickable { open(s) }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(t, style = body(15, FontWeight.SemiBold))
+                            Text(sub, style = body(12, color = Muted))
+                        }
                         Text("›", style = body(20, color = Muted))
                     }
                 }
@@ -621,12 +625,12 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 }, bg = Card, fg = Ink, border = Line)
             }
 
-            Section("Поведение", "сигналы важного · вибро · 3D") {
+            Section("Поведение", "сигналы важного · вибро · сводка Telegram") {
                 var hap by remember { mutableStateOf(Prefs.haptics) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Вибро-отклик задачи", style = body(15, FontWeight.SemiBold))
-                        Text("Тихий тактильный отклик на отрыв, запрос и посадку рейса.", style = body(12, color = Muted), lineHeight = 16.sp)
+                        Text("Тихий тактильный отклик на начало задачи, вопрос и готовый ответ.", style = body(12, color = Muted), lineHeight = 16.sp)
                     }
                     Toggle(hap) { hap = it; Prefs.haptics = it }
                 }
@@ -646,21 +650,6 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 }
                 val actx = androidx.compose.ui.platform.LocalContext.current
                 BigButton("Проверить сигналы", { Alert.test(actx) })
-                var f3 by remember { mutableStateOf(Prefs.flight3d) }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("3D-полёт", style = body(15, FontWeight.SemiBold))
-                        Text(when {
-                            Flight3D.failed && !f3 -> "Выключил сам: в прошлый раз сцена упала. Можно попробовать снова."
-                            Flight3D.failed -> "Сейчас: плоская сцена — 3D на этом запуске не поднялось."
-                            Flight3D.ok -> "Сейчас: 3D работает ✓"
-                            else -> "Объёмный взлёт и посадка на экране задачи. Выключено — плоская сцена."
-                        },
-                            style = body(12, color = Muted), lineHeight = 16.sp)
-                    }
-                    Toggle(f3) { f3 = it; Prefs.flight3d = it; if (it) Flight3D.failed = false }
-                }
-                if (Flight3D.info.isNotBlank()) Text("3D: " + Flight3D.info, style = body(11, color = Muted), lineHeight = 14.sp)
                 var dig by remember { mutableStateOf(Prefs.tgDigest) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

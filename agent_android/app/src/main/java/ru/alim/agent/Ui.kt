@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Journal, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
+enum class Scr { Home, Journal, Active, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
@@ -115,7 +115,7 @@ fun App(voice: Voice) {
         when {
             phase == Agent.Phase.WORKING && prevPhase != Agent.Phase.WORKING -> {
                 Haptics.takeoff(uiCtx)
-                if (scr == Scr.Home || scr == Scr.Journal) { taskBack = scr; scr = Scr.Task }
+                // задача идёт прямо в чате (окно мыслей), без перехода в отдельный экран
             }
             phase == Agent.Phase.CONFIRM && prevPhase != Agent.Phase.CONFIRM -> Haptics.ask(uiCtx)
         }
@@ -151,21 +151,14 @@ fun App(voice: Voice) {
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task) Modifier else Modifier.systemBarsPadding().imePadding())) {
+        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task || scr == Scr.Active) Modifier else Modifier.systemBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             // одна сцена полёта под чатом и задачей: из чата в задачу — тот же самолёт на той же полосе
-            val dash = Prefs.dashboard
-            if ((scr == Scr.Task || ((scr == Scr.Journal || (scr == Scr.Home && !dash)) && Th.cockpit)) && Prefs.wallpaper != "photo") {
-                val sctx = androidx.compose.ui.platform.LocalContext.current
-                val onTask = scr == Scr.Task
-                FlightScene(flying = onTask && FlightBus.flying, glow = if (onTask) FlightBus.glow else Sky.glowCalm,
-                    modifier = Modifier.fillMaxSize(), flash = if (onTask) FlightBus.flash else 0f,
-                    onLift = { Haptics.tick(sctx) }, onTouch = { FlightBus.touchN++ })
-            }
+            // кабина и 3D-полёт убраны: главный экран — Чат, идущие дела — на странице «Активные»
             when (scr) {
-                Scr.Home -> if (dash) DashScreen(go) else ChatScreen(Friends.MAIN, go)
-                Scr.Journal -> ChatScreen(Friends.MAIN, go)
+                Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
+                Scr.Active -> ActiveScreen(go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Tg -> TgScreen(home)
@@ -180,7 +173,7 @@ fun App(voice: Voice) {
                 Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)
             }
-            if (scr == Scr.Home || scr == Scr.Journal) SidePanel(scr, go) else if (Panel.open) Panel.open = false
+            if (Panel.open) Panel.open = false
         }
     }
 }
@@ -212,13 +205,13 @@ fun Section(title: String, status: String, color: Color = Teal, statusColor: Col
     var open by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Card)) {
-        Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 14.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Dot(color); Spacer(Modifier.width(12.dp))
+        // единый стиль настроек: название, подпись, стрелка (раскрыт — стрелка вниз)
+        Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = body(15, FontWeight.SemiBold))
                 if (status.isNotBlank()) Text(status, style = body(12, color = statusColor), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text(if (open) "−" else "+", style = body(20, FontWeight.Bold, Muted))
+            Text(if (open) "⌄" else "›", style = body(20, color = Muted))
         }
         if (open) Column(Modifier.fillMaxWidth().background(Bg.copy(alpha = 0.35f)).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp), content = content)

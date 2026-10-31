@@ -152,7 +152,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
     // в кабине без фото-обоев фон рисует общая сцена полёта под экраном (Ui) — здесь прозрачно
-    val skyBehind = Th.cockpit && Prefs.wallpaper != "photo"
+    val skyBehind = false   // кабины больше нет — фон всегда тема
     Box(Modifier.fillMaxSize().then(if (skyBehind) Modifier else Modifier.background(Th.c.bg))) {
         // ——— фон и лента (под стеклом) ———
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
@@ -164,7 +164,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = top + 80.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
-                if (core.busy && core.pending == null) item(key = "typing") { Typing(core) }
+                if (core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
                 val rev = shown.asReversed()
                 rev.forEachIndexed { i, m ->
                     item(key = m.id) { MsgRow(m, chat = chat, f = f, showButtons = Prefs.quickButtons && i == 0 && !m.me && !core.busy && search == null) }
@@ -216,7 +216,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
                 }
             } else {
-                Row(Modifier.weight(1f).height(56.dp).glass(haze, RoundedCornerShape(28.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
+                Row(Modifier.weight(1f).height(56.dp).glass(haze, RoundedCornerShape(28.dp))
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Avatar(44.dp, f = f)
                     HGap(10)
@@ -249,7 +249,11 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
             } else {
-                if (fid == Friends.MAIN && Prefs.dashboard && search == null) { NavBar(haze, Scr.Journal, go) { search = "" }; Spacer(Modifier.height(10.dp)) }
+                if (fid == Friends.MAIN && search == null) {
+                    ActiveButton(go)
+                    Spacer(Modifier.height(10.dp))
+                    NavBar(haze, Scr.Home, go) { search = "" }; Spacer(Modifier.height(10.dp))
+                }
                 Composer(haze, chat, f)
             }
         }

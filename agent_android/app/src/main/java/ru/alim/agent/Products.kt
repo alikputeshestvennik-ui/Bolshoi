@@ -100,11 +100,11 @@ fun FileCards(files: List<Docs.FileRef>) {
                     Text(f.name, style = body(14, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text("Загрузки/Свои · нажми, чтобы открыть", style = body(12, color = Muted))
                 }
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить") {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable(onClickLabel = "Поделиться") {
                     runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }, contentAlignment = Alignment.Center) {
-                    androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icSend), "Отправить", tint = Teal, modifier = Modifier.size(20.dp))
+                    androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icShareUp), "Поделиться", tint = Teal, modifier = Modifier.size(22.dp))
                 }
             }
         }

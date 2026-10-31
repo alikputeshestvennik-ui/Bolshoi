@@ -459,24 +459,21 @@ private fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 /** Нижние кнопки разделов — одинаковые на главной и в журнале. */
 @Composable
 fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, onSearch: (() -> Unit)? = null) {
-    val items = buildList {
-        add(Triple(if (here == Scr.Home) icChat else icHome, if (here == Scr.Home) "Журнал" else "Главная", if (here == Scr.Home) Scr.Journal else Scr.Home))
-        add(Triple(icClock, "История", Scr.History))
-        add(Triple(icSun, "Сводки", Scr.Digest))
-        add(Triple(icGear, "Настройки", Scr.Settings))
-    }
+    // только иконки, по центру; текущий раздел подсвечен
+    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icSun, "Сводки", Scr.Digest), Triple(icGear, "Настройки", Scr.Settings))
+    val cur = if (here == Scr.Journal) Scr.Home else here
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f)) { go(to) } }
-        if (onSearch != null) NavDot(haze, icSearch, "", Modifier.width(34.dp), onSearch)
+        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f), to == cur) { go(to) } }
+        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(44.dp), false, onSearch)
     }
 }
 
 @Composable
-private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
-    Row(modifier.height(34.dp).glassDash(haze, RoundedCornerShape(17.dp)).clickable(onClickLabel = label.ifBlank { "Поиск" }, onClick = onClick).padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
-        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label.ifBlank { "Поиск" }, tint = Ink, modifier = Modifier.size(16.dp))
-        if (label.isNotBlank()) Text(label, style = body(11, FontWeight.SemiBold, Ink.copy(alpha = 0.8f)), maxLines = 1, softWrap = false)
+private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(modifier.height(40.dp).then(if (on) Modifier.clip(shape).background(AccentSoft).border(1.dp, Teal, shape) else Modifier.glassDash(haze, shape))
+        .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Ink, modifier = Modifier.size(19.dp))
     }
 }
 
@@ -497,9 +494,9 @@ private val icGear by lazy { ico("gear", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M19.4
 
 @Composable
 private fun ShareBtn(onClick: () -> Unit) {
-    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)).clickable(onClickLabel = "Отправить", onClick = onClick),
-        contentAlignment = Alignment.Center) {
-        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icPlane), "Отправить", tint = Teal, modifier = Modifier.size(19.dp))
+    // стрелка вверх-направо без рамки
+    Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Поделиться", onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icShareUp), "Поделиться", tint = Teal, modifier = Modifier.size(22.dp))
     }
 }
 
