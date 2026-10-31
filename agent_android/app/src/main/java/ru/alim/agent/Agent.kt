@@ -66,6 +66,8 @@ object Agent {
         var done by mutableStateOf(false)
         /** Что вернул инструмент — видно под шагом, чтобы понять, где агент ошибся. */
         var detail by mutableStateOf("")
+        /** Мысль модели перед шагом — видно вживую, как у DeepSeek. */
+        var think by mutableStateOf("")
     }
     class Pending(val text: String, val answer: CompletableDeferred<Boolean>, val secure: Boolean = false)
 
@@ -221,9 +223,9 @@ object Agent {
             append("Ты умеешь действовать в телефоне: найти, позвонить, написать, ответить, показать, купить-подобрать. Просто поболтать с Алимом — тоже нормально: тогда без инструментов, живой ответ.\n")
             append("Отвечай ТОЛЬКО одним JSON-объектом без markdown:\n")
             if (Prefs.quickButtons) {
-                append("{\"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"buttons\": [\"до 3 коротких ответов-кнопок для Алима, если уместно\"], \"done\": false}\n")
+                append("{\"think\": \"1-2 фразы: что понял из прошлого результата и зачем следующий шаг (Алим видит это вживую)\", \"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"buttons\": [\"до 3 коротких ответов-кнопок для Алима, если уместно\"], \"done\": false}\n")
                 append("- buttons — 0-3 коротких варианта, которые Алим, скорее всего, захочет нажать («Открыть первую», «Дешевле», «Ответить маме»). Не обязательно.\n")
-            } else append("{\"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"done\": false}\n")
+            } else append("{\"think\": \"1-2 фразы: что понял из прошлого результата и зачем следующий шаг (Алим видит это вживую)\", \"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"done\": false}\n")
             append("Правила:\n")
             append("- Не больше одного инструмента за ответ. Результат придёт следующим сообщением.\n")
             append("- Задача выполнена или делать нечего — \"tool\": null, \"done\": true и короткий итог в \"say\" (1-2 фразы, по-русски, просто).\n")
@@ -278,6 +280,9 @@ object Agent {
             append("- Если в задаче просят вывод, совет или «куда лучше» — финальный ответ ОБЯЗАТЕЛЬНО его содержит (1–2 предложения), а не только «таблица готова». Вывод КОНКРЕТНЫЙ: что выбрать и почему, с цифрами («выгоднее всего — обычный Pro в ОАЭ: ≈234 тыс ₽ с перелётом, на 75 тыс дешевле сенсорного»). «Выбор за тобой», «зависит от твоих задач» — это не вывод.\n")
             append("- Даты без года («после 10 января», «в мае») — ближайшие В БУДУЩЕМ от сегодняшней даты (сегодня ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date())}). Не пиши прошедший год в названиях и ответе.\n")
             append("- Сложить время (отправление + в пути, разница между датами) — ВСЕГДА инструмент time_calc, не в уме.\n")
+            append("- think — живая мысль простым языком («рейс есть, теперь нужен автобус — без него не понять, успеваешь ли»), без JSON и названий инструментов. Названия инструментов (web_search, flights и т.п.) Алиму не пиши нигде — говори «поиск», «рейсы».\n")
+            append("- Багаж: цены рейсов из поиска обычно БЕЗ багажа. Не пиши, что багаж включён, если источник прямо этого не сказал; спросили про багаж — так и скажи и посоветуй проверить тариф при покупке.\n")
+            append("- Поезда из Симферополя в Москву — несколько (092С, 028С, 068С и др., разное время в пути): сравни ВСЕ по часам и выбери подходящие, а не первый найденный. В сравнении вариантов итог у всех считай по одним статьям (дорога + отель за реальные ночи + еда), чтобы цифры были сравнимы.\n")
             append("- Напоминание на дату («1 декабря», «за 3 дня до выезда») — event_create с when ГГГГ-ММ-ДД ЧЧ:ММ (дату вычисли сам). alarm_set — только будильник в ближайшие сутки.\n")
             append("- В таблицах числа (цены, часы) — ОТДЕЛЬНЫМИ столбцами, только число (12350, не «≈12 350 ₽ (автобус)»); пояснения — в соседнем текстовом столбце. Иначе формула «Итог» посчитает 0. Одни и те же данные (отель, цена, время) в таблице и ответе должны совпадать.\n")
             append("- Время в поездках проверяй по часам: рейс/поезд подходит, только если отправление ПОЗЖЕ, чем Алим реально доберётся до аэропорта/вокзала (с учётом работы и дороги), а обратный путь укладывается в срок. Неподходящий по времени вариант не называй «вписывается» — пометь «не успеваю» и ищи другой. В таблице — столбец «Успеваю?» с расчётом по часам.\n")
@@ -488,7 +493,7 @@ object Agent {
                         msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: СТОП — это поручение, разовое сообщение запрещено. Вызови delegate: channel (sms/telegram), number или chat, sim (если Алим называл), goal — ПОЛНАЯ задача Алима своими словами. Переговорщик сам поздоровается, будет вести переписку и пришлёт итог."))
                         continue
                     }
-                    val step = Step(stepText); steps.add(step)
+                    val step = Step(stepText); step.think = stripJunk(j.optString("think").trim()).take(400); steps.add(step)
                     var allowed = true
                     t.confirm?.let { c -> c(args) }?.takeIf { it.isNotBlank() }?.let { ctext ->
                         val d = CompletableDeferred<Boolean>()
@@ -608,7 +613,8 @@ object Agent {
         /** Пустой отказ модели без причины («не могу обсуждать эту тему») — повод переспросить другую модель. */
         /** Проверка полноты: какие пункты просьбы не закрыты (null/пусто — всё сделано). Модель без цензуры Яндекса, если есть. */
         private suspend fun audit(ask: String, answer: String, steps: List<String>, files: List<String>): String? {
-            val m = listOf(smart(), Prefs.bgModel, fast()).firstOrNull { !Llm.isYandex(it) } ?: smart()
+            // проверяет сильная модель: DeepSeek/Qwen из Yandex Cloud годятся, нельзя только YandexGPT/Alice (цензура и слабая проверка)
+            val m = listOf(smart(), Prefs.bgModel, fast()).firstOrNull { !it.contains("yandexgpt", true) && !it.contains("aliceai", true) } ?: smart()
             val fileText = if (files.isEmpty()) "" else withContext(Dispatchers.IO) {
                 Docs.made.firstOrNull()?.let { f -> runCatching { "\nСОДЕРЖИМОЕ ФАЙЛА «${f.name}»:\n" + Docs.read(Agent.app, f.uri, f.name).take(5000) }.getOrNull() }.orEmpty()
             }
@@ -641,9 +647,14 @@ object Agent {
         }
 
         /** Служебные теги, которые модели иногда пишут вместо текста (<invoke_placeholder/>, <function_calls> …). */
-        private fun stripJunk(t: String): String = t
-            .replace(Regex("</?(invoke_placeholder|invoke|function_calls|function_results|parameter|tool_call|tool_use)[^>]*>", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\n{3,}"), "\n\n").trim()
+        private val toolWord = mapOf("web_search" to "поиск", "web_read" to "чтение сайта", "web_page" to "чтение сайта", "flights" to "поиск рейсов",
+            "time_calc" to "расчёт времени", "file_create" to "таблицу", "shop_search" to "поиск в магазинах")
+        /** + названия инструментов в тексте для Алима заменяем человеческими словами («проверь через web_search» → «проверь поиском»). */
+        private fun stripJunk(t0: String): String {
+            var t = t0.replace(Regex("</?(invoke_placeholder|invoke|function_calls|function_results|parameter|tool_call|tool_use)[^>]*>", RegexOption.IGNORE_CASE), "")
+            for ((k, v) in toolWord) t = t.replace(Regex("(через|инструментом|с помощью)?\\s*\\b$k\\b", RegexOption.IGNORE_CASE)) { m -> if (m.groupValues[1].isNotEmpty()) " $v" else v }
+            return t.replace(Regex("\n{3,}"), "\n\n").replace(Regex("[ \t]{2,}"), " ").trim()
+        }
 
         private fun refusal(t: String): Boolean {
             val l = t.lowercase().replace('ё', 'е')

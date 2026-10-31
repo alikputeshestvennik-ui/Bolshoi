@@ -311,8 +311,15 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                 }
             }
             Text("МАРШРУТ", style = body(12, FontWeight.Bold, Sky.inkMuted).copy(letterSpacing = 1.5.sp))
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // мысли и шаги сами прокручиваются к последнему — не нужно листать, чтобы увидеть, о чём Пилот думает сейчас
+            val routeList = androidx.compose.foundation.lazy.rememberLazyListState()
+            androidx.compose.runtime.LaunchedEffect(Agent.steps.size, Agent.steps.lastOrNull()?.think) {
+                if (Agent.steps.isNotEmpty()) routeList.animateScrollToItem(Agent.steps.size - 1)
+            }
+            LazyColumn(Modifier.weight(1f), state = routeList, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Agent.steps) { s ->
+                    if (s.think.isNotBlank()) Text(s.think, style = body(14, color = Sky.inkMuted).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                        lineHeight = 20.sp, modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp))
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(panel).border(1.dp, glassLine, RoundedCornerShape(16.dp))
                         .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(glow.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {

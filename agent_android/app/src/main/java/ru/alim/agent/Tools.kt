@@ -414,7 +414,9 @@ object Tools {
         },
         Tool("time_calc", "{\"start\": \"2027-01-02 16:55\", \"add\": \"1д 6ч 15м\"} — прибавить время в пути к отправлению; или {\"from\": \"2027-01-02 14:00\", \"to\": \"2027-01-03 07:35\"} — сколько между двумя моментами. Точный счёт по часам для цепочек поездки") t@{ _, a ->
             val f = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            // любой формат: «2027-01-02 16:55», «2027-01-02T16:55:00», «02.01.2027 16:55», «2 января 16:55»
             fun dt(x: String) = runCatching { java.time.LocalDateTime.parse(x.trim().replace('T', ' ').take(16), f) }.getOrNull()
+                ?: runCatching { Device.parseWhenAt(x, java.time.LocalDateTime.now()) }.getOrNull()
             fun lbl(d: java.time.LocalDateTime) = d.format(f) + " (" + d.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMMM", java.util.Locale("ru"))) + ")"
             val st = a.optString("start"); val fr = a.optString("from")
             if (st.isNotBlank()) {
