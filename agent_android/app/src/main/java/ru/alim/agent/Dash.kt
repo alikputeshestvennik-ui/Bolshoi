@@ -366,7 +366,7 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         // таблица — сама кнопка: тап открывает Excel
         if (rows != null && xls != null) Box(Modifier.clickable(onClickLabel = "Открыть таблицу") { open(xls) }) { MiniTable(rows) }
         val best = remember(m.best, m.text, tableBest) { m.best.ifBlank { tableBest.ifBlank { deriveBest(m.text) } } }
-        if (best.isNotBlank()) BestBlock(best)
+        if (Rich.hasWinner(Rich.parse(best))) BestBlock(best)
         val rest = files.filter { rows == null || it != xls }
         if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             rest.forEach { f ->

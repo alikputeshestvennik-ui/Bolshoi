@@ -468,7 +468,7 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
             if (m.items.isNotBlank()) ProductCards(Shop.fromJson(m.items))
             if (m.files.isNotBlank()) FileCards(Chat.filesOf(m))
             // «Лучший выбор» с кнопками покупки — и в листе без таблицы
-            if (m.best.isNotBlank()) BestBlock(m.best)
+            if (Rich.hasWinner(Rich.parse(m.best))) BestBlock(m.best)
             if (m.meta.isNotBlank()) Text(m.meta, style = body(11, color = Th.c.meta), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (showButtons && m.buttons.isNotEmpty()) {
