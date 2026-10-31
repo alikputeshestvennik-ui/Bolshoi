@@ -1046,7 +1046,7 @@ object Tools {
             Yoo.send(ctx)
         },
 
-        Tool("hotels", "{\"city\": \"Нижний Новгород\", \"checkin\": \"2026-12-17\", \"checkout\": \"2026-12-20\", \"guests\": 1} — отели на даты сразу на трёх сайтах: Островок, Яндекс Путешествия, Ozon Travel — с ценами и ссылками. Один и тот же отель на разных сайтах стоит по-разному — сравни и назови, где дешевле") t@{ ctx, a ->
+        Tool("hotels", "{\"city\": \"Нижний Новгород\", \"checkin\": \"2026-12-17\", \"checkout\": \"2026-12-20\", \"guests\": 1} — отели на даты сразу на двух сайтах: Островок и Яндекс Путешествия — с ценами и ссылками. Один и тот же отель на разных сайтах стоит по-разному — сравни и назови, где дешевле") t@{ ctx, a ->
             val city = (a.optString("city").ifBlank { a.optString("q") }).trim()
             if (city.isEmpty()) return@t "нужен city"
             fun day(k: String) = a.optString(k).trim().let { s -> runCatching { java.time.LocalDate.parse(s.take(10)) }.getOrNull() ?: runCatching { Device.parseWhenAt(s, java.time.LocalDateTime.now())?.toLocalDate() }.getOrNull() }

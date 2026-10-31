@@ -21,8 +21,6 @@ object Hotels {
         // формат с сайта: /hotel/russia/st._petersburg/?search=yes&dates=05.01.2027-08.01.2027&guests=2 (в названии города бывает точка)
         Site("Островок", "ostrovok.ru", "ostrovok.ru отели", Regex("/hotel/[a-z._-]+/[a-z0-9._-]+/?$")) { i, o, g -> "search=yes&dates=${i.format(dmy)}-${o.format(dmy)}&guests=$g" },
         Site("Яндекс Путешествия", "travel.yandex.ru", "travel.yandex.ru отели", Regex("/hotels/[a-z0-9_-]+/?$")) { i, o, g -> "adults=$g&checkinDate=$i&checkoutDate=$o&roomCount=1" },
-        // формат с сайта: /travel/hotels/product/<отель>/?Dlts=2&checkIn=2026-11-20&checkOut=2026-11-22&cityOrRegionId=… (Dlts — взрослые)
-        Site("Ozon Travel", "ozon.ru", "ozon travel отели", Regex("/travel/hotels")) { i, o, g -> "Dlts=$g&checkIn=$i&checkOut=$o" },
     )
 
     private val urlRe = Regex("https?://[^\\s)\\]>\"']+")

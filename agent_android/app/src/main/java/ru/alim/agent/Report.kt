@@ -297,7 +297,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
             // ——— где жить: один отель — цены на разных сайтах, дешевле — зелёным, нажал — сайт ———
             val stay = Rich.list(r.optJSONArray("stay")).take(3)
             if (stay.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { SecLabel("Где жить"); Spacer(Modifier.weight(1f)); Text("Островок · Яндекс · Ozon", style = body(10, color = Muted)) }
+                Row(verticalAlignment = Alignment.CenterVertically) { SecLabel("Где жить"); Spacer(Modifier.weight(1f)); Text("Островок · Яндекс", style = body(10, color = Muted)) }
                 stay.forEach { h ->
                     val prices = Rich.list(h.optJSONArray("prices")).filter { it.optString("price").isNotBlank() }
                     val cheapest = prices.minByOrNull { Shop.rub(it.optString("price")).takeIf { v -> v > 0 } ?: Int.MAX_VALUE }
