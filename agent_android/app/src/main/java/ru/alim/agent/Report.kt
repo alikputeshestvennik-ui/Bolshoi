@@ -205,6 +205,7 @@ private fun WikiPhoto(q: String, modifier: Modifier) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 /** Карточка-отчёт вместо «листа»: вывод, маршрут, итоги, сравнение, места с фото, погода, лучший выбор, таблица, источники. */
 @Composable
 fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: ChatStore) {
