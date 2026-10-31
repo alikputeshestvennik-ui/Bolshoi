@@ -20,7 +20,7 @@ object Hotels {
     private val sites = listOf(
         // формат с сайта: /hotel/russia/st._petersburg/?search=yes&dates=05.01.2027-08.01.2027&guests=2 (в названии города бывает точка)
         Site("Островок", "ostrovok.ru", "ostrovok.ru отели", Regex("/hotel/[a-z._-]+/[a-z0-9._-]+/?$")) { i, o, g -> "search=yes&dates=${i.format(dmy)}-${o.format(dmy)}&guests=$g" },
-        Site("Яндекс Путешествия", "travel.yandex.ru", "travel.yandex.ru отели", Regex("/hotels/[a-z0-9_-]+/?$")) { i, o, g -> "checkinDate=$i&checkoutDate=$o&adults=$g" },
+        Site("Яндекс Путешествия", "travel.yandex.ru", "travel.yandex.ru отели", Regex("/hotels/[a-z0-9_-]+/?$")) { i, o, g -> "adults=$g&checkinDate=$i&checkoutDate=$o&roomCount=1" },
         // формат с сайта: /travel/hotels/product/<отель>/?Dlts=2&checkIn=2026-11-20&checkOut=2026-11-22&cityOrRegionId=… (Dlts — взрослые)
         Site("Ozon Travel", "ozon.ru", "ozon travel отели", Regex("/travel/hotels")) { i, o, g -> "Dlts=$g&checkIn=$i&checkOut=$o" },
     )
@@ -76,16 +76,26 @@ return t+'\n@@L@@\n'+L.slice(0,40).join('\n');
             val keep = Regex("(cityOrRegionId|hotelId)=[^&]+").findAll(u.substringAfter('?', "")).joinToString("") { it.value + "&" }
             "• $n — ${u.substringBefore('?').trimEnd('/')}/?$keep$params" }
 
+    /** Коды городов Ozon Travel (cityOrRegionId) — из настоящих ссылок; остальные ищем в выдаче поиска. */
+    private val ozonCity = mapOf("санкт-петербург" to "2887869237000", "казань" to "180884000")
+    private fun cityKey(c: String) = c.lowercase().replace("ё", "е").trim().let { if (it in setOf("питер", "спб", "петербург")) "санкт-петербург" else it }
+
     suspend fun all(ctx: Context, city: String, ci: LocalDate, co: LocalDate, g: Int, search: (String) -> List<String>): String = coroutineScope {
         val nights = java.time.temporal.ChronoUnit.DAYS.between(ci, co).coerceAtLeast(1)
         val parts = sites.map { s ->
             async {
                 val found = withContext(Dispatchers.IO) { runCatching { search("${s.query} $city") }.getOrDefault(emptyList()) }
-                val page = cityPage(s, found) ?: return@async "## ${s.name}\nне нашёл страницу города «$city» на ${s.host}"
+                // Ozon: список — /travel/hotels/search-new?…&cityOrRegionId=<код города>; код — из таблицы или из найденных ссылок
+                val ozonId = if (s.host != "ozon.ru") null else ozonCity[cityKey(city)]
+                    ?: found.firstNotNullOfOrNull { Regex("cityOrRegionId=(\\d+)").find(it)?.groupValues?.get(1) }
+                val page = if (ozonId != null) "https://www.ozon.ru/travel/hotels/search-new?cityOrRegionId=$ozonId"
+                    else cityPage(s, found) ?: return@async "## ${s.name}\nне нашёл страницу города «$city» на ${s.host}"
                 val url = page.trimEnd('&', '?').let { if (it.contains('?')) "$it&" else "$it?" } + s.params(ci, co, g)
-                val raw = runCatching {
-                    WebReader.run(ctx, url, JS, { t -> t.count { it == '₽' } >= 8 }, 40_000)
-                }.getOrDefault("")
+                // Яндекс сначала рисует цены «от», а цены на даты дозагружает — ждём подпись «за N ночи» и не меньше ~10 с
+                var ticks = 0
+                val ready: (String) -> Boolean = { t -> ticks++
+                    t.count { it == '₽' } >= 8 && (s.host != "travel.yandex.ru" || (ticks >= 4 && Regex("за \\d+ ноч|ноч[иь]\\s").containsMatchIn(t)) || ticks >= 12) }
+                val raw = runCatching { WebReader.run(ctx, url, JS, ready, 45_000) }.getOrDefault("")
                 var cut = around(raw.substringBefore("@@L@@"))
                 var hl = links(raw, s.params(ci, co, g))
                 var link = url
