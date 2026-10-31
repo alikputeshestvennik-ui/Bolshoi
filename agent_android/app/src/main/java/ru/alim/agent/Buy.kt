@@ -52,6 +52,23 @@ object Buy {
         return "https://www.aviasales.ru/search/$from${date.substring(8, 10)}${date.substring(5, 7)}${to}1"
     }
 
+    /** Своих шагов покупки у альтернативы нет — собираем поиск билетов по её маршруту (купить всё равно можно). */
+    fun guess(a: JSONObject): JSONObject? {
+        val out = JSONArray()
+        val route = a.optJSONArray("route")
+        if (route != null) for (k in 0 until minOf(6, route.length())) {
+            val st = route.optJSONObject(k) ?: continue
+            val what = st.optString("what").trim(); if (what.isEmpty()) continue
+            val kind = st.optString("kind").lowercase().ifBlank { "link" }
+            if (kind == "walk") continue
+            val q = what + " " + st.optString("when").substringBefore("·").trim() + when (kind) { "stay", "hotel" -> " забронировать"; else -> " купить билет" }
+            out.put(JSONObject().put("kind", if (kind == "stay") "hotel" else kind).put("label", what.take(90)).put("url", yandex(q)))
+        }
+        if (out.length() == 0 && a.optString("name").isNotBlank())
+            out.put(JSONObject().put("kind", "link").put("label", a.optString("name").take(90)).put("url", yandex(a.optString("name") + " купить билет")))
+        return if (out.length() == 0) null else JSONObject(a.toString()).put("buy", out).put("value", a.optString("price").ifBlank { a.optString("value") })
+    }
+
     fun items(o: JSONObject): List<Triple<String, String, String>> = o.optJSONArray("buy")?.let { a ->
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Triple(it.optString("kind"), it.optString("label"), it.optString("url")) }
             .filter { it.third.startsWith("http") }

@@ -368,6 +368,7 @@ object Agent {
             var bestRetry = 0
             var lazyRetry = 0
             var reportRetry = 0
+            var tableRetry = 0
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
@@ -556,6 +557,14 @@ object Agent {
                     lazyRetry++
                     steps.add(Step("Доделываю то, что не успел").also { it.done = true })
                     msgs.put(msg("user", "Шагов ещё много (осталось ${cap - i - 1}). Ты сам написал, что не дособрал часть пунктов. Не спрашивай Алима — доделай ВСЕ пункты просьбы сейчас инструментами (каждый способ, отели, места, погода, таблица), потом дай полный ответ. «Не нашёл» пиши только если реально искал."))
+                    final = null; continue
+                }
+                // просили таблицу, а файла нет — делаем, а не забываем
+                if (final != null && hard0 && !follow && tableRetry < 1 && files.isEmpty() && i < cap - 3 &&
+                    Regex("таблиц|xlsx|excel", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                    tableRetry++
+                    steps.add(Step("Делаю таблицу").also { it.done = true })
+                    msgs.put(msg("user", "Алим просил таблицу, а файла нет. Сделай её сейчас инструментом file_create из найденного (все варианты, цифры в отдельных столбцах, итог по каждому), потом повтори финальный ответ с \"best\" и \"report\"."))
                     final = null; continue
                 }
                 // тяжёлая задача без карточки-отчёта — просим один раз дописать «report» к тому же ответу

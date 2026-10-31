@@ -77,9 +77,16 @@ private val icClock2 by lazy { lineIco("clock", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 
 private val icBulb2 by lazy { lineIco("bulb", "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.7 1 1.5 1 2.5h6c0-1 .2-1.8 1-2.5A6 6 0 0 0 12 3z") }
 
 private fun kindIcon(o: JSONObject): ImageVector {
-    val k = (o.optString("kind") + " " + o.optString("what")).lowercase()
+    // сначала вид, который назвала модель; потом по тексту — автобус раньше самолёта («автобус аэропорт Сочи → Ялта»)
+    when (o.optString("kind").lowercase().trim()) {
+        "bus" -> return icBus; "train" -> return icTrain; "flight", "avia", "plane" -> return icPlane
+        "stay", "hotel" -> return icBed; "taxi", "car" -> return icCar; "walk" -> return icPin
+    }
+    val k = o.optString("what").lowercase()
     return when {
-        Regex("flight|avia|рейс|самол|перел|аэро").containsMatchIn(k) -> icPlane
+        Regex("автобус|маршрутк").containsMatchIn(k) -> icBus
+        Regex("поезд|сапсан|ласточк|стриж|электрич|«таврия»|таврия").containsMatchIn(k) -> icTrain
+        Regex("рейс|самол|перел").containsMatchIn(k) -> icPlane
         Regex("train|поезд|сапсан|ласточк|электрич").containsMatchIn(k) -> icTrain
         Regex("bus|автобус|маршрутк").containsMatchIn(k) -> icBus
         Regex("stay|hotel|отел|ночь|ночёв|хостел|жиль").containsMatchIn(k) -> icBed
@@ -247,8 +254,10 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                     totals.forEach { t ->
                         val w = t.optString("warn").isNotBlank()
                         Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(if (w) soft(Amber) else Th.c.bg).padding(12.dp)) {
-                            Text(t.optString("label"), style = body(11, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(t.optString("value"), style = TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = if (w) Amber else Ink), maxLines = 1)
+                            Text(t.optString("label"), style = body(11, color = Muted), maxLines = 2, lineHeight = 14.sp)
+                            // значение не обрезаем: длинное («30 мин») мельче, а не «30»
+                            val v = t.optString("value")
+                            Text(v, style = TextStyle(fontFamily = Fonts.display, fontSize = if (v.length > 7) 14.sp else 17.sp, fontWeight = FontWeight.SemiBold, color = if (w) Amber else Ink), maxLines = 2)
                         }
                     }
                 }
@@ -366,7 +375,7 @@ private fun AltSheet(a: JSONObject, p: JSONObject, close: () -> Unit) {
         else Rich.list(p.optJSONArray("alt")).firstOrNull { x ->
             val n1 = x.optString("name").lowercase(); val n2 = a.optString("name").lowercase()
             n1.isNotBlank() && (n1.contains(n2.take(12)) || n2.contains(n1.take(12)))
-        }?.takeIf { Buy.items(it).isNotEmpty() }
+        }?.takeIf { Buy.items(it).isNotEmpty() } ?: Buy.guess(a)
     }
     androidx.compose.ui.window.Dialog(onDismissRequest = close) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).clip(RoundedCornerShape(24.dp)).background(Th.c.card).verticalScroll(rememberScrollState()).padding(18.dp),
