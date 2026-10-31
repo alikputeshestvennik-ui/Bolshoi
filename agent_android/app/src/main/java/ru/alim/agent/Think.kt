@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -33,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -95,8 +98,15 @@ fun ThinkPanel(core: Agent.Core) {
             Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(RoundedCornerShape(14.dp))
                 .border(1.dp, Line, RoundedCornerShape(14.dp)).clickable(onClickLabel = "Остановить") { core.stop() }.padding(horizontal = 14.dp, vertical = 8.dp))
         }
-        Box(Modifier.fillMaxWidth().height(h).clipToBounds()) {
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // старое уходит вверх и тает — прозрачностью, а не плашкой цвета фона (фон у нас с узором)
+        Box(Modifier.fillMaxWidth().height(h).clipToBounds()
+            .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
+            .drawWithContent {
+                drawContent()
+                drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.22f to Color.Black), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+            }) {
+            // unbounded: длинная лента не обрезается снизу — низ (самое новое) всегда виден, лишнее уходит за верх
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().wrapContentHeight(Alignment.Bottom, unbounded = true), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val list = core.steps.toList()
                 list.forEachIndexed { i, s ->
                     val last = i == list.lastIndex
@@ -125,9 +135,6 @@ fun ThinkPanel(core: Agent.Core) {
                 }
                 if (list.isEmpty()) Text("Разбираюсь, с чего начать…", style = body(14, color = Muted))
             }
-            // старое уходит вверх и тает
-            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(110.dp)
-                .background(Brush.verticalGradient(listOf(Th.c.bg, Th.c.bg.copy(alpha = 0f)))))
         }
     }
 }

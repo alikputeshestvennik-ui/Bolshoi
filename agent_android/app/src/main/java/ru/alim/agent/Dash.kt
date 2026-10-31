@@ -462,16 +462,17 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, onSearch: (() -> Unit)
     // только иконки, по центру; текущий раздел подсвечен
     val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icSun, "Сводки", Scr.Digest), Triple(icGear, "Настройки", Scr.Settings))
     val cur = if (here == Scr.Journal) Scr.Home else here
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f), to == cur) { go(to) } }
-        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(44.dp), false, onSearch)
+    // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.width(56.dp), to == cur) { go(to) } }
+        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(56.dp), false, onSearch)
     }
 }
 
 @Composable
 private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
-    Box(modifier.height(40.dp).then(if (on) Modifier.clip(shape).background(AccentSoft).border(1.dp, Teal, shape) else Modifier.glassDash(haze, shape))
+    Box(modifier.height(44.dp).then(if (on) Modifier.clip(shape).background(AccentSoft).border(1.dp, Teal, shape) else Modifier.glassDash(haze, shape))
         .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Ink, modifier = Modifier.size(19.dp))
     }
