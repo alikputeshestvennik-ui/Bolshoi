@@ -424,7 +424,7 @@ private fun steps(n: Int) = if (n % 10 == 1 && n % 100 != 11) "шаг" else if (
 
 /** Шаги покупки варианта: каждый — своя ссылка, «Открыть всё» — все вкладки разом (приложение, если оно есть). */
 @Composable
-private fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
+internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val items = remember(o) { Buy.items(o) }

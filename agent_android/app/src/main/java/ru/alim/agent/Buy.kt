@@ -37,6 +37,7 @@ object Buy {
         }
         one(b)
         b.optJSONArray("alt")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { one(it) } }
+        b.optJSONObject("report")?.optJSONArray("compare")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { one(it) } }
         return b.toString()
     }
 

@@ -276,6 +276,14 @@ object Agent {
             append("- ТОН: ты напарник, а не исполнитель. Без дежурных концовок («Если что — зови», «Чем займёмся?», «Если ещё нужно — скажи», «Обращайся») — просто закончи по делу. Не пиши «сделал», если не сделал: каждое «отправил/создал/выяснил» должно быть подтверждено результатом инструмента.\n")
             append("- ВНИМАНИЕ: держи в голове его дела (блоки ИДУЩИЕ ПОРУЧЕНИЯ, СЛЕЖКА ниже). Если к месту — одним предложением свяжи ответ с ними («кстати, Леонов пока молчит»). Не чаще раза за ответ и только если это полезно.\n")
             append("- Сравнение вариантов (что выгоднее, что выбрать) — в финальном JSON добавь \"best\": {\"name\": \"Обычный · ОАЭ\", \"value\": \"234 085 ₽\", \"note\": \"с перелётом\", \"buy\": [...], \"alt\": [{\"name\": \"Сенсорный · ОАЭ\", \"value\": \"299 085 ₽\", \"diff\": \"+65 тыс\", \"buy\": [...]}]} — только из найденных цифр, до 2 alt. Нет сравнения — не добавляй.\n")
+            append("- БОЛЬШАЯ задача (поездка, сравнение способов, подбор с таблицей) — в финальном JSON ещё \"report\": карточка-отчёт на экране вместо простыни текста. Формат: {\"kicker\": \"ЛУЧШИЙ ВАРИАНТ · САМОЛЁТ\", \"title\": \"главный вывод до 50 знаков с цифрой (30 часов в Петербурге за 42 484 ₽)\", \"lead\": \"1–2 предложения почему\", " +
+                "\"route\": [{\"kind\": \"bus|train|flight|stay|walk|taxi\", \"when\": \"Чт 3.12 · 16:20 → пт 07:35\", \"what\": \"Автобус Ялта → аэропорт Сочи\", \"sub\": \"15 ч 15 мин · 6 175 ₽\", \"src\": \"Туту\", \"warn\": \"только если есть риск\"}] — путь ЛУЧШЕГО варианта по порядку, туда и обратно; " +
+                "\"totals\": [{\"label\": \"В пути всего\", \"value\": \"56 ч 35 мин\"}, {\"label\": \"Запас к работе\", \"value\": \"30 мин\", \"warn\": \"Впритык: …\"}] (до 3); " +
+                "\"compare\": [{\"name\": \"Самолёт из Сочи\", \"time\": \"30 ч в Питере\", \"price\": \"42 484 ₽\", \"ok\": true}, {\"name\": \"«Таврия» напрямую\", \"time\": \"0 ч в Питере\", \"price\": \"≈20 000 ₽\", \"ok\": false, \"verdict\": \"НЕ УСПЕВАЕШЬ К 8:00\", \"why\": \"почему не он, 1–2 предложения с цифрами\", \"route\": [как выше], \"buy\": [как в best]}] — все сравнённые варианты, ok=true только у лучшего; " +
+                "\"places\": [{\"name\": \"Эрмитаж\", \"wiki\": \"точное название статьи Википедии\", \"info\": \"часы работы\", \"note\": \"билет 700 ₽\"}] (до 5, если просили что посмотреть); " +
+                "\"weather\": [{\"day\": \"чт 3\", \"t\": \"−2°\", \"night\": \"−5°\"}], \"weather_title\": \"ПОГОДА · ПРОГНОЗ\" или \"ПОГОДА · НОРМА\", \"weather_note\": \"зонт/одежда\"; " +
+                "\"sources\": [\"Авиасейлс\", \"Туту\"] (сайты, откуда цифры); \"ask\": [\"Могу выехать раньше\", \"С багажом\"] (до 3 коротких уточнений). " +
+                "Только найденные данные; блока нет в задаче — не пиши его. В \"say\" при этом — обычный полный ответ текстом. Маленькие вопросы — без report.\n")
             append("- buy — что Алиму купить по этому варианту, по шагу на покупку, по порядку поездки (до 6): рейс {\"type\": \"flight\", \"flight\": \"SU 1153\", \"from\": \"Сочи\", \"to\": \"Москва\", \"date\": \"ГГГГ-ММ-ДД\", \"label\": \"Рейс SU1153 Сочи → Москва · 3.01 11:05 · 8 505 ₽\"}; автобус/поезд/отель {\"type\": \"bus|train|hotel\", \"label\": \"Автобус Ялта → аэропорт Сочи · 2.01 16:20 · 6 175 ₽\", \"url\": \"ссылка на страницу покупки/брони ИЗ результатов поиска\"}. Ссылки не придумывай: нет найденной — оставь url пустым, Пилот подставит поиск. По кнопкам Алим откроет всё для покупки.\n")
             append("- Если в задаче просят вывод, совет или «куда лучше» — финальный ответ ОБЯЗАТЕЛЬНО его содержит (1–2 предложения), а не только «таблица готова». Вывод КОНКРЕТНЫЙ: что выбрать и почему, с цифрами («выгоднее всего — обычный Pro в ОАЭ: ≈234 тыс ₽ с перелётом, на 75 тыс дешевле сенсорного»). «Выбор за тобой», «зависит от твоих задач» — это не вывод.\n")
             append("- Даты без года («после 10 января», «в мае») — ближайшие В БУДУЩЕМ от сегодняшней даты (сегодня ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date())}). Не пиши прошедший год в названиях и ответе.\n")
@@ -450,7 +458,9 @@ object Agent {
                             continue
                         }
                         final = say.ifBlank { "Готово." }
-                        lastBest = j.optJSONObject("best")?.takeIf { b -> b.optString("name").isNotBlank() && b.optString("value").isNotBlank() }?.toString().orEmpty()
+                        val bestO = j.optJSONObject("best")?.takeIf { b -> b.optString("name").isNotBlank() && b.optString("value").isNotBlank() }
+                        val repO = j.optJSONObject("report")?.takeIf { it.length() > 0 && (it.optString("title").isNotBlank() || it.has("route") || it.has("compare")) }
+                        lastBest = if (bestO == null && repO == null) "" else (bestO ?: JSONObject()).also { if (repO != null) it.put("report", repO) }.toString()
                         lastButtons = j.optJSONArray("buttons")?.let { a -> (0 until minOf(3, a.length())).map { a.optString(it).trim() } }
                             .orEmpty().filter { it.isNotBlank() && it.length <= 40 }
                         break
@@ -458,7 +468,7 @@ object Agent {
                     // аргументы бывают строкой JSON (Gemini Lite) или прямо рядом с tool — разбираем все варианты, иначе «пустой запрос»
                     val args = j.optJSONObject("args")
                         ?: (j.opt("args") as? String)?.let { s -> runCatching { JSONObject(s) }.getOrNull() }
-                        ?: JSONObject().also { o -> j.keys().forEach { k -> if (k !in setOf("step", "tool", "say", "done", "buttons", "best", "args")) o.put(k, j.opt(k)) } }
+                        ?: JSONObject().also { o -> j.keys().forEach { k -> if (k !in setOf("step", "tool", "say", "done", "buttons", "best", "args", "report", "think")) o.put(k, j.opt(k)) } }
                     val stepText = j.optString("step").trim().ifBlank { tool }
 
                     if (tool == "escalate") {
@@ -532,7 +542,7 @@ object Agent {
                     final = null; continue
                 }
                 // сравнение с таблицей, а «Лучшего выбора» нет — без него нет кнопок покупки: просим один раз
-                if (final != null && bestRetry < 1 && hard0 && files.isNotEmpty() && lastBest.isBlank() && !follow &&
+                if (final != null && bestRetry < 1 && hard0 && files.isNotEmpty() && !Rich.hasWinner(Rich.parse(lastBest)) && !follow &&
                     Regex("сравни|выбрать|лучш|выгодн|какой способ|какой город|вариант", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
                     bestRetry++
                     msgs.put(msg("user", "Ответ без поля \"best\". Повтори финальный JSON (tool null, тот же say) и добавь \"best\" с победителем, до 2 alt и \"buy\" — шаги покупки по порядку поездки (формат в инструкции). Только найденные цифры."))
@@ -605,9 +615,15 @@ object Agent {
                 Journal.add(Agent.app, TaskRec(startedAt, task, steps.size, Agent.short(model), cost, ok, endedAt - startedAt, text, log,
                     if (products.isEmpty()) "" else Shop.toJson(products.take(8))))
             }
+            // мысли и шаги — к сообщению, чтобы потом раскрыть «Думал N мин ›»
+            val payload = if (steps.size < 3) lastBest else runCatching {
+                (Rich.parse(lastBest) ?: JSONObject()).put("log", JSONArray().also { a ->
+                    steps.forEach { s -> a.put(JSONObject().put("t", s.think).put("s", s.text).put("d", s.detail.lines().firstOrNull { it.isNotBlank() }.orEmpty().take(140))) }
+                }).put("secs", (endedAt - startedAt) / 1000).toString()
+            }.getOrDefault(lastBest)
             val cb = onFinish
             if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
-                steps.map { it.text }, (endedAt - startedAt) / 1000, tgPhotos.toList(), ytVideos.toList(), lastBest))
+                steps.map { it.text }, (endedAt - startedAt) / 1000, tgPhotos.toList(), ytVideos.toList(), payload))
             else if (ok && Prefs.speak) onSpeak?.invoke(text)
         }
 

@@ -169,7 +169,13 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 if (core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
                 val rev = shown.asReversed()
                 rev.forEachIndexed { i, m ->
-                    item(key = m.id) { MsgRow(m, chat = chat, f = f, showButtons = Prefs.quickButtons && i == 0 && !m.me && !core.busy && search == null) }
+                    item(key = m.id) {
+                        val rich = remember(m.best) { if (m.me) null else Rich.parse(m.best) }
+                        Column(Modifier.fillMaxWidth()) {
+                            if (rich != null && !ChatSel.on) ThinkChip(rich)
+                            MsgRow(m, chat = chat, f = f, showButtons = Prefs.quickButtons && i == 0 && !m.me && !core.busy && search == null)
+                        }
+                    }
                     val prev = rev.getOrNull(i + 1)
                     if (prev == null || !sameDay(prev.ts, m.ts)) item(key = "d${m.id}") { DateChip(m.ts) }
                 }
@@ -363,6 +369,9 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     }
     val picked = m.id in ChatSel.ids
     val lit = ChatJump.glow == m.id
+    // большая задача с отчётом — богатая карточка: маршрут, сравнение, места с фото, погода, покупка
+    val rich = remember(m.best) { if (m.me) null else Rich.parse(m.best) }
+    if (!m.me && !ChatSel.on && rich?.optJSONObject("report") != null) { ReportCard(m, rich, lit, showButtons, chat); return }
     // результат задачи — «лист», как в макете: крупный вывод, текст, файлы иконками
     if (!m.me && !ChatSel.on && m.files.isNotBlank()) {
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
