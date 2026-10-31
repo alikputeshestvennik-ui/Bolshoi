@@ -41,7 +41,30 @@ object Hotels {
         return sb.toString().take(3200)
     }
 
-    private val JS = "(function(){return (document.body?document.body.innerText:'').replace(/\\n{3,}/g,'\\n\\n').slice(0,20000)})()"
+    // текст выдачи + ссылки на сами отели (у каждого сайта свой вид адреса отеля)
+    private val JS = """(function(){
+var t=(document.body?document.body.innerText:'').replace(/\n{3,}/g,'\n\n').slice(0,20000);
+var seen={},L=[];
+document.querySelectorAll('a[href]').forEach(function(a){
+  var h=a.href;
+  if(!/\/mid\d|travel\.yandex\.ru\/hotels\/[^\/?#]+\/[^\/?#]+|\/travel\/hotels?\/[^?#]*\d/.test(h)) return;
+  if(/\/search|\/reviews|#/.test(h.split('?')[0])) return;
+  var k=h.split('?')[0]; if(seen[k]) return;
+  var n=(a.innerText||a.getAttribute('aria-label')||a.title||'').replace(/\s+/g,' ').trim();
+  if(n.length<3){var c=a.closest('article,li,[data-index],[class*=card],[class*=Card]'); n=c?(c.innerText||'').replace(/\s+/g,' ').trim():'';}
+  n=n.slice(0,70); if(n.length<3) return;
+  seen[k]=1; L.push(n+' | '+h);
+});
+return t+'\n@@L@@\n'+L.slice(0,40).join('\n');
+})()"""
+
+    /** Ссылки на сами отели с датами: «Название — ссылка». */
+    private fun links(raw: String, params: String): String = raw.substringAfter("@@L@@", "").lines()
+        .mapNotNull { l -> val k = l.lastIndexOf(" | "); if (k < 3) null else l.take(k).trim() to l.drop(k + 3).trim() }
+        .filter { it.second.startsWith("http") }
+        .distinctBy { it.second.substringBefore('?') }
+        .take(15)
+        .joinToString("\n") { (n, u) -> "• $n — ${u.substringBefore('?').trimEnd('/')}/?$params" }
 
     suspend fun all(ctx: Context, city: String, ci: LocalDate, co: LocalDate, g: Int, search: (String) -> List<String>): String = coroutineScope {
         val nights = java.time.temporal.ChronoUnit.DAYS.between(ci, co).coerceAtLeast(1)
@@ -53,19 +76,21 @@ object Hotels {
                 val raw = runCatching {
                     WebReader.run(ctx, url, JS, { t -> t.count { it == '₽' } >= 8 }, 40_000)
                 }.getOrDefault("")
-                var cut = around(raw)
+                var cut = around(raw.substringBefore("@@L@@"))
+                var hl = links(raw, s.params(ci, co, g))
                 var link = url
                 // с датами выдача не нарисовалась — пробуем страницу города без параметров (там хотя бы цены «от»)
                 if (cut.isBlank()) {
                     val raw2 = runCatching { WebReader.run(ctx, page, JS, { t -> t.count { it == '₽' } >= 6 }, 45_000) }.getOrDefault("")
-                    val c2 = around(raw2)
-                    if (c2.isNotBlank()) { cut = "(без дат — цены «от», на даты уточняй на сайте)\n$c2"; link = page }
+                    val c2 = around(raw2.substringBefore("@@L@@"))
+                    if (c2.isNotBlank()) { cut = "(без дат — цены «от», на даты уточняй на сайте)\n$c2"; link = page; hl = links(raw2, s.params(ci, co, g)) }
                 }
-                "## ${s.name}\nссылка: $link\n" + cut.ifBlank { "цены не показались (сайт не дорисовал выдачу)" }
+                "## ${s.name}\nстраница города: $link\n" + cut.ifBlank { "цены не показались (сайт не дорисовал выдачу)" } +
+                    if (hl.isNotBlank()) "\nСсылки на отели (url для карточки и покупки бери ОТСЮДА — на сам отель, с датами):\n$hl" else ""
             }
         }.awaitAll()
         "Отели «$city», ${ci.format(dmy)}–${co.format(dmy)} ($nights ${if (nights in 2..4) "ночи" else if (nights == 1L) "ночь" else "ночей"}), гостей: $g. " +
-            "Цены могут быть за ночь или за весь срок — смотри подпись рядом. Ссылку для покупки бери из строки «ссылка» того сайта, где дешевле.\n\n" +
+            "Цены могут быть за ночь или за весь срок — смотри подпись рядом. Для каждого отеля url — его собственная ссылка из «Ссылки на отели» того сайта (не страница города); нет ссылки на отель — тогда страница города.\n\n" +
             parts.joinToString("\n\n")
     }
 }
