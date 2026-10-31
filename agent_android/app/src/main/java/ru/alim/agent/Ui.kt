@@ -199,13 +199,48 @@ fun Screen(title: String, back: () -> Unit, content: @Composable ColumnScope.() 
     }
 }
 
-/** Раздел настроек: заголовок + короткий статус, по нажатию раскрывается. */
+/** Навигация внутри настроек: раздел открывается своей страницей, а не раскрывается на месте. */
+class SetNav { var page by mutableStateOf<String?>(null) }
+val LocalSetNav = androidx.compose.runtime.staticCompositionLocalOf<SetNav?> { null }
+
+/** Группа строк настроек одной карточкой (как четыре верхние), с подписью сверху. На странице раздела — прозрачна. */
 @Composable
-fun Section(title: String, status: String, color: Color = Teal, statusColor: Color = Muted, content: @Composable ColumnScope.() -> Unit) {
+fun SetGroup(label: String = "", content: @Composable ColumnScope.() -> Unit) {
+    val nav = LocalSetNav.current
+    if (nav?.page != null) { Column(Modifier.fillMaxWidth(), content = content); return }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (label.isNotBlank()) Text(label.uppercase(), style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.2.sp), modifier = Modifier.padding(start = 6.dp, top = 6.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card), content = content)
+    }
+}
+
+/** Строка настроек: название, подпись, стрелка. */
+@Composable
+fun SetRow(title: String, sub: String, subColor: Color = Muted, first: Boolean = false, onClick: () -> Unit) {
+    if (!first) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(Line))
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = body(15, FontWeight.SemiBold))
+            if (sub.isNotBlank()) Text(sub, style = body(12, color = subColor), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Text("›", style = body(20, color = Muted))
+    }
+}
+
+/** Раздел настроек. В настройках (есть SetNav) — строка, по нажатию своя страница; в других экранах — раскрывается на месте. */
+@Composable
+fun Section(title: String, status: String, color: Color = Teal, statusColor: Color = Muted, first: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val nav = LocalSetNav.current
+    if (nav != null) {
+        when (nav.page) {
+            title -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+            null -> SetRow(title, status, statusColor, first) { nav.page = title }
+        }
+        return
+    }
     var open by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Card)) {
-        // единый стиль настроек: название, подпись, стрелка (раскрыт — стрелка вниз)
         Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = body(15, FontWeight.SemiBold))

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -596,23 +597,21 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
     fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
-    Screen("Настройки", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Пилот: память, характер, вид — то, что раньше было в меню
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)) {
+    val nav = remember { SetNav() }
+    androidx.activity.compose.BackHandler(enabled = nav.page != null) { nav.page = null }
+    Screen(nav.page ?: "Настройки", { if (nav.page != null) nav.page = null else back() }) {
+      androidx.compose.runtime.CompositionLocalProvider(LocalSetNav provides nav) {
+        val sc = remember(nav.page) { androidx.compose.foundation.ScrollState(0) }
+        Column(Modifier.weight(1f).verticalScroll(sc), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Пилот: память, характер, вид — отдельные экраны
+            if (nav.page == null) SetGroup {
                 listOf(Triple("Что Пилот помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
-                    Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules), Triple("Оформление", "Рассвет днём, Ночной рейс вечером", Scr.Look)).forEachIndexed { i, (t, sub, s) ->
-                    if (i > 0) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(Line))
-                    Row(Modifier.fillMaxWidth().clickable { open(s) }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(t, style = body(15, FontWeight.SemiBold))
-                            Text(sub, style = body(12, color = Muted))
-                        }
-                        Text("›", style = body(20, color = Muted))
-                    }
+                    Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules), Triple("Оформление", "Рассвет днём, Ночной рейс вечером", Scr.Look)).forEachIndexed { i, (t, sub, sc2) ->
+                    SetRow(t, sub, first = i == 0) { open(sc2) }
                 }
             }
-            Section("Быстрый доступ", "выделить текст · поделиться · шторка") {
+            SetGroup("Как работает") {
+            Section("Быстрый доступ", "выделить текст · поделиться · шторка", first = true) {
                 Text("• Выдели текст в любом приложении → в меню «Пилот».\n• Из любого приложения «Поделиться» → «Пилот» (ссылка, скриншот, текст).\n• Шторка поверх всего — по плитке «Спросить» или по боковой кнопке.",
                     style = body(13, color = Muted), lineHeight = 19.sp)
                 var tileMsg by remember { mutableStateOf<String?>(null) }
@@ -672,9 +671,11 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
             Section("Мониторинг", if (Prefs.monitorOn && tick >= 0) "раз в ${Prefs.interval} мин · итог в ${Prefs.digestHour}:00" else "выключен",
                 statusColor = if (Prefs.monitorOn) Muted else Amber) { MonitorSettings() }
 
+            }
+            SetGroup("Подключения") {
             val mails = listOf(1, 2).count { Mail.hasPass(ctx, it) && tick >= 0 }
             Section("Почта Gmail", if (mails > 0) "подключено ящиков: $mails" else "не подключена",
-                statusColor = if (mails > 0) Muted else Amber) { MailSettings() }
+                statusColor = if (mails > 0) Muted else Amber, first = true) { MailSettings() }
 
             val yc = Yoo.connected(ctx) && tick >= 0
             Section("ЮMoney", if (yc) "подключено · переводы с отпечатком" else "не подключено", Violet) {
@@ -700,13 +701,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 BigButton(if (YtMe.ready) "Открыть" else "Подключить YouTube", openYt, bg = if (YtMe.ready) Card else Teal, fg = if (YtMe.ready) Ink else Bg, border = if (YtMe.ready) Line else null)
             }
 
-            Section("Поиск в интернете", if (YaSearch.ready) "Яндекс Поиск" else "запасной: DuckDuckGo",
-                statusColor = if (YaSearch.ready) Muted else Amber) {
-                if (!YaSearch.ready) Text("Яндекс: ${YaSearch.missing()}", style = body(13, color = Amber))
-                Text(YaCloud.info(), style = body(12, color = Muted), lineHeight = 17.sp)
             }
-
-            Section("Прочее", "${city.ifBlank { "город не задан" }} · лимит ${limit.ifBlank { "—" }} ₽") {
+            SetGroup("Остальное") {
+            Section("Город и лимит", "${city.ifBlank { "город не задан" }} · лимит ${limit.ifBlank { "—" }} ₽ в месяц", first = true) {
                 Field("Город для погоды", city) { city = it; Prefs.homeCity = it }
                 Field("Лимит расходов в месяц, ₽", limit, KeyboardType.Number) { limit = it; Prefs.monthLimit = it }
             }
@@ -727,18 +724,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 "Уведомления" to (NotifStore.accessGranted(ctx) && t >= 0),
             )
             val missing = rows.filter { !it.second }.map { it.first }
-            Section("Разрешения", if (missing.isEmpty()) "всё выдано" else "нет: ${missing.joinToString(", ")}",
+            Section("Разрешения", if (missing.isEmpty()) "всё выдано" else "не выдано: ${missing.size}",
                 if (missing.isEmpty()) Teal else Amber, if (missing.isEmpty()) Muted else Amber) {
-                rows.forEach { (name, ok) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        Text(name, style = body(14), modifier = Modifier.weight(1f))
-                        Text(if (ok) "выдано" else "нет", style = body(13, FontWeight.Bold, if (ok) Teal else Amber))
-                    }
-                }
-                BigButton("Выдать разрешения", askPerms)
-                BigButton("Доступ к уведомлениям", {
-                    ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                }, bg = Card, fg = Ink, border = Line)
+                PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Для разработчика", "модели · расходы · квоты", Muted) {
                 // баланс — сразу на виду
@@ -793,10 +781,53 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 }, bg = Card, fg = Ink, border = Line)
                 check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
             }
+            }
 
             Gap(8)
         }
+      }
     }
+}
+
+private val permWhy = mapOf("Микрофон" to "голосовые команды", "Контакты" to "звонить и писать по имени", "Звонки" to "набирать номер по просьбе",
+    "SMS: отправка" to "отправлять SMS по просьбе", "SMS: чтение" to "читать входящие (коды — никогда)", "Журнал звонков" to "кто звонил и когда",
+    "SIM / связь" to "с какой SIM звонить", "Геолокация" to "погода и места рядом", "Календарь" to "события и напоминания",
+    "Запись контактов" to "сохранять новые номера", "Фото" to "отправлять и разбирать фото", "Уведомления" to "сводки, слежка, ответы за тебя")
+
+/** Разрешения: сверху счётчик с полосой, ниже — что даёт каждое; невыданное нажимается и сразу просит. */
+@Composable
+private fun PermsPage(rows: List<Pair<String, Boolean>>, ask: () -> Unit, notif: () -> Unit) {
+    val ok = rows.count { it.second }
+    val all = ok == rows.size
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (all) AccentSoft else Amber.copy(alpha = 0.14f)).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("$ok", style = TextStyle(fontFamily = Fonts.display, fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+            Text(" из ${rows.size}", style = body(16, FontWeight.SemiBold, Muted), modifier = Modifier.padding(bottom = 6.dp))
+        }
+        Text(if (all) "Всё выдано — Пилоту доступно всё, что нужно" else "Без недостающих Пилот не сможет часть дел", style = body(13, color = Muted))
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
+            Box(Modifier.fillMaxWidth(ok / rows.size.toFloat().coerceAtLeast(1f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(if (all) Teal else Amber))
+        }
+    }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)) {
+        rows.sortedBy { it.second }.forEachIndexed { i, (name, has) ->
+            if (i > 0) Box(Modifier.padding(start = 62.dp).fillMaxWidth().height(1.dp).background(Line))
+            Row(Modifier.fillMaxWidth().then(if (has) Modifier else Modifier.clickable { if (name == "Уведомления") notif() else ask() })
+                .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(34.dp).clip(CircleShape).background(if (has) AccentSoft else Amber.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+                    Text(if (has) "✓" else "!", style = body(15, FontWeight.Bold, if (has) Teal else Amber))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = body(15, FontWeight.SemiBold))
+                    Text(permWhy[name].orEmpty(), style = body(12, color = Muted))
+                }
+                if (!has) Text("Выдать", style = body(13, FontWeight.SemiBold, Bg), modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Amber).padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+        }
+    }
+    if (!all) BigButton("Выдать все недостающие", { if (rows.any { !it.second && it.first != "Уведомления" }) ask() else notif() })
 }
 
 @Composable
