@@ -1050,8 +1050,12 @@ object Tools {
             val city = (a.optString("city").ifBlank { a.optString("q") }).trim()
             if (city.isEmpty()) return@t "нужен city"
             fun day(k: String) = a.optString(k).trim().let { s -> runCatching { java.time.LocalDate.parse(s.take(10)) }.getOrNull() ?: runCatching { Device.parseWhenAt(s, java.time.LocalDateTime.now())?.toLocalDate() }.getOrNull() }
-            val ci = day("checkin") ?: day("from") ?: return@t "нужен checkin как ГГГГ-ММ-ДД"
-            val co = day("checkout") ?: day("to") ?: ci.plusDays(1)
+            var ci = day("checkin") ?: day("from") ?: return@t "нужен checkin как ГГГГ-ММ-ДД"
+            var co = day("checkout") ?: day("to") ?: ci.plusDays(1)
+            // модель поставила прошедший год («20–22 февраля» → 2026-02-20) — сайты на прошлые даты цен не дают: берём ближайшие будущие
+            val today = java.time.LocalDate.now()
+            while (ci.isBefore(today)) { ci = ci.plusYears(1); co = co.plusYears(1) }
+            if (!co.isAfter(ci)) co = ci.plusDays(1)
             val g = a.optInt("guests", a.optInt("adults", 1)).coerceIn(1, 6)
             Hotels.all(ctx, city, ci, co, g) { q -> listOf(YaSearch::search, ::ddgHtml, ::ddgLite, ::bing).firstNotNullOfOrNull { e -> runCatching { e(q) }.getOrNull()?.takeIf { it.isNotEmpty() } }.orEmpty() }
         },
