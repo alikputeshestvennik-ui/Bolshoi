@@ -458,14 +458,18 @@ private fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 
 /** Нижние кнопки разделов — одинаковые на главной и в журнале. */
 @Composable
-fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, onSearch: (() -> Unit)? = null) {
+fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = false, onSearch: (() -> Unit)? = null) {
     // только иконки, по центру; текущий раздел подсвечен
     val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icSun, "Сводки", Scr.Digest), Triple(icGear, "Настройки", Scr.Settings))
-    val cur = if (here == Scr.Journal) Scr.Home else here
+    val cur = when (here) {
+        Scr.Journal -> Scr.Home
+        Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt -> Scr.Settings
+        else -> here
+    }
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
         items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.width(56.dp), to == cur) { go(to) } }
-        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(56.dp), false, onSearch)
+        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(56.dp), searchOn, onSearch)
     }
 }
 
@@ -685,4 +689,20 @@ private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): S
     val alt = org.json.JSONArray()
     sorted.drop(1).take(2).forEach { (n, t) -> alt.put(org.json.JSONObject().put("name", n).put("value", rub(t)).put("diff", "+" + rub(t - win.second))) }
     return org.json.JSONObject().put("name", win.first).put("value", rub(win.second)).put("note", grid[0].getOrNull(totalCol)?.toString().orEmpty().lowercase()).put("alt", alt).toString()
+}
+
+
+/** Нижние кнопки разделов и строка ввода — на всех экранах, не только в чате. Отправил сообщение — переходим в чат. */
+@Composable
+fun GlobalBar(here: Scr, go: (Scr) -> Unit, modifier: Modifier = Modifier) {
+    val chat = remember { Chat.of(Friends.MAIN) }
+    val haze = remember { HazeState() }
+    val n0 = remember { chat.msgs.size }
+    LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
+    Column(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Th.c.bg.copy(alpha = 0f), Th.c.bg.copy(alpha = 0.92f), Th.c.bg)))
+        .padding(horizontal = 10.dp).padding(top = 16.dp, bottom = 10.dp)) {
+        NavBar(haze, here, go) { ChatJump.searchReq = true; go(Scr.Home) }
+        Spacer(Modifier.height(10.dp))
+        Composer(haze, chat, chat.friend)
+    }
 }

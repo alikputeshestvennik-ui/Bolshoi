@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -151,11 +152,16 @@ fun App(voice: Voice) {
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task || scr == Scr.Active) Modifier else Modifier.systemBarsPadding().imePadding())) {
+        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task) Modifier else Modifier.systemBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { scr = it }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             // одна сцена полёта под чатом и задачей: из чата в задачу — тот же самолёт на той же полосе
             // кабина и 3D-полёт убраны: главный экран — Чат, идущие дела — на странице «Активные»
+            // кнопки разделов и ввод — на всех экранах (в чате и задаче они свои)
+            val withBar = scr != Scr.Home && scr != Scr.Journal && scr != Scr.Task
+            var barH by remember { mutableStateOf(0) }
+            val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
+            Box(Modifier.fillMaxSize().padding(bottom = if (withBar) barDp else 0.dp)) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
                 Scr.Active -> ActiveScreen(go)
@@ -173,6 +179,8 @@ fun App(voice: Voice) {
                 Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)
             }
+            }
+            if (withBar) GlobalBar(scr, go, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
             if (Panel.open) Panel.open = false
         }
     }

@@ -98,6 +98,8 @@ import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.focus.focusRequester
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -207,16 +209,25 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 }.padding(10.dp))
             }
         } else Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (search != null) {
-                Row(Modifier.weight(1f).height(52.dp).glass(haze, RoundedCornerShape(26.dp)).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            // поиск выезжает на место шапки Пилота и уезжает обратно
+            androidx.compose.animation.AnimatedContent(search != null, Modifier.weight(1f), label = "head",
+                transitionSpec = {
+                    val dir = if (targetState) 1 else -1
+                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280)) { it * dir } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { -it * dir / 2 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)))
+                }) { searching ->
+            if (searching) {
+                val fr = remember { androidx.compose.ui.focus.FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
+                Row(Modifier.fillMaxWidth().height(52.dp).glass(haze, RoundedCornerShape(26.dp)).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Search, null, tint = Muted, modifier = Modifier.size(20.dp)); HGap(10)
-                    BasicTextField(search.orEmpty(), { search = it }, Modifier.weight(1f), singleLine = true,
+                    BasicTextField(search.orEmpty(), { search = it }, Modifier.weight(1f).focusRequester(fr), singleLine = true,
                         textStyle = body(16), cursorBrush = SolidColor(Teal),
                         decorationBox = { inner -> if (search.isNullOrEmpty()) Text("Поиск по переписке", style = body(16, color = Muted)); inner() })
                     Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
                 }
             } else {
-                Row(Modifier.weight(1f).height(56.dp).glass(haze, RoundedCornerShape(28.dp))
+                Row(Modifier.fillMaxWidth().height(56.dp).glass(haze, RoundedCornerShape(28.dp))
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Avatar(44.dp, f = f)
                     HGap(10)
@@ -228,6 +239,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+            }
             }
         }
 
@@ -249,10 +261,9 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
             } else {
-                if (fid == Friends.MAIN && search == null) {
-                    ActiveButton(go)
-                    Spacer(Modifier.height(10.dp))
-                    NavBar(haze, Scr.Home, go) { search = "" }; Spacer(Modifier.height(10.dp))
+                if (fid == Friends.MAIN) {
+                    if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
+                    NavBar(haze, Scr.Home, go, searchOn = search != null) { search = if (search == null) "" else null }; Spacer(Modifier.height(10.dp))
                 }
                 Composer(haze, chat, f)
             }

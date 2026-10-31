@@ -90,7 +90,7 @@ fun ActiveScreen(go: (Scr) -> Unit) {
     val delegs = remember(t, Deleg.items.size) { Activity.delegs() }
     val watches = remember(t, Watch.items.size) { Activity.watches() }
     val total = (if (core.busy) 1 else 0) + delegs.size + watches.size
-    Column(Modifier.fillMaxSize().background(Th.c.bg).statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(Th.c.bg)) {
         Row(Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Активные", style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink), modifier = Modifier.weight(1f))
             Text(if (total == 0) "ничего не идёт" else "$total ${proc(total)}", style = body(12, color = Muted))
@@ -169,7 +169,6 @@ fun ActiveScreen(go: (Scr) -> Unit) {
                 PillBtn("В чат", true, Modifier) { go(Scr.Home) }
             }
         }
-        Box(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) { NavBar(remember { dev.chrisbanes.haze.HazeState() }, Scr.Active, go) }
     }
 }
 
