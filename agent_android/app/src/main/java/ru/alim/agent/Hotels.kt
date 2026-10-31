@@ -94,8 +94,11 @@ return t+'\n@@L@@\n'+L.slice(0,40).join('\n');
                 // Яндекс сначала рисует цены «от», а цены на даты дозагружает — ждём подпись «за N ночи» и не меньше ~10 с
                 var ticks = 0
                 val ready: (String) -> Boolean = { t -> ticks++
-                    t.count { it == '₽' } >= 8 && (s.host != "travel.yandex.ru" || (ticks >= 4 && Regex("за \\d+ ноч|ноч[иь]\\s").containsMatchIn(t)) || ticks >= 12) }
-                val raw = runCatching { WebReader.run(ctx, url, JS, ready, 45_000) }.getOrDefault("")
+                    t.count { it == '₽' } >= 8 && when (s.host) {
+                        "travel.yandex.ru" -> (ticks >= 4 && Regex("за \\d+ ноч|ноч[иь]\\s").containsMatchIn(t)) || ticks >= 12
+                        "ozon.ru" -> ticks >= 5   // Ozon дорисовывает выдачу долго
+                        else -> true } }
+                val raw = runCatching { WebReader.run(ctx, url, JS, ready, if (s.host == "ozon.ru") 60_000 else 45_000) }.getOrDefault("")
                 var cut = around(raw.substringBefore("@@L@@"))
                 var hl = links(raw, s.params(ci, co, g))
                 var link = url
@@ -105,7 +108,11 @@ return t+'\n@@L@@\n'+L.slice(0,40).join('\n');
                     val c2 = around(raw2.substringBefore("@@L@@"))
                     if (c2.isNotBlank()) { cut = "(без дат — цены «от», на даты уточняй на сайте)\n$c2"; link = page; hl = links(raw2, s.params(ci, co, g)) }
                 }
-                "## ${s.name}\nстраница города: $link\n" + cut.ifBlank { "цены не показались (сайт не дорисовал выдачу)" } +
+                "## ${s.name}\nстраница города: $link\n" + cut.ifBlank {
+                    // что сайт показал вместо выдачи (капча, «доступ ограничен», пусто) — чтобы было понятно, почему
+                    val seen = raw.substringBefore("@@L@@").replace(Regex("\\s+"), " ").trim().take(300)
+                    "цены не показались" + if (seen.isNotBlank()) ". На странице: «$seen»" else " — страница пустая"
+                } +
                     if (hl.isNotBlank()) "\nСсылки на отели (url для карточки и покупки бери ОТСЮДА — на сам отель, с датами):\n$hl" else ""
             }
         }.awaitAll()
