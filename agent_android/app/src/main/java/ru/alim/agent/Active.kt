@@ -95,7 +95,7 @@ fun ActiveScreen(go: (Scr) -> Unit) {
             Text("Активные", style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink), modifier = Modifier.weight(1f))
             Text(if (total == 0) "ничего не идёт" else "$total ${proc(total)}", style = body(12, color = Muted))
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current).padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (core.busy || core.pending != null) Block("Тяжёлая задача", 1) {
                 core.pending?.let { ConfirmCard(it, core) }
                 if (core.busy) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Card).border(1.5.dp, Teal, RoundedCornerShape(20.dp)).padding(14.dp),

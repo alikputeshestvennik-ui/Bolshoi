@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import dev.chrisbanes.haze.haze
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -161,7 +162,10 @@ fun App(voice: Voice) {
             val withBar = scr != Scr.Home && scr != Scr.Journal && scr != Scr.Task
             var barH by remember { mutableStateOf(0) }
             val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
-            Box(Modifier.fillMaxSize().padding(bottom = if (withBar) barDp else 0.dp)) {
+            // экран идёт под кнопками, как в чате: вокруг кнопок прозрачно и размыто, в конце списков — запас на высоту кнопок
+            val barHaze = remember { dev.chrisbanes.haze.HazeState() }
+            Box(Modifier.fillMaxSize().then(if (withBar) Modifier.background(Bg).haze(barHaze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f)) else Modifier)) {
+              androidx.compose.runtime.CompositionLocalProvider(LocalBarPad provides (if (withBar) barDp else 0.dp)) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
                 Scr.Active -> ActiveScreen(go)
@@ -180,7 +184,8 @@ fun App(voice: Voice) {
                 Scr.Digest -> DigestScreen(home)
             }
             }
-            if (withBar) GlobalBar(scr, go, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
+              }
+            if (withBar) GlobalBar(scr, go, barHaze, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
             if (Panel.open) Panel.open = false
         }
     }
@@ -208,6 +213,8 @@ fun Screen(title: String, back: () -> Unit, content: @Composable ColumnScope.() 
 }
 
 /** Навигация внутри настроек: раздел открывается своей страницей, а не раскрывается на месте. */
+val LocalBarPad = androidx.compose.runtime.compositionLocalOf { 0.dp }
+
 class SetNav { var page by mutableStateOf<String?>(null) }
 val LocalSetNav = androidx.compose.runtime.staticCompositionLocalOf<SetNav?> { null }
 

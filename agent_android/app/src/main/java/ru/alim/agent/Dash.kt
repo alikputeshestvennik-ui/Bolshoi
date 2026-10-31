@@ -694,13 +694,13 @@ private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): S
 
 /** Нижние кнопки разделов и строка ввода — на всех экранах, не только в чате. Отправил сообщение — переходим в чат. */
 @Composable
-fun GlobalBar(here: Scr, go: (Scr) -> Unit, modifier: Modifier = Modifier) {
+fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier = Modifier) {
     val chat = remember { Chat.of(Friends.MAIN) }
-    val haze = remember { HazeState() }
     val n0 = remember { chat.msgs.size }
     LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
-    Column(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Th.c.bg.copy(alpha = 0f), Th.c.bg.copy(alpha = 0.92f), Th.c.bg)))
-        .padding(horizontal = 10.dp).padding(top = 16.dp, bottom = 10.dp)) {
+    // как в чате: лёгкое затемнение снизу, сквозь которое видно экран, кнопки — стекло с размытием
+    Column(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Th.c.bg.copy(alpha = 0f), Th.c.bg.copy(alpha = 0.55f), Th.c.bg.copy(alpha = 0.8f))))
+        .padding(horizontal = 10.dp).padding(top = 24.dp, bottom = 10.dp)) {
         NavBar(haze, here, go) { ChatJump.searchReq = true; go(Scr.Home) }
         Spacer(Modifier.height(10.dp))
         Composer(haze, chat, chat.friend)

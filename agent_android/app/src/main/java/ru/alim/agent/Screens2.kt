@@ -81,7 +81,7 @@ fun MemoryScreen(back: () -> Unit) {
             IconTile(Icons.Filled.Add, "Запомнить", add, 52.dp)
         }
         Label("${facts.size} записей")
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (facts.isEmpty()) item { Text("Пока пусто. Скажи агенту «запомни, что…» или добавь сам.", style = body(14, color = Muted)) }
             items(facts, key = { it.id }) { f ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
@@ -115,7 +115,7 @@ fun DigestScreen(back: () -> Unit) {
     LaunchedEffect(dv) { busy = false }
 
     Screen("Сводка", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Сегодня увидел: уведомлений ${counts["notif"] ?: 0}, сообщений ${counts["msg"] ?: 0}, SMS ${counts["sms"] ?: 0}, писем ${counts["mail"] ?: 0}",
                 style = body(13, color = Muted))
             Label("Важное сегодня", Amber)

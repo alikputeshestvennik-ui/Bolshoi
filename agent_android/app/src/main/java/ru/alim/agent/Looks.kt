@@ -78,7 +78,7 @@ fun LookScreen(back: () -> Unit) {
     }
 
     Screen("Оформление", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Label("Цвет")
             var auto by remember { mutableStateOf(Th.auto) }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Th.c.card).padding(horizontal = 14.dp, vertical = 10.dp),
@@ -184,7 +184,7 @@ fun InitiativeScreen(back: () -> Unit) {
     }
 
     Screen("${Persona.name} пишет первым", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CardBox {
                 Sw("Доброе утро", "погода, кто писал ночью", morning) { morning = it; Prefs.initMorning = it }
                 if (morning) Field("Во сколько (час)", mh, KeyboardType.Number) { mh = it; it.toIntOrNull()?.takeIf { h -> h in 5..12 }?.let { h -> Prefs.morningHour = h } }

@@ -421,7 +421,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val df = SimpleDateFormat("d MMMM", Locale("ru"))
 
     Screen("История", back) {
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(4.dp)) {
                     listOf("Сегодня", "Неделя", "Месяц").forEachIndexed { i, t ->
@@ -525,7 +525,7 @@ fun RulesScreen(back: () -> Unit) {
     val recent = remember(nv) { NotifStore.recent().takeLast(6).reversed() }
 
     Screen("Автоответчик", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(AccentSoft).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -602,7 +602,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
     Screen(nav.page ?: "Настройки", { if (nav.page != null) nav.page = null else back() }) {
       androidx.compose.runtime.CompositionLocalProvider(LocalSetNav provides nav) {
         val sc = remember(nav.page) { androidx.compose.foundation.ScrollState(0) }
-        Column(Modifier.weight(1f).verticalScroll(sc), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(sc).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Пилот: память, характер, вид — отдельные экраны
             if (nav.page == null) SetGroup {
                 listOf(Triple("Что Пилот помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
