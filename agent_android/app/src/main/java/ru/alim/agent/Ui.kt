@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.shape.CircleShape
 import dev.chrisbanes.haze.haze
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -200,15 +201,37 @@ fun body(size: Int, weight: FontWeight = FontWeight.Normal, color: Color = Ink) 
 fun Label(text: String, color: Color = Muted, modifier: Modifier = Modifier) =
     Text(text.uppercase(), modifier, style = body(13, FontWeight.Bold, color).copy(letterSpacing = 1.sp))
 
+/** Шапка страницы — как в чате: прозрачный «бабл» с названием; «назад» — отдельной круглой кнопкой, только на вложенных страницах. */
 @Composable
-fun Screen(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            IconTile(Icons.AutoMirrored.Filled.ArrowBack, "Назад", back)
-            Text(title, style = TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink),
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
+fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "") {
+    val glassBg = Th.c.glass.copy(alpha = if (Th.c.dark) 0.55f else 0.62f)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.animation.AnimatedVisibility(back != null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()) {
+            Row {
+                Box(Modifier.size(56.dp).clip(CircleShape).background(glassBg).border(1.dp, Th.c.glassLine, CircleShape)
+                    .clickable(onClickLabel = "Назад") { back?.invoke() }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Ink, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+            }
         }
-        content()
+        Row(Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(28.dp)).background(glassBg).border(1.dp, Th.c.glassLine, RoundedCornerShape(28.dp))
+            .padding(start = 20.dp, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = body(17, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (trailing.isNotBlank()) Text(trailing, style = body(12, color = Muted), maxLines = 1)
+        }
+    }
+}
+
+@Composable
+fun Screen(title: String, back: () -> Unit, showBack: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 80.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+        // лента уходит под шапку плавно, как в чате
+        Box(Modifier.fillMaxWidth().height(96.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Th.c.bg, Th.c.bg.copy(alpha = 0.85f), Th.c.bg.copy(alpha = 0f)))))
+        ScreenHeader(title, if (showBack) back else null)
     }
 }
 

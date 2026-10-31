@@ -114,7 +114,7 @@ fun DigestScreen(back: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(dv) { busy = false }
 
-    Screen("Сводка", back) {
+    Screen("Сводки", back, showBack = false) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Сегодня увидел: уведомлений ${counts["notif"] ?: 0}, сообщений ${counts["msg"] ?: 0}, SMS ${counts["sms"] ?: 0}, писем ${counts["mail"] ?: 0}",
                 style = body(13, color = Muted))

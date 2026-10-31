@@ -420,7 +420,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val list = recs.filter { showBg || !it.background }.reversed()
     val df = SimpleDateFormat("d MMMM", Locale("ru"))
 
-    Screen("История", back) {
+    Screen("История", back, showBack = false) {
         LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(4.dp)) {
@@ -599,7 +599,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
     val nav = remember { SetNav() }
     androidx.activity.compose.BackHandler(enabled = nav.page != null) { nav.page = null }
-    Screen(nav.page ?: "Настройки", { if (nav.page != null) nav.page = null else back() }) {
+    Screen(nav.page ?: "Настройки", { nav.page = null }, showBack = nav.page != null) {
       androidx.compose.runtime.CompositionLocalProvider(LocalSetNav provides nav) {
         val sc = remember(nav.page) { androidx.compose.foundation.ScrollState(0) }
         Column(Modifier.weight(1f).verticalScroll(sc).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
