@@ -23,6 +23,8 @@ object Llm {
     val key: String get() = BuildConfig.GPTUNNEL_KEY.trim()
     /** Ключ AnyModel (секрет ANYMODEL_KEY на GitHub, в сборку попадает через BuildConfig — в коде его нет). */
     val anyKey: String get() = BuildConfig.ANYMODEL_KEY.trim()
+    /** Модели AnyModel, которые уже отвечали в этом запуске: их «не найдена» — сбой, а не опечатка. */
+    private val anyWorked: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private const val ANY_URL = "https://anymodel.org/v1/chat/completions"
     /** Модели AnyModel: «cx/gpt-6-astra», «cc/claude-opus-5-5», «ds/…», «ag/…», «kmc/…» или явно «any:название». */
     fun isAny(m: String) = m.startsWith("any:") || Regex("^(cx|cc|ds|ag|kmc)/", RegexOption.IGNORE_CASE).containsMatchIn(m)
@@ -150,19 +152,30 @@ object Llm {
             .also { if (reason) it.put("reasoning_effort", effort) }
         fun send(b: JSONObject) = anyHttp.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
             .post(b.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
-        var r = send(body(json, think))
-        if (r.first == 400) r = send(JSONObject().put("model", id).put("messages", messages))
-        if (r.first in setOf(429, 500, 502, 503, 504)) { Thread.sleep(2000); r = send(body(false, false)) }
+        var sent = body(json, think)
+        var r = send(sent)
+        if (r.first == 400) { sent = JSONObject().put("model", id).put("messages", messages); r = send(sent) }
+        fun notFound(x: Pair<Int, String>) = x.first !in 200..299 && (x.first == 404 ||
+            Regex("model.{0,30}(not found|does not exist|unknown)|unknown model|не найден", RegexOption.IGNORE_CASE).containsMatchIn(x.second))
+        // перегрузка, а у уже отвечавшей модели — и «не найдена»: это сбой на стороне AnyModel/провайдера, а не опечатка в названии
+        var tries = 0
+        while (tries < 3 && (r.first in setOf(429, 500, 502, 503, 504) || (notFound(r) && id in anyWorked))) {
+            Thread.sleep(3000L * (tries + 1)); r = send(sent); tries++
+        }
         if (r.first == 401 || r.first == 403) error("AnyModel: ключ не принят (${r.first}) — проверь секрет ANYMODEL_KEY")
-        if (r.first == 402 || Regex("insufficient|balance|quota", RegexOption.IGNORE_CASE).containsMatchIn(r.second) && r.first !in 200..299)
+        if (r.first == 402 || (r.first !in 200..299 && Regex("insufficient|balance|quota", RegexOption.IGNORE_CASE).containsMatchIn(r.second)))
             throw NoMoney("на AnyModel закончился баланс")
-        if (r.first == 404 || Regex("model.{0,20}not found|unknown model", RegexOption.IGNORE_CASE).containsMatchIn(r.second) && r.first !in 200..299)
-            error("AnyModel не знает модель «$id»" + similarAny(id).let { if (it.isEmpty()) "" else ". Похожие у него: ${it.joinToString(", ")}" })
+        if (notFound(r)) {
+            val sim = if (id in anyWorked) emptyList() else similarAny(id)
+            error("AnyModel не нашёл модель «$id»" + (if (id in anyWorked) " (раньше отвечала — сбой на их стороне, повторы не помогли)" else "") +
+                ". Ответ: ${r.second.take(160)}" + if (sim.isEmpty()) "" else ". Похожие у него: ${sim.joinToString(", ")}")
+        }
         if (r.first !in 200..299) error("AnyModel «$id» ответил ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
         val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
         val u = j.optJSONObject("usage") ?: JSONObject()
         lastUsed = model
+        anyWorked += id
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
 
