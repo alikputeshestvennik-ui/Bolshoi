@@ -157,7 +157,7 @@ object Llm {
         if (r.first == 402 || Regex("insufficient|balance|quota", RegexOption.IGNORE_CASE).containsMatchIn(r.second) && r.first !in 200..299)
             throw NoMoney("на AnyModel закончился баланс")
         if (r.first == 404 || Regex("model.{0,20}not found|unknown model", RegexOption.IGNORE_CASE).containsMatchIn(r.second) && r.first !in 200..299)
-            error("AnyModel не знает модель «$id»")
+            error("AnyModel не знает модель «$id»" + similarAny(id).let { if (it.isEmpty()) "" else ". Похожие у него: ${it.joinToString(", ")}" })
         if (r.first !in 200..299) error("AnyModel «$id» ответил ${r.first}: ${r.second.take(200)}")
         val j = JSONObject(r.second)
         val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
@@ -165,6 +165,18 @@ object Llm {
         lastUsed = model
         return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
     }
+
+    /** Названия из списка моделей AnyModel (GET /v1/models), похожие на то, что не нашлось — чтобы поправить название. */
+    fun similarAny(id: String): List<String> = runCatching {
+        val r = anyHttp.newCall(Request.Builder().url("https://anymodel.org/v1/models").header("Authorization", "Bearer $anyKey").get().build())
+            .execute().use { it.code to (it.body?.string() ?: "") }
+        if (r.first !in 200..299) return@runCatching emptyList()
+        val a = JSONObject(r.second).optJSONArray("data") ?: return@runCatching emptyList()
+        val all = (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("id")?.takeIf { s -> s.isNotBlank() } }
+        fun words(s: String) = s.lowercase().substringAfter('/').split(Regex("[^a-z0-9]+")).filter { it.length >= 2 }.toSet()
+        val want = words(id)
+        all.map { it to words(it).intersect(want).size }.filter { it.second >= 1 }.sortedByDescending { it.second }.take(8).map { it.first }
+    }.getOrDefault(emptyList())
 
     private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val k = YaCloud.llmKey
