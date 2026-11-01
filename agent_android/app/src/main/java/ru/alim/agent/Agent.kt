@@ -404,7 +404,7 @@ object Agent {
                         val alt = (listOf(fast(), smart(), Prefs.bgModel).filter { Llm.isYandex(it) || Llm.isGoogle(it) } + "yc:aliceai-llm-flash")
                             .firstOrNull { it != m && (Llm.isYandex(it) || Llm.isGoogle(it)) }?.takeIf { Llm.isGoogle(it) || YaCloud.llmKey.isNotBlank() } ?: throw e
                         noMoneyAlt = alt
-                        steps.add(Step("На GPTunnel нет денег — дальше задачу делает ${Agent.short(alt)}").also { it.done = true })
+                        steps.add(Step("На ${if (Llm.isAny(m)) "AnyModel" else "GPTunnel"} нет денег — дальше задачу делает ${Agent.short(alt)}").also { it.done = true })
                         m = alt; model = alt
                         withContext(Dispatchers.IO) { Llm.chat(alt, msgs, maxTok) }
                     }
@@ -720,6 +720,7 @@ object Agent {
     }
 
     fun short(m: String): String = when {
+        Llm.isAny(m) -> m.removePrefix("any:").substringAfter('/').take(24)   // у AnyModel важна точная версия: deepseek-v4-pro ≠ …-flash-vision
         m.contains("haiku", true) -> "Haiku"
         m.contains("sonnet", true) -> "Sonnet"
         m.contains("opus", true) -> "Opus"

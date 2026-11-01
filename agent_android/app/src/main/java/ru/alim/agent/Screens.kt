@@ -742,6 +742,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     })
                 }
                 if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
+                if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
                 Text("Выбери модель для каждой роли. Яндекс — бесплатно и без VPN, Google — бесплатно с VPN, Claude — платно, но самый толковый.", style = body(12, color = Muted), lineHeight = 16.sp)
                 ModelEditor("Чат — обычные сообщения и простые просьбы", "fast", fast, fastIn, fastOut,
                     { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
@@ -855,12 +856,23 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
         Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
         Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
         Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
-    ) + g.reversed()
+    ) + g.reversed() + listOf(
+        // AnyModel (ключ ANYMODEL_KEY): цены впиши после теста — пока 0
+        Triple("GPT-6 Astra · Any", "cx/gpt-6-astra", "0" to "0"),
+        Triple("GPT-6.1 Sol · Any", "cx/gpt-6.1-sol", "0" to "0"),
+        Triple("GPT-6.1 Terra · Any", "cx/gpt-6.1-terra", "0" to "0"),
+        Triple("Claude Opus 5.5 · Any", "cc/claude-opus-5-5", "0" to "0"),
+        Triple("Claude Sonnet 5 · Any", "cc/claude-sonnet-5", "0" to "0"),
+        Triple("DeepSeek V4 Pro · Any", "ds/deepseek-v4-pro", "0" to "0"),
+        Triple("DeepSeek V4 Flash Vision · Any", "ds/deepseek-v4-flash-vision", "0" to "0"),
+        Triple("Gemini 3.1 Pro Low · Any", "ag/gemini-3.1-pro-low", "0" to "0"),
+        Triple("K3.1 Pro · Any", "kmc/k3.1-pro", "0" to "0"),
+    )
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             presets.forEach { (label, m, p) ->
-                val on = model.equals(m, true) || (m.startsWith("claude") && !Llm.isYandex(model) && model.contains(m.substringAfterLast('-'), true))
+                val on = model.equals(m, true) || (m.startsWith("claude") && !Llm.isYandex(model) && !Llm.isAny(model) && model.contains(m.substringAfterLast('-'), true))
                 Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Line else Bg)
                     .clickable { onModel(m); onIn(p.first); onOut(p.second) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Text(label, style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
@@ -870,10 +882,15 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
         val note = when {
             Llm.isGoogle(model) -> "бесплатно · нужен VPN · сверх лимита ответит Claude Haiku"
             Llm.isYandex(model) -> "бесплатно · без VPN"
+            Llm.isAny(model) -> "платно · AnyModel · расходы в «Истории» считаются по цене ниже (₽ за 1000 токенов)"
             else -> "платно · с баланса gptunnel"
         }
         Text(note, style = body(12, color = Muted))
-        if (slot == "smart" && !model.contains("claude", true))
+        if (Llm.isAny(model) && slot != "bg") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) { Field("Вход, ₽/1000 ток.", pin, KeyboardType.Decimal) { onIn(it) } }
+            Box(Modifier.weight(1f)) { Field("Выход, ₽/1000 ток.", pout, KeyboardType.Decimal) { onOut(it) } }
+        }
+        if (slot == "smart" && !model.contains("claude", true) && !Llm.isAny(model))
             Text("Для сложных дел лучше Claude Sonnet — бесплатные модели могут недоделывать длинные задачи.", style = body(12, color = Amber), lineHeight = 16.sp)
     }
 }

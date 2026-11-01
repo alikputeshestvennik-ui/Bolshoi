@@ -19,6 +19,11 @@ object Llm {
     @Volatile private var bearer = false
 
     val key: String get() = BuildConfig.GPTUNNEL_KEY.trim()
+    /** Ключ AnyModel (секрет ANYMODEL_KEY на GitHub, в сборку попадает через BuildConfig — в коде его нет). */
+    val anyKey: String get() = BuildConfig.ANYMODEL_KEY.trim()
+    private const val ANY_URL = "https://anymodel.org/v1/chat/completions"
+    /** Модели AnyModel: «cx/gpt-6-astra», «cc/claude-opus-5-5», «ds/…», «ag/…», «kmc/…» или явно «any:название». */
+    fun isAny(m: String) = m.startsWith("any:") || Regex("^(cx|cc|ds|ag|kmc)/", RegexOption.IGNORE_CASE).containsMatchIn(m)
     /** Какая модель реально ответила на последний запрос (Google при лимите тихо переключается на соседнюю или запасную). */
     @Volatile var lastUsed = ""
     /** Когда GPTunnel последний раз сказал «нет денег» — 15 минут его не трогаем как запасной. */
@@ -128,6 +133,36 @@ object Llm {
         return chatRaw(fb, messages, maxTokens, json)
     }
 
+    /**
+     * AnyModel (формат OpenAI). Для «рук» просим reasoning_effort=high (по духу — максимум тщательности);
+     * не все модели принимают json-режим и reasoning_effort — тогда повторяем голым запросом.
+     */
+    private fun anyChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+        if (anyKey.isBlank()) error("В сборке нет ключа ANYMODEL_KEY — проверь секрет на GitHub и пересобери")
+        val id = model.removePrefix("any:")
+        val think = model == Prefs.smartModel
+        fun body(js: Boolean, reason: Boolean) = JSONObject().put("model", id).put("messages", messages)
+            .put("max_tokens", maxTokens + if (reason) 4000 else 1500)   // рассуждения тоже считаются в лимит
+            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
+            .also { if (reason) it.put("reasoning_effort", "high") }
+        fun send(b: JSONObject) = http.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
+            .post(b.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
+        var r = send(body(json, think))
+        if (r.first == 400) r = send(JSONObject().put("model", id).put("messages", messages))
+        if (r.first in setOf(429, 500, 502, 503, 504)) { Thread.sleep(2000); r = send(body(false, false)) }
+        if (r.first == 401 || r.first == 403) error("AnyModel: ключ не принят (${r.first}) — проверь секрет ANYMODEL_KEY")
+        if (r.first == 402 || Regex("insufficient|balance|quota", RegexOption.IGNORE_CASE).containsMatchIn(r.second) && r.first !in 200..299)
+            throw NoMoney("на AnyModel закончился баланс")
+        if (r.first == 404 || Regex("model.{0,20}not found|unknown model", RegexOption.IGNORE_CASE).containsMatchIn(r.second) && r.first !in 200..299)
+            error("AnyModel не знает модель «$id»")
+        if (r.first !in 200..299) error("AnyModel «$id» ответил ${r.first}: ${r.second.take(200)}")
+        val j = JSONObject(r.second)
+        val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
+        val u = j.optJSONObject("usage") ?: JSONObject()
+        lastUsed = model
+        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), 0.0)
+    }
+
     private fun yandexChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val k = YaCloud.llmKey
         if (k.isBlank()) error("нет ключа Yandex Cloud (YANDEX_API_KEY)")
@@ -173,7 +208,8 @@ object Llm {
     }
 
     private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply =
-        if (isYandex(model)) yandexChat(model, messages, maxTokens, json) else try {
+        if (isAny(model)) anyChat(model, messages, maxTokens, json)
+        else if (isYandex(model)) yandexChat(model, messages, maxTokens, json) else try {
             chatOnce(model, messages, maxTokens, json)
         } catch (e: ModelNotFound) {
             val fixed = findModel(model) ?: error("gptunnel не знает модель «$model», и подобрать название не вышло — впиши его в «Подключениях»")
@@ -258,6 +294,10 @@ object Llm {
                 if (k.isBlank()) error("нет ключа Google")
                 streamSse("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
                     "Bearer $k", model.removePrefix("google:"), messages, maxTokens, onDelta)
+            }
+            isAny(model) -> {
+                if (anyKey.isBlank()) error("нет ключа AnyModel")
+                streamSse(ANY_URL, "Bearer $anyKey", model.removePrefix("any:"), messages, maxTokens, onDelta)
             }
             else -> {
                 if (key.isBlank()) error("нет ключа gptunnel")

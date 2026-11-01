@@ -74,6 +74,7 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           GPTUNNEL_KEY: ${{ secrets.GPTUNNEL_KEY }}
+          ANYMODEL_KEY: ${{ secrets.ANYMODEL_KEY }}
           YOOMONEY_CLIENT_ID: ${{ secrets.YOOMONEY_CLIENT_ID }}
           YANDEX_SEARCH_KEY: ${{ secrets.YANDEX_SEARCH_KEY }}
           YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
