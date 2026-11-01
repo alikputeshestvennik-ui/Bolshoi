@@ -886,6 +886,20 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
             else -> "платно · с баланса gptunnel"
         }
         Text(note, style = body(12, color = Muted))
+        if (Llm.isAny(model) && slot == "smart") {
+            var eff by remember { mutableStateOf(Prefs.effort) }
+            Text("Глубина рассуждений", style = body(13, FontWeight.SemiBold))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("low" to "Быстро", "medium" to "Средне", "high" to "Глубоко").forEach { (v, label) ->
+                    Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (eff == v) Line else Bg)
+                        .clickable { eff = v; Prefs.effort = v }, contentAlignment = Alignment.Center) {
+                        Text(label, style = body(13, FontWeight.SemiBold, if (eff == v) Ink else Muted))
+                    }
+                }
+            }
+            Text(when (eff) { "low" -> "Шаг — секунды. Для простых дел."; "medium" -> "Шаг — десятки секунд. Золотая середина."
+                else -> "Шаг может занимать минуты, вся задача — час и дольше. Для особо важных дел." }, style = body(12, color = Muted), lineHeight = 16.sp)
+        }
         if (Llm.isAny(model) && slot != "bg") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { Field("Вход, ₽/1000 ток.", pin, KeyboardType.Decimal) { onIn(it) } }
             Box(Modifier.weight(1f)) { Field("Выход, ₽/1000 ток.", pout, KeyboardType.Decimal) { onOut(it) } }

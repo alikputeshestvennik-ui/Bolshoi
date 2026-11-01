@@ -13,6 +13,8 @@ object Llm {
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(200, TimeUnit.SECONDS).callTimeout(300, TimeUnit.SECONDS).build()   // тяжёлый ход DeepSeek с большим контекстом думает дольше 2 минут
     private val JSON = "application/json; charset=utf-8".toMediaType()
+    /** Рассуждающие модели AnyModel отвечают целиком и долго (минуты) — таймауты длиннее общих. */
+    private val anyHttp by lazy { http.newBuilder().readTimeout(600, TimeUnit.SECONDS).callTimeout(900, TimeUnit.SECONDS).build() }
     private const val BASE = "https://gptunnel.ru/v1"
 
     /** Как gptunnel принимает ключ: «Authorization: ключ» или «Bearer ключ» — запоминаем сработавший. */
@@ -141,11 +143,12 @@ object Llm {
         if (anyKey.isBlank()) error("В сборке нет ключа ANYMODEL_KEY — проверь секрет на GitHub и пересобери")
         val id = model.removePrefix("any:")
         val think = model == Prefs.smartModel
+        val effort = Prefs.effort.takeIf { it in setOf("low", "medium", "high") } ?: "medium"
         fun body(js: Boolean, reason: Boolean) = JSONObject().put("model", id).put("messages", messages)
-            .put("max_tokens", maxTokens + if (reason) 4000 else 1500)   // рассуждения тоже считаются в лимит
+            .put("max_tokens", maxTokens + if (reason) (if (effort == "high") 8000 else 4000) else 1500)   // рассуждения тоже считаются в лимит
             .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
-            .also { if (reason) it.put("reasoning_effort", "high") }
-        fun send(b: JSONObject) = http.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
+            .also { if (reason) it.put("reasoning_effort", effort) }
+        fun send(b: JSONObject) = anyHttp.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
             .post(b.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
         var r = send(body(json, think))
         if (r.first == 400) r = send(JSONObject().put("model", id).put("messages", messages))
