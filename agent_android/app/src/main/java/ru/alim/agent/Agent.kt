@@ -246,7 +246,7 @@ object Agent {
             append("- YouTube (поиск по всему): ролики — youtube_search (свежие — period week/today), открыть — youtube_open. Интересы Алима бери из ПАМЯТИ.\n")
             append("- Личный YouTube Алима (его аккаунт): новое из подписок — yt_new (days, favs=true это любимые каналы), его лайки — yt_liked, плейлисты — yt_playlists, добавить видео в плейлист — yt_playlist_add. Видео играют прямо в чате, приложение YouTube НЕ открывай. Если не подключён — скажи открыть настройки → YouTube.\n")
             append("- Маршрут, «как доехать», «сколько ехать» — maps_route (по умолчанию на машине, «на автобусе» — mt, «пешком» — pd). Места на карте — maps_search.\n")
-            append("- Документ, список, письмо, договор — file_create type docx; таблица, бюджет, учёт, расчёт — type xlsx с формулами. Поправить файл — file_read, затем file_create с изменениями. Не вставляй содержимое файла в ответ — карточка будет на экране.\n")
+            append("- Документ, список, письмо, договор — file_create type docx; таблица, бюджет, учёт, расчёт — type xlsx с формулами. Поправить файл — file_read, затем file_create с изменениями. Не вставляй содержимое файла в ответ — карточка будет на экране. Имя файла (name) — по теме ЭТОЙ задачи (города, даты), никогда не бери имя файла из прошлых задач в чате. После создания или обновления файла итоговый ответ всё равно пиши полностью (вывод, цифры, что не нашёл, \"best\", \"report\"), а не одну строку про файл.\n")
             append("- Приложения: найти или обновить — play_open. Фильмы и сериалы KION — kion_open.\n")
             append("- Сравнить технику / узнать характеристики (вес, батарея, экран, камера) — это НЕ покупка: ищи web_search «модель характеристики» или «модель обзор», читай сайт производителя или обзор (web_read). Цену в России — один web_search «модель цена» или один shop_search на модель; карточки товаров тут не нужны. Вывод «что лучше» дай всегда — по тому, что нашёл, с оговоркой.\n")
             append("- «Свяжись с …», «уточни у … и скажи мне», «договорись с …» — это ПОРУЧЕНИЕ: инструмент delegate (в goal перескажи задачу полностью, со всеми условиями и цифрами Алима; фото со скрепки приложатся сами). Сам переписку не веди и tg_send/sms_send для этого не используй. После запуска коротко скажи Алиму, что поручение идёт и итог придёт сюда.\n")
@@ -370,6 +370,7 @@ object Agent {
             var bestRetry = 0
             var lazyRetry = 0
             var reportRetry = 0
+            var reportStale = false     // после доработки по проверке прежняя карточка могла устареть — просим свежую
             var tableRetry = 0
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
@@ -467,7 +468,11 @@ object Agent {
                         final = say.ifBlank { "Готово." }
                         val bestO = j.optJSONObject("best")?.takeIf { b -> b.optString("name").isNotBlank() && b.optString("value").isNotBlank() }
                         val repO = j.optJSONObject("report")?.takeIf { it.length() > 0 && (it.optString("title").isNotBlank() || it.has("route") || it.has("compare")) }
-                        lastBest = if (bestO == null && repO == null) "" else (bestO ?: JSONObject()).also { if (repO != null) it.put("report", repO) }.toString()
+                        // новый финал без карточки (после «Доделываю…») не стирает прежнюю; свежая карточка заменяет старую
+                        if (bestO != null || repO != null) {
+                            lastBest = (bestO ?: Rich.parse(lastBest)?.takeIf { p -> p.optString("name").isNotBlank() } ?: JSONObject()).also { if (repO != null) it.put("report", repO) else Rich.parse(lastBest)?.optJSONObject("report")?.let { old -> it.put("report", old) } }.toString()
+                            if (repO != null) reportStale = false
+                        }
                         lastButtons = j.optJSONArray("buttons")?.let { a -> (0 until minOf(3, a.length())).map { a.optString(it).trim() } }
                             .orEmpty().filter { it.isNotBlank() && it.length <= 40 }
                         break
@@ -572,7 +577,7 @@ object Agent {
                     final = null; continue
                 }
                 // тяжёлая задача без карточки-отчёта — просим один раз дописать «report» к тому же ответу
-                if (final != null && hard0 && !follow && reportRetry < 1 && (calls.values.sum() >= 4 || files.isNotEmpty()) && Rich.parse(lastBest)?.optJSONObject("report") == null) {
+                if (final != null && hard0 && !follow && reportRetry < 1 && (calls.values.sum() >= 4 || files.isNotEmpty()) && (reportStale || Rich.parse(lastBest)?.optJSONObject("report") == null)) {
                     reportRetry++
                     msgs.put(msg("user", "Повтори финальный JSON (tool null, тот же \"say\", тот же \"best\" если был) и добавь \"report\" — карточку-отчёт по формату из инструкции (title, lead, route, totals, compare, places, weather, sources, ask — только блоки с найденными данными)."))
                     final = null; continue
@@ -585,6 +590,7 @@ object Agent {
                 val miss = runCatching { audit(auditAsk, fin, steps.map { it.text }, files.map { it.name }) }.getOrNull()
                 if (miss.isNullOrBlank()) break
                 steps.add(Step("Доделываю: ${miss.take(50)}").also { it.done = true })
+                reportStale = true; reportRetry = 0
                 msgs.put(msg("user", "ПРОВЕРКА ПЕРЕД ОТВЕТОМ: просьба Алима выполнена не полностью — не хватает: $miss. Доделай это сейчас (инструментами), затем дай ПОЛНЫЙ ответ. Файл уже создан — обнови ЕГО (тот же name), второй не делай. Не получается — честно скажи, чего именно не хватает и почему."))
                 final = null
                 }
