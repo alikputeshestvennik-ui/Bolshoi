@@ -1001,7 +1001,10 @@ object Tools {
                 }
                 Agent.cur().files.add(0, ref)
             }
+            // итоги по формулам считаем сами и отдаём модели: суммы в ответе должны совпасть с таблицей (Sonnet написала 40 325 вместо 39 775)
+            val sums = if (type == "xlsx") runCatching { formulaTotals(a.optJSONArray("sheets")) }.getOrDefault("") else ""
             "создал «${ref.name}» в Загрузки/Свои — карточка на экране, нажатием открывается, там же «Отправить»." +
+                (if (sums.isNotBlank()) "\nФормулы в таблице дают (именно эти суммы пиши в ответе и карточке):\n$sums" else "") +
                 (if (badRefs.isNotEmpty()) "\nВНИМАНИЕ: формулы ссылаются на ячейки с ТЕКСТОМ (${badRefs.distinct().take(6).joinToString()}) — Excel посчитает их как 0, итог неверный. Пересоздай файл (тот же name): числа (цены) — отдельными столбцами только числом, пояснения — в соседнем столбце." else "")
         },
 
@@ -1185,6 +1188,93 @@ object Tools {
     }
 
     /** Срок из просьбы Алима («вернуться до 8:00 утра 20 июня») — time_calc сверяет с ним сам, не полагаясь на модель. */
+    /** Считает формулы таблицы (числа, ссылки A1 и Лист!A1, SUM, + - * /, скобки) — «Итог!C7 «ИТОГО» = 39 775». */
+    fun formulaTotals(sheets: org.json.JSONArray?): String {
+        if (sheets == null) return ""
+        val fe = FormulaEval(sheets)
+        return buildString {
+            var n = 0
+            for (sn in fe.order) { val rows = fe.grid[sn.lowercase()] ?: continue
+                for (r in 0 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                    for (c in 0 until row.length()) { val f = row.opt(c) as? String ?: continue
+                        if (!f.startsWith("=") || n >= 14) continue
+                        val v = fe.cell(sn.lowercase(), c, r) ?: continue
+                        val lab = (row.opt(0) as? String)?.take(40).orEmpty()
+                        append("$sn!${'A' + c}${r + 1}").append(if (lab.isNotBlank()) " «$lab»" else "").append(" = ")
+                            .append(Math.round(v).toString().reversed().chunked(3).joinToString(" ").reversed()).append('\n'); n++
+                    } } }
+        }.trim()
+    }
+
+    private class FormulaEval(sheets: org.json.JSONArray) {
+        val grid = HashMap<String, org.json.JSONArray>()
+        val order = ArrayList<String>()
+        private val memo = HashMap<String, Double?>()
+        private val busy = HashSet<String>()
+        init {
+            for (k in 0 until sheets.length()) sheets.optJSONObject(k)?.let { o ->
+                val n = o.optString("name").ifBlank { "Лист${k + 1}" }; grid[n.lowercase()] = o.optJSONArray("rows") ?: org.json.JSONArray(); order += n }
+        }
+        private fun colIdx(c: String) = c.uppercase().fold(0) { acc, ch -> acc * 26 + (ch - 'A' + 1) } - 1
+
+        fun cell(sheet: String, col: Int, row: Int): Double? {
+            val key = "$sheet!$col:$row"
+            if (memo.containsKey(key)) return memo[key]
+            if (!busy.add(key)) return null
+            val v = grid[sheet]?.optJSONArray(row)?.opt(col)
+            val r: Double? = when (v) {
+                is Number -> v.toDouble()
+                is String -> if (v.startsWith("=")) runCatching { P(v.drop(1), sheet).run() }.getOrNull()
+                    else v.replace(Regex("[\\s\\u00A0\\u202F₽]"), "").replace(',', '.').toDoubleOrNull()
+                else -> null
+            }
+            busy.remove(key); memo[key] = r; return r
+        }
+
+        /** Разбор одной формулы: сумма → произведение → множитель (число, ссылка, диапазон в SUM, скобки). */
+        private inner class P(val t: String, val sheet: String) {
+            var i = 0
+            fun run(): Double? { val v = expr(); return if (i >= t.length) v else null }
+            private fun ws() { while (i < t.length && t[i] == ' ') i++ }
+            private fun expr(): Double? { var v = term() ?: return null
+                while (true) { ws(); if (i >= t.length) return v
+                    when (t[i]) { '+' -> { i++; v += term() ?: return null }; '-' -> { i++; v -= term() ?: return null }; else -> return v } } }
+            private fun term(): Double? { var v = factor() ?: return null
+                while (true) { ws(); if (i >= t.length) return v
+                    when (t[i]) { '*' -> { i++; v *= factor() ?: return null }; '/' -> { i++; val d = factor() ?: return null; if (d == 0.0) return null; v /= d }; else -> return v } } }
+            private fun ref(): Triple<String, Int, Int>? {
+                val m = Regex("^(?:'([^']+)'!|([\\p{L}\\p{N}_]+)!)?\\$?([A-Za-z]{1,2})\\$?(\\d+)").find(t.substring(i)) ?: return null
+                i += m.value.length
+                val sh = (m.groupValues[1].ifBlank { m.groupValues[2] }).ifBlank { sheet }.lowercase()
+                return Triple(sh, colIdx(m.groupValues[3]), m.groupValues[4].toInt() - 1)
+            }
+            private fun factor(): Double? {
+                ws(); if (i >= t.length) return null
+                if (t[i] == '-') { i++; return factor()?.let { -it } }
+                if (t[i] == '(') { i++; val v = expr(); ws(); if (i < t.length && t[i] == ')') i++ else return null; return v }
+                Regex("^\\d+(?:[.,]\\d+)?").find(t.substring(i))?.let { i += it.value.length; return it.value.replace(',', '.').toDouble() }
+                if (t.regionMatches(i, "SUM(", 0, 4, ignoreCase = true)) {
+                    i += 4; var sum = 0.0
+                    while (true) {
+                        ws(); val a = ref()
+                        if (a != null) {
+                            ws()
+                            if (i < t.length && t[i] == ':') { i++; val b = ref() ?: return null
+                                for (r in minOf(a.third, b.third)..maxOf(a.third, b.third)) for (c in minOf(a.second, b.second)..maxOf(a.second, b.second)) sum += cell(a.first, c, r) ?: 0.0
+                            } else sum += cell(a.first, a.second, a.third) ?: 0.0
+                        } else sum += expr() ?: return null
+                        ws(); if (i >= t.length) return null
+                        if (t[i] == ';' || t[i] == ',') { i++; continue }
+                        if (t[i] == ')') { i++; return sum }
+                        return null
+                    }
+                }
+                val r = ref() ?: return null
+                return cell(r.first, r.second, r.third) ?: 0.0
+            }
+        }
+    }
+
     @Volatile var deadline: java.time.LocalDateTime? = null
     fun parseDeadline(text: String) {
         deadline = runCatching {
