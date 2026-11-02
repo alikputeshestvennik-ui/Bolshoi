@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -362,9 +363,14 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 SecLabel(r.optString("weather_title").ifBlank { "Погода" })
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     wx.forEach { d ->
-                        Column(Modifier.width(68.dp).clip(RoundedCornerShape(14.dp)).background(Th.c.bg).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(d.optString("day"), style = body(11, color = Muted))
-                            Text(d.optString("t"), style = TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+                        // длинный текст («Пермь −5…0°, Уфа −7…0°») не режем по слогам: плитка шире, шрифт мельче
+                        val tt = d.optString("t"); val dd = d.optString("day")
+                        val longT = tt.length > 7 || dd.length > 10
+                        Column(Modifier.then(if (longT) Modifier.widthIn(min = 68.dp, max = 170.dp) else Modifier.width(68.dp)).clip(RoundedCornerShape(14.dp)).background(Th.c.bg)
+                            .padding(vertical = 10.dp, horizontal = if (longT) 10.dp else 0.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(dd, style = body(11, color = Muted), textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
+                            Text(tt, style = TextStyle(fontFamily = Fonts.display, fontSize = (if (tt.length <= 7) 17 else if (tt.length <= 14) 14 else 12).sp, fontWeight = FontWeight.SemiBold, color = Ink),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 3)
                             if (d.optString("night").isNotBlank()) Text("ночью ${d.optString("night")}", style = body(10, color = Muted))
                         }
                     }

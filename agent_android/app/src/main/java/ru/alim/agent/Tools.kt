@@ -983,6 +983,8 @@ object Tools {
                     }
                 }
             } }
+            // «=15360+15840» → «=D2+D5», числа листа «Итог» → ссылки на ячейки других листов: поправил цену — пересчиталось везде
+            if (type == "xlsx") runCatching { linkTotals(a.optJSONArray("sheets")) }
             // таблица из одних заголовков — не сохраняем и не даём сказать «таблица готова»
             if (type == "xlsx") a.optJSONArray("sheets")?.let { sh ->
                 val dataRows = (0 until sh.length()).sumOf { k -> ((sh.optJSONObject(k)?.optJSONArray("rows")?.length() ?: 0) - 1).coerceAtLeast(0) }
@@ -1204,6 +1206,52 @@ object Tools {
                             .append(Math.round(v).toString().reversed().chunked(3).joinToString(" ").reversed()).append('\n'); n++
                     } } }
         }.trim()
+    }
+
+    /** Итоги-числа превращаем в ссылки: «=15360+15840» → «=D2+D5»; на листе «Итог» число, равное ячейке другого листа, → «='Отели'!D2». */
+    fun linkTotals(sheets: org.json.JSONArray?) {
+        if (sheets == null) return
+        fun col(c: Int): String = if (c < 26) "${'A' + c}" else "${'A' + (c / 26 - 1)}${'A' + c % 26}"
+        val names = (0 until sheets.length()).map { k -> sheets.optJSONObject(k)?.optString("name").orEmpty().ifBlank { "Лист${k + 1}" } }
+        val sumRe = Regex("^=\\s*(\\d+(?:\\.\\d+)?(?:\\s*\\+\\s*\\d+(?:\\.\\d+)?)+)\\s*$")
+        for (k in 0 until sheets.length()) {
+            val rows = sheets.optJSONObject(k)?.optJSONArray("rows") ?: continue
+            for (r in 1 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                for (c in 1 until row.length()) {
+                    val f = row.opt(c) as? String ?: continue
+                    val m = sumRe.find(f) ?: continue
+                    val nums = m.groupValues[1].split('+').map { it.trim().toDouble() }
+                    val used = HashSet<Int>()
+                    val refs = nums.map { n -> (1 until r).firstOrNull { q -> q !in used && (rows.optJSONArray(q)?.opt(c) as? Number)?.toDouble() == n }?.also { used += it } }
+                    if (refs.all { it != null }) row.put(c, "=" + refs.joinToString("+") { "${col(c)}${it!! + 1}" })
+                }
+            }
+        }
+        val fe = FormulaEval(sheets)
+        for (k in 0 until sheets.length()) {
+            if (!Regex("итог|сводк|всего", RegexOption.IGNORE_CASE).containsMatchIn(names[k])) continue
+            val rows = sheets.optJSONObject(k)?.optJSONArray("rows") ?: continue
+            for (r in 1 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                for (c in 1 until row.length()) {
+                    val v = (row.opt(c) as? Number)?.toDouble() ?: continue
+                    if (v < 100) continue
+                    var best: String? = null; var bestF = false; var count = 0
+                    for (j in 0 until sheets.length()) { if (j == k) continue
+                        val rr = sheets.optJSONObject(j)?.optJSONArray("rows") ?: continue
+                        for (q in 1 until rr.length()) { val ro = rr.optJSONArray(q) ?: continue
+                            for (cc in 0 until ro.length()) {
+                                val isF = (ro.opt(cc) as? String)?.startsWith("=") == true
+                                if (!isF && ro.opt(cc) !is Number) continue
+                                val cv = fe.cell(names[j].lowercase(), cc, q) ?: continue
+                                if (kotlin.math.abs(cv - v) < 0.5) { count++
+                                    if (best == null || (isF && !bestF)) { best = "='${names[j]}'!${col(cc)}${q + 1}"; bestF = isF } }
+                            }
+                        }
+                    }
+                    if (best != null && (count == 1 || bestF)) row.put(c, best)
+                }
+            }
+        }
     }
 
     private class FormulaEval(sheets: org.json.JSONArray) {
