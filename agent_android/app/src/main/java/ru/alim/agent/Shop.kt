@@ -164,16 +164,29 @@ object Shop {
   var i=b.search(/Выберите размер|Размер|РАЗМЕР/);
   var h=document.querySelector('h1'); var pm=b.match(/(\d[\d\s\u2009\u00a0]*)\s?₽/);
   var im=document.querySelector('img[src*="ozone"],img[srcset]');
-  // кнопки размеров: неактивная (disabled, полупрозрачная, зачёркнутая) — размер раскупили
-  var sz={};
-  document.querySelectorAll('button,div,span,label,a').forEach(function(e){
-    if(e.children.length>1) return; var t=(e.innerText||'').trim();
-    if(!/^(\d{2}(?:[-–\/]\d{2})?|\d?X{0,3}[SML]|XXL|XXXL)$/i.test(t)) return;
-    var r=e.getBoundingClientRect(); if(r.width<16||r.width>150||r.height<16||r.height>90) return;
-    var p=e.closest('button,[role=button],[aria-disabled],[disabled]')||e; var st=getComputedStyle(e), ps=getComputedStyle(p);
-    var off=p.disabled===true||p.getAttribute('aria-disabled')==='true'||parseFloat(st.opacity)<0.6||parseFloat(ps.opacity)<0.6||/line-through/.test((st.textDecorationLine||'')+(ps.textDecorationLine||''));
-    if(sz[t]===undefined||(sz[t]==='off'&&!off)) sz[t]=off?'off':'ok';
+  // кнопки размеров: неактивная (disabled, полупрозрачная, зачёркнутая, бледнее остальных) — размер раскупили
+  var cand=[];
+  document.querySelectorAll('button,div,span,label,a,li').forEach(function(e){
+    if(e.children.length>2) return; var t=(e.innerText||'').replace(/\s+/g,' ').trim();
+    if(t.length>14||!/^(\d{2}(?:[-–\/]\d{2})?(?:\s*\(?(?:RU|RUS|EU)\)?)?|\d?X{0,3}[SML](?:\s*\(\d{2}(?:[-–]\d{2})?\))?|XXL|XXXL)$/i.test(t)) return;
+    var r=e.getBoundingClientRect(); if(r.width<14||r.width>170||r.height<14||r.height>100) return;
+    var off=false, op=1, n=e;
+    for(var d=0;d<4&&n;d++){ var cs=getComputedStyle(n); op*=parseFloat(cs.opacity||'1');
+      if(n.disabled===true||n.getAttribute&&n.getAttribute('aria-disabled')==='true') off=true;
+      if(/line-through/.test(cs.textDecorationLine||'')) off=true;
+      if(/disabl|unavail|soldout|sold-out|inactive|outofstock/i.test((n.className&&n.className.baseVal!==undefined)?n.className.baseVal:(n.className||''))) off=true;
+      n=n.parentElement; }
+    if(op<0.6) off=true;
+    var tt=(e.getAttribute('title')||'')+(e.parentElement?(e.parentElement.getAttribute('title')||''):'');
+    if(/нет в наличии|закончил|распрод/i.test(tt)) off=true;
+    var c=getComputedStyle(e).color.match(/\d+/g)||[0,0,0]; var lum=(+c[0])*0.3+(+c[1])*0.59+(+c[2])*0.11;
+    cand.push({t:t,off:off,lum:lum});
   });
+  // самые бледные надписи среди кнопок размеров — тоже «нет в наличии» (так Ozon рисует раскупленные)
+  if(cand.length>=3){ var ls=cand.map(function(x){return x.lum}).sort(function(a,b){return a-b}); var med=ls[Math.floor(ls.length/2)];
+    cand.forEach(function(x){ if(x.lum-med>70) x.off=true; }); }
+  var sz={};
+  cand.forEach(function(x){ if(sz[x.t]===undefined||(sz[x.t]==='off'&&!x.off)) sz[x.t]=x.off?'off':'ok'; });
   var szl=[]; for(var k in sz) szl.push(k+':'+sz[k]);
   return JSON.stringify({sz:szl.length>=3?szl:[],seller:s.slice(0,3),orig:/Оригинал/.test(b),sizes:i<0?'':b.slice(i,i+500).replace(/\s+/g,' '),
     title:h?h.innerText.trim():document.title,price:pm?pm[0]:'',img:im?(im.currentSrc||im.src||''):'',n:b.length});
@@ -278,7 +291,7 @@ object Shop {
     fun ozonSize(info: OzonInfo?, size: String): String {
         // кнопки размеров на странице: активная — в наличии, неактивная — раскупили
         info?.avail?.takeIf { it.isNotEmpty() }?.let { av ->
-            val hit = av.entries.firstOrNull { (k, _) -> k == size || k.split('-', '–', '/').any { it == size } }
+            val hit = av.entries.firstOrNull { (k, _) -> k.equals(size, true) || Regex("\\d{2}").findAll(k).any { it.value == size } || k.substringBefore(' ').equals(size, true) }
             if (hit != null) return if (hit.value) "размер $size В НАЛИЧИИ (кнопка размера активна)" else "размер $size РАСКУПИЛИ (кнопка размера неактивна)"
         }
         val t = info?.sizes.orEmpty()

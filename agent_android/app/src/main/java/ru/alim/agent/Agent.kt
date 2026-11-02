@@ -412,6 +412,7 @@ object Agent {
             var reportRetry = 0
             var reportStale = false     // после доработки по проверке прежняя карточка могла устареть — просим свежую
             var tableRetry = 0
+            var sizeRetry = 0
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
@@ -466,6 +467,15 @@ object Agent {
                             .firstOrNull { it != m && (Llm.isYandex(it) || Llm.isGoogle(it)) }?.takeIf { Llm.isGoogle(it) || YaCloud.llmKey.isNotBlank() } ?: throw e)
                         noMoneyAlt = alt
                         steps.add(Step("На AnyModel нет денег — дальше задачу делает ${Agent.short(alt)}").also { it.done = true })
+                        m = alt; model = alt
+                        withContext(Dispatchers.IO) { Llm.chat(alt, msgs, maxTok) }
+                    }
+                    catch (e: IllegalStateException) {
+                        // AnyModel ответил ошибкой (модель не найдена, сервер лёг, 5xx после повторов) — доделываем на DeepSeek через Яндекс
+                        if (!Llm.isAny(m) || YaCloud.llmKey.isBlank()) throw e
+                        val alt = "yc:deepseek-v4.1-flash"
+                        noMoneyAlt = alt
+                        steps.add(Step("AnyModel не ответил — продолжаю на ${Agent.short(alt)}").also { it.done = true; it.detail = e.message.orEmpty().take(200) })
                         m = alt; model = alt
                         withContext(Dispatchers.IO) { Llm.chat(alt, msgs, maxTok) }
                     }
@@ -647,6 +657,14 @@ object Agent {
                     msgs.put(msg("user", "Шагов ещё много (осталось ${cap - i - 1}). Ты сам написал, что не дособрал часть пунктов. Не спрашивай Алима — доделай ВСЕ пункты просьбы сейчас инструментами (каждый способ, отели, места, погода, таблица), потом дай полный ответ. «Не нашёл» пиши только если реально искал."))
                     final = null; continue
                 }
+                // назван размер, товары нашли, а размер не проверили — проверить сейчас (shop_check), а не отвечать «в карточке уточни»
+                if (final != null && sizeRetry < 1 && (calls["shop_search"] ?: 0) > 0 && (calls["shop_check"] ?: 0) == 0 && i < cap - 2 &&
+                    Regex("(\\d{2}(?:[-–]\\d{2})?\\s*(-?го|-?й)?\\s*(размер|р\\.|разм))|(размер[а-я]*\\s*(\\d{2}|[XSML]{1,3}\\b))", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                    sizeRetry++
+                    steps.add(Step("Проверяю размер").also { it.done = true })
+                    msgs.put(msg("user", "Алим назвал размер — проверь его у 3-4 лучших найденных: shop_check {\"n\": \"1,2,3,4\", \"size\": \"<размер>\"}. Потом ответ: у кого размер в наличии, у кого нет. tool null только после проверки."))
+                    final = null; continue
+                }
                 // просили таблицу, а файла нет — делаем, а не забываем
                 if (final != null && hard0 && !follow && tableRetry < 1 && files.isEmpty() && i < cap - 3 &&
                     Regex("таблиц|xlsx|excel", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
@@ -726,6 +744,8 @@ object Agent {
                     if (fresh.size >= 2 && fresh.size < products.size) { products.clear(); products.addAll(fresh) }
                 }
                 products.forEach { Shop.shown += it.url }
+                // номера в следующей просьбе («проверь размер у 2-й») — по карточкам, которые Алим видит, в их порядке
+                if (final != null && products.isNotEmpty() && Tools.taskVideos.isEmpty()) { Tools.lastShop.clear(); Tools.lastShop += products }
                 // подборка из нескольких поисков YouTube: карточками показываем выбранные ролики, а не последний поиск
                 if (final != null && Tools.taskVideos.isNotEmpty()) {
                     val hay = buildString {
