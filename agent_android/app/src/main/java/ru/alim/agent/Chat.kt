@@ -395,7 +395,7 @@ class ChatStore(val fid: String) {
         // «обновись / установи» — без модели, сразу качаем и ставим (модель могла сочинить «я уже обновлён»)
         if (m.att.isBlank() && Updater.isCommand(m.text)) { Updater.run(Agent.app); drainQueue(); return }
         // Быстрая полоса: простую болтовню отвечаем сразу лёгкой моделью с потоковым выводом, минуя агента.
-        if (Prefs.fastLane && !queued && !prompt.contains("Собрать итог из найденного") && !c.hardText(m.text) && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
+        if (Prefs.fastLane && !queued && !prompt.contains("Собрать итог из найденного") && !c.hardText(m.text) && !aboutSpend(m.text) && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
         else c.followUp(prompt)
     }
 
@@ -433,6 +433,15 @@ class ChatStore(val fid: String) {
 
     private class StopLane : RuntimeException()
 
+    /** Вопрос про расходы самого Пилота — только агенту (у него настоящие цифры из Истории; лёгкая модель выдумывает). */
+    private fun aboutSpend(t: String) = Regex("сколько\\s+(стоит|стоят|стоил|обойд|потрат|ушло|списал)|во сколько\\s+(мне\\s+)?обойд|расход|баланс|потратил|траты|сколько денег", RegexOption.IGNORE_CASE).containsMatchIn(t)
+
+    /** Учесть расход быстрой полосы (AnyModel платная; Яндекс бесплатно). */
+    private fun laneSpend(model: String, tokens: Long) {
+        if (!Llm.isAny(model) || tokens <= 0) return
+        runCatching { Journal.addLane(Chat.app, model, tokens, AnyPrice.rub(model, tokens) ?: 0.0) }
+    }
+
     /** Стримим простой ответ лёгкой моделью; #task/ошибка — запускаем полноценного агента. */
     private fun tryFastLane(c: Agent.Core, prompt: String) {
         c.fastBusy = true
@@ -457,8 +466,9 @@ class ChatStore(val fid: String) {
                     } else update(bubbleId) { it.copy(text = it.text + d) }
                 }
             }
+            laneSpend(Prefs.laneModel, Llm.lastStreamTok)
             // стрим ничего не дал (не поддержан/ошибся до первого слова) — один обычный вызов той же модели
-            val fallbackTxt = if (mode == 0) runCatching { Llm.chat(Prefs.laneModel, req, 600, json = false).text }.getOrNull() else null
+            val fallbackTxt = if (mode == 0) runCatching { Llm.chat(Prefs.laneModel, req, 600, json = false).also { laneSpend(Prefs.laneModel, (it.inTok + it.outTok).toLong()) }.text }.getOrNull() else null
             withContext(Dispatchers.Main) {
                 c.fastBusy = false
                 when {

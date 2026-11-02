@@ -265,9 +265,19 @@ object Tools {
             if (launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)))) "открыл в браузере" else "браузер не открылся"
         },
 
-        Tool("spend", "{} — сколько агент потратил сегодня и за месяц") { ctx, _ ->
+        Tool("spend", "{} — сколько Пилот потратил (сегодня, за месяц), средняя цена задачи по моделям, во сколько обходятся быстрые ответы. На любые вопросы про расходы и «во сколько обойдётся» — только по этим цифрам") { ctx, _ ->
             val d = Journal.since(ctx, Journal.startOfDay()); val m = Journal.since(ctx, Journal.startOfMonth())
-            "сегодня ${d.size} задач на ${rub(d.sumOf { it.cost })}, за месяц ${m.size} на ${rub(m.sumOf { it.cost })}, лимит ${Prefs.monthLimit} ₽"
+            val lane = m.filter { it.title.startsWith("Быстрые ответы") }
+            val tasks = m.filter { !it.background }
+            val byModel = tasks.groupBy { it.model }.entries.sortedByDescending { e -> e.value.size }.take(6).joinToString("\n") { (k, l) ->
+                val cheap = l.minOf { it.cost }; val dear = l.maxOf { it.cost }
+                "• $k: ${l.size} задач, в среднем ${rub(l.sumOf { it.cost } / l.size)} (от ${rub(cheap)} до ${rub(dear)})"
+            }
+            "Сегодня: ${d.size} записей на ${rub(d.sumOf { it.cost })}. За месяц: ${rub(m.sumOf { it.cost })} (задачи ${rub(tasks.sumOf { it.cost })}, " +
+                "быстрые ответы чата ${rub(lane.sumOf { it.cost })} за ${lane.sumOf { it.steps }} сообщений). Лимит ${Prefs.monthLimit} ₽.\n" +
+                "Модели сейчас: чат ${Agent.short(Prefs.fastModel)}, руки ${Agent.short(Prefs.smartModel)}, фон ${Agent.short(Prefs.bgModel)}. " +
+                "AnyModel: ${AnyPrice.RUB_PER_M} ₽ за миллион токенов баланса × коэффициент модели; Яндекс бесплатно.\n" +
+                "Средняя цена задачи за месяц по моделям:\n" + byModel.ifBlank { "пока нет задач" }
         },
 
         Tool("photos_last", "{\"count\": 1, \"kind\": \"any|screenshot|camera\"} — самые свежие фото, первое — последнее. «Последний скриншот» — kind screenshot, «последнее фото с камеры» — camera") t@{ ctx, a ->
@@ -834,6 +844,14 @@ object Tools {
                 notes.append("Нормальных вариантов не нашлось — показываю, что есть; помеченные ⚠ похожи на подделки (слишком дёшево или кричащие скидки). Скажи это Алиму.\n")
                 hidden = 0
             }
+            // «покажи ещё»: уже показанное в разговоре убираем; мало осталось — добираем со второй страницы Ozon
+            if (Shop.shown.isNotEmpty() && seller.isBlank()) {
+                var fresh = list.filter { it.url !in Shop.shown }
+                if (fresh.size < 4 && store != "wb") runCatching { Shop.ozon(ctx, q, maxP, 2) }.onSuccess { more ->
+                    fresh = fresh + clean(more).filter { m -> m.url !in Shop.shown && fresh.none { it.url == m.url } }
+                }
+                if (fresh.size >= 2) { if (fresh.size < list.size) notes.append("Уже показанные Алиму товары убрал — это новые варианты.\n"); list = fresh }
+            }
             lastShop.clear(); lastShop += list.take(8)
             withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(lastShop) }
             val out = StringBuilder(notes)
@@ -883,7 +901,8 @@ object Tools {
                             val inf = Shop.ozonInfo(ctx, it.url)
                             if (inf != null) { it.seller = inf.seller; it.original = inf.original }
                             val r = if (size.isNotBlank()) Shop.ozonSize(inf, size) else ""
-                            if (size.isNotBlank()) it.size = when { r.contains("есть в размерной") -> "$size в сетке"; r.contains("не видно") -> "$size нет"; else -> "" }
+                            if (size.isNotBlank()) it.size = when { r.contains("В НАЛИЧИИ") -> "$size в наличии"; r.contains("РАСКУПИЛИ") -> "$size нет в наличии"
+                                r.contains("есть в размерной") -> "$size в сетке"; r.contains("не видно") -> "$size нет"; else -> "" }
                             "$n. ${it.title.take(60)}: $r; продавец ${inf?.seller?.ifBlank { "?" } ?: "?"}; ${if (inf?.original == true) "отметка «Оригинал» есть" else "отметки «Оригинал» нет"}"
                         }
                     }.getOrElse { e -> "$n. не проверил: ${e.message}" }

@@ -288,26 +288,36 @@ object Llm {
         }
     }
 
+    /** Сколько токенов ушло на последний поток (быстрая полоса): из usage, а если поток оборвали — оценка по длине. */
+    @Volatile var lastStreamTok = 0L
+
     private fun streamSse(url: String, auth: String, id: String, messages: JSONArray, maxTokens: Int, onDelta: (String) -> Unit): String {
         val body = JSONObject().put("model", id).put("temperature", 0.4).put("max_tokens", maxTokens)
             .put("stream", true).put("messages", messages)
+        if (url == ANY_URL) body.put("stream_options", JSONObject().put("include_usage", true))
         val req = Request.Builder().url(url).header("Authorization", auth)
             .post(body.toString().toRequestBody(JSON)).build()
         val sb = StringBuilder()
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("stream ${resp.code}")
-            val src = resp.body?.source() ?: error("пустой поток")
-            while (!src.exhausted()) {
-                val line = src.readUtf8Line() ?: break
-                if (!line.startsWith("data:")) continue
-                val data = line.substring(5).trim()
-                if (data.isEmpty()) continue
-                if (data == "[DONE]") break
-                val delta = runCatching {
-                    JSONObject(data).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")?.optString("content").orEmpty()
-                }.getOrDefault("")
-                if (delta.isNotEmpty()) { sb.append(delta); onDelta(delta) }
+        var used = 0L
+        try {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("stream ${resp.code}")
+                val src = resp.body?.source() ?: error("пустой поток")
+                while (!src.exhausted()) {
+                    val line = src.readUtf8Line() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val data = line.substring(5).trim()
+                    if (data.isEmpty()) continue
+                    if (data == "[DONE]") break
+                    val j = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    j.optJSONObject("usage")?.let { u -> used = u.optLong("total_tokens", u.optLong("prompt_tokens") + u.optLong("completion_tokens")) }
+                    val d = j.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
+                    val delta = if (d == null || d.isNull("content")) "" else d.optString("content", "")
+                    if (delta.isNotEmpty()) { sb.append(delta); onDelta(delta) }
+                }
             }
+        } finally {
+            lastStreamTok = if (used > 0) used else (messages.toString().length + sb.length) / 3L
         }
         return sb.toString()
     }

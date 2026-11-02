@@ -164,12 +164,28 @@ object Shop {
   var i=b.search(/Выберите размер|Размер|РАЗМЕР/);
   var h=document.querySelector('h1'); var pm=b.match(/(\d[\d\s\u2009\u00a0]*)\s?₽/);
   var im=document.querySelector('img[src*="ozone"],img[srcset]');
-  return JSON.stringify({seller:s.slice(0,3),orig:/Оригинал/.test(b),sizes:i<0?'':b.slice(i,i+500).replace(/\s+/g,' '),
+  // кнопки размеров: неактивная (disabled, полупрозрачная, зачёркнутая) — размер раскупили
+  var sz={};
+  document.querySelectorAll('button,div,span,label,a').forEach(function(e){
+    if(e.children.length>1) return; var t=(e.innerText||'').trim();
+    if(!/^(\d{2}(?:[-–\/]\d{2})?|\d?X{0,3}[SML]|XXL|XXXL)$/i.test(t)) return;
+    var r=e.getBoundingClientRect(); if(r.width<16||r.width>150||r.height<16||r.height>90) return;
+    var p=e.closest('button,[role=button],[aria-disabled],[disabled]')||e; var st=getComputedStyle(e), ps=getComputedStyle(p);
+    var off=p.disabled===true||p.getAttribute('aria-disabled')==='true'||parseFloat(st.opacity)<0.6||parseFloat(ps.opacity)<0.6||/line-through/.test((st.textDecorationLine||'')+(ps.textDecorationLine||''));
+    if(sz[t]===undefined||(sz[t]==='off'&&!off)) sz[t]=off?'off':'ok';
+  });
+  var szl=[]; for(var k in sz) szl.push(k+':'+sz[k]);
+  return JSON.stringify({sz:szl.length>=3?szl:[],seller:s.slice(0,3),orig:/Оригинал/.test(b),sizes:i<0?'':b.slice(i,i+500).replace(/\s+/g,' '),
     title:h?h.innerText.trim():document.title,price:pm?pm[0]:'',img:im?(im.currentSrc||im.src||''):'',n:b.length});
 })()
 """.trimIndent()
 
-    class OzonInfo(val seller: String, val original: Boolean, val sizes: String, val title: String, val price: String, val img: String)
+    class OzonInfo(val seller: String, val original: Boolean, val sizes: String, val title: String, val price: String, val img: String,
+                   /** Кнопки размеров: «52» → true (можно выбрать) / false (неактивна, раскупили). Пусто — Ozon не показал. */
+                   val avail: Map<String, Boolean> = emptyMap())
+
+    /** Товары, уже показанные в этом разговоре (для «покажи ещё»). */
+    val shown: MutableSet<String> = java.util.Collections.synchronizedSet(LinkedHashSet())
 
     /** Страница товара Ozon: продавец, отметка «Оригинал», размеры, цена. */
     suspend fun ozonInfo(ctx: Context, url: String): OzonInfo? {
@@ -184,7 +200,8 @@ object Shop {
         val own = sel.any { it.contains("Ozon Россия", true) }
         // товары, которые продаёт сам Ozon, — оригинал по умолчанию, отметку «Оригинал» им не ставят
         return OzonInfo(sel.joinToString(" / "), j.optBoolean("orig") || own, j.optString("sizes"),
-            j.optString("title"), j.optString("price").replace(Regex("[\\s\u2009\u00a0]+"), " "), j.optString("img"))
+            j.optString("title"), j.optString("price").replace(Regex("[\\s\u2009\u00a0]+"), " "), j.optString("img"),
+            j.optJSONArray("sz")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).split(':').takeIf { p -> p.size == 2 }?.let { p -> p[0] to (p[1] == "ok") } }.toMap() }.orEmpty())
     }
 
     suspend fun ozon(ctx: Context, query: String, maxPrice: Int?, page: Int = 1): List<Item> {
@@ -259,6 +276,11 @@ object Shop {
 
     /** Ozon: размер по странице товара. */
     fun ozonSize(info: OzonInfo?, size: String): String {
+        // кнопки размеров на странице: активная — в наличии, неактивная — раскупили
+        info?.avail?.takeIf { it.isNotEmpty() }?.let { av ->
+            val hit = av.entries.firstOrNull { (k, _) -> k == size || k.split('-', '–', '/').any { it == size } }
+            if (hit != null) return if (hit.value) "размер $size В НАЛИЧИИ (кнопка размера активна)" else "размер $size РАСКУПИЛИ (кнопка размера неактивна)"
+        }
         val t = info?.sizes.orEmpty()
         if (t.length < 10) return "Ozon не показал размеры (открой карточку)"
         val rx = Regex("(^|[^\\d])${Regex.escape(size)}([^\\d]|$)")

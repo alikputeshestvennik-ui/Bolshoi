@@ -155,7 +155,7 @@ data class TaskRec(val ts: Long, val title: String, val steps: Int, val model: S
                    val dur: Long = 0, val result: String = "", val log: String = "", val items: String = "",
                    val tokIn: Long = 0, val tokOut: Long = 0) {
     /** Фоновые записи (мониторинг, итог дня, автоответ) — не просьбы Алима. */
-    val background: Boolean get() = title.startsWith("Мониторинг") || title.startsWith("Итог дня") || title.startsWith("Автоответ")
+    val background: Boolean get() = title.startsWith("Мониторинг") || title.startsWith("Итог дня") || title.startsWith("Автоответ") || title.startsWith("Быстрые ответы")
 }
 
 object Journal {
@@ -178,8 +178,9 @@ object Journal {
     }
 
     @Synchronized
-    fun add(ctx: Context, r: TaskRec) {
-        val list = (all(ctx) + r).takeLast(600)
+    fun add(ctx: Context, r: TaskRec) = save(ctx, (all(ctx) + r).takeLast(600))
+
+    private fun save(ctx: Context, list: List<TaskRec>) {
         val a = JSONArray()
         list.forEachIndexed { i, it ->
             val o = JSONObject().put("ts", it.ts).put("title", it.title).put("steps", it.steps)
@@ -190,6 +191,21 @@ object Journal {
         }
         sp(ctx).edit().putString("t", a.toString()).apply()
         version.intValue = version.intValue + 1
+    }
+
+    /** Быстрая полоса чата: одна запись в день, токены и рубли копятся в ней (чтобы итог совпадал с балансом AnyModel). */
+    @Synchronized
+    fun addLane(ctx: Context, model: String, tokens: Long, cost: Double) {
+        if (tokens <= 0) return
+        val list = all(ctx).toMutableList()
+        val day = startOfDay()
+        val i = list.indexOfLast { it.title.startsWith("Быстрые ответы") && it.ts >= day }
+        val old = list.getOrNull(i)
+        val r = TaskRec(old?.ts ?: System.currentTimeMillis(), "Быстрые ответы чата", (old?.steps ?: 0) + 1, Agent.short(model),
+            (old?.cost ?: 0.0) + cost, true, 0, "", "", "", (old?.tokIn ?: 0) + tokens, 0)
+        if (i >= 0) list.removeAt(i)
+        list += r
+        save(ctx, list.takeLast(600))
     }
 
     fun since(ctx: Context, from: Long) = all(ctx).filter { it.ts >= from }
@@ -227,7 +243,7 @@ object AnyPrice {
             "terra" in m -> 1.5
             "sonnet" in m -> 3.0
             "deepseek-v4-pro" in m || "deepseek-v4-flash-vision" in m -> 0.5
-            "gemini-3-flash" in m -> 0.6
+            "gemini-3-flash" in m -> 0.68   // по сверке с балансом AnyModel (заявлено ×0,6, фактически ≈×0,68)
             else -> null
         }
     }

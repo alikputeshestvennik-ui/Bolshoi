@@ -171,6 +171,7 @@ object Agent {
             if (t.isEmpty() || busy) return
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
             startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false; paused = false
+            Shop.shown.clear()
             model = fast(); phase = Phase.WORKING
             lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             delegIntent = Regex("свяж(ись|итесь)|договор(ись|иться)|уточни у|спроси у|узнай у|напиши .{0,30}(и|чтобы) (уточни|спроси|узнай|договор)|переговор", RegexOption.IGNORE_CASE).containsMatchIn(t)
@@ -708,17 +709,23 @@ object Agent {
                     val keep = products.filter { p -> val k = p.title.lowercase().take(24); k.length >= 10 && low.contains(k) }
                     products.clear(); products.addAll(keep)
                 } else if (final != null && products.size > 1 && Tools.taskVideos.isEmpty()) {
-                    // обычный поиск товаров: карточки — только тех, что модель назвала в ответе (по цене или началу названия)
+                    // обычный поиск товаров: карточки — только тех, что модель назвала, и в том же порядке, что в ответе.
+                    // Есть цены в ответе — сверяем по цене (одинаковые начала названий у разных товаров бывают), иначе — по названию.
                     val low = out.lowercase()
                     val flat = out.replace(Regex("(?<=\\d)[ \\u00A0\\u202F](?=\\d{3})"), "")
-                    val prices = Regex("\\d{2,7}").findAll(flat).map { it.value }.toSet()
-                    val keep = products.filter { p ->
-                        val pr = p.price.replace(Regex("\\D"), "")
-                        val k = p.title.lowercase().take(16)
-                        (pr.length >= 2 && pr in prices) || (k.length >= 10 && low.contains(k))
-                    }
-                    if (keep.size >= 2 && keep.size < products.size) { products.clear(); products.addAll(keep) }
+                    fun posPrice(p: Shop.Item): Int { val pr = p.price.replace(Regex("\\D"), ""); return if (pr.length < 2) -1 else Regex("(?<!\\d)$pr(?!\\d)").find(flat)?.range?.first ?: -1 }
+                    fun posTitle(p: Shop.Item): Int { val k = p.title.lowercase().take(16); return if (k.length < 10) -1 else low.indexOf(k) }
+                    val byPrice = products.count { posPrice(it) >= 0 }
+                    val usePrice = byPrice >= 2
+                    val ranked = products.map { it to (if (usePrice) posPrice(it) else posTitle(it)) }.filter { it.second >= 0 }.sortedBy { it.second }.map { it.first }
+                    if (ranked.size >= 2) { products.clear(); products.addAll(ranked) }
                 }
+                // «покажи ещё» — без товаров, которые уже показывали в этом разговоре
+                if (final != null && Regex("(^|\\s)(ещё|еще|другие|больше вариант)", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                    val fresh = products.filter { it.url !in Shop.shown }
+                    if (fresh.size >= 2 && fresh.size < products.size) { products.clear(); products.addAll(fresh) }
+                }
+                products.forEach { Shop.shown += it.url }
                 // подборка из нескольких поисков YouTube: карточками показываем выбранные ролики, а не последний поиск
                 if (final != null && Tools.taskVideos.isNotEmpty()) {
                     val hay = buildString {
