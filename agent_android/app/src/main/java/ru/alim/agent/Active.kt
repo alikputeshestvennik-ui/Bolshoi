@@ -90,9 +90,8 @@ fun ActiveScreen(go: (Scr) -> Unit) {
     val delegs = remember(t, Deleg.items.size) { Activity.delegs() }
     val watches = remember(t, Watch.items.size) { Activity.watches() }
     val total = (if (core.busy) 1 else 0) + delegs.size + watches.size
-    Column(Modifier.fillMaxSize().background(Th.c.bg)) {
-        ScreenHeader("Активные", null, if (total == 0) "ничего не идёт" else "$total ${proc(total)}")
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current).padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    Screen("Активные", {}, showBack = false, trailing = if (total == 0) "ничего не идёт" else "$total ${proc(total)}") {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (core.busy || core.pending != null) Block("Тяжёлая задача", 1) {
                 core.pending?.let { ConfirmCard(it, core) }
                 if (core.busy) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Card).border(1.5.dp, Teal, RoundedCornerShape(20.dp)).padding(14.dp),

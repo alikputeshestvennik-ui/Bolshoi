@@ -109,7 +109,7 @@ object PhotoSearch {
             }
         }
         if (ids.isEmpty()) return emptyList<Long>() to 0
-        val model = Prefs.bg.takeUnless { Llm.isYandex(it) } ?: Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
+        val model = Prefs.bg.takeUnless { Llm.isYandex(it) } ?: Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "ds/deepseek-v4-flash-vision"
         val batches = ids.chunked(16)
         val found = java.util.Collections.synchronizedList(ArrayList<Long>())
         coroutineScope {

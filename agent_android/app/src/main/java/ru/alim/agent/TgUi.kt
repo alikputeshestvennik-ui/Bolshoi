@@ -31,7 +31,7 @@ fun TgScreen(back: () -> Unit) {
     LaunchedEffect(Unit) { Tg.start(ctx) }
 
     Screen("Telegram", back) {
-        Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(top = LocalTopPad.current, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = Tg.state
             val status = when (st) {
                 Tg.St.READY -> "подключён${if (Tg.me.isNotBlank()) " · ${Tg.me}" else ""}"

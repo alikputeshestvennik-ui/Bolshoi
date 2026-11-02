@@ -7,7 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
 
-/** Настройки агента. Модели и цены (₽ за 1000 токенов) — как на страницах моделей gptunnel, правятся в «Подключениях». */
+/** Настройки агента: модели по ролям, цены. */
 object Prefs {
     private lateinit var sp: SharedPreferences
     fun init(ctx: Context) {
@@ -19,11 +19,18 @@ object Prefs {
     private fun b(k: String, d: Boolean) = sp.getBoolean(k, d)
     private fun putB(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
 
-    var fastModel: String get() = s("fm", "claude-5.5-haiku"); set(v) = put("fm", v.trim())
+    /** Модели по ролям — только эти (Алим выбрал); старое значение (GPTunnel, Google, удалённые) заменяется первым из списка. */
+    val CHAT_MODELS = listOf("yc:aliceai-llm-flash", "yc:deepseek-v4.1-flash", "ag/gemini-3-flash", "cx/gpt-6.1-terra")
+    val HANDS_MODELS = listOf("yc:aliceai-llm", "yandexgpt-5.1/latest", "yc:deepseek-v4.1-flash",
+        "cx/gpt-6-astra", "cx/gpt-6.1-sol", "cx/gpt-6.1-terra", "cc/claude-sonnet-5", "ds/deepseek-v4-pro", "ds/deepseek-v4-flash-vision")
+    val BG_MODELS = listOf("yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
+    private fun pick(v: String, allowed: List<String>, def: String) = allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
+    var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, CHAT_MODELS[0]); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
     var fastLane: Boolean get() = b("fastlane", true); set(v) = putB("fastlane", v)
     /** Модель для быстрой полосы (по умолчанию — Alice AI Flash Яндекса: бесплатно, без VPN, хорошо по-русски). */
-    var laneModel: String get() = s("lane", "yc:aliceai-llm-flash"); set(v) = put("lane", v.trim())
+    /** Быстрая полоса — та же модель, что и «Чат» (объединены). */
+    val laneModel: String get() = fastModel
     /** Тактильные отклики кабины (отрыв/запрос/посадка задачи). */
     /** Номер последней сборки, о которой уже сказали. */
     var buildSeen: Int get() = sp.getInt("build_seen", 0); set(v) = sp.edit().putInt("build_seen", v).apply()
@@ -37,7 +44,7 @@ object Prefs {
     var alertWake: Boolean get() = b("al_wake", true); set(v) = putB("al_wake", v)
     /** Страховка: ставится перед запуском 3D и снимается, когда сцена готова. Осталась после падения — 3D отключается. */
     var flight3dStarting: Boolean get() = b("f3d_start", false); set(v) = sp.edit().putBoolean("f3d_start", v).commit().let {}
-    var smartModel: String get() = s("sm", "claude-5.5-sonnet"); set(v) = put("sm", v.trim())
+    var smartModel: String get() = pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())
     /** Глубина рассуждений у моделей AnyModel для «рук»: low / medium / high. high думает минутами на каждом шаге. */
     var effort: String get() = s("eff", "medium"); set(v) = put("eff", v)
     var fastIn: String get() = s("fi", "0.03"); set(v) = put("fi", v.trim())
@@ -64,7 +71,7 @@ object Prefs {
     /** Голос Google для главного друга («» — по полу автоматически). */
     var gVoice: String get() = s("gvoice", ""); set(v) = put("gvoice", v)
     /** Фоновая модель: уведомления, сводки, сам пишет, поиск фото. Пусто — как «Чат». */
-    var bgModel: String get() = s("bgm", "google:gemini-3.5-flash-lite"); set(v) = put("bgm", v.trim())
+    var bgModel: String get() = pick(s("bgm", ""), BG_MODELS, BG_MODELS[0]); set(v) = put("bgm", v.trim())
     val bg: String get() = bgModel.ifBlank { fastModel }
     /** Счётчики бесплатных запросов Google за сутки (JSON). */
     fun initCount(fid: String, day: String) = if (sp.getString("icd_$fid", "") == day) sp.getInt("icn_$fid", 0) else 0
@@ -128,6 +135,7 @@ object Prefs {
     /** Цена вызова в рублях по токенам. */
     fun price(model: String, inTok: Int, outTok: Int): Double {
         if (Llm.isGoogle(model)) return 0.0
+        if (Llm.isAny(model)) return AnyPrice.rub(model, inTok.toLong() + outTok) ?: 0.0
         val smart = model == smartModel && model != fastModel
         val pin = num(if (smart) smartIn else fastIn)
         val pout = num(if (smart) smartOut else fastOut)
@@ -160,8 +168,11 @@ object Journal {
     fun all(ctx: Context): List<TaskRec> {
         val a = runCatching { JSONArray(sp(ctx).getString("t", "[]")) }.getOrElse { JSONArray() }
         return (0 until a.length()).map { a.getJSONObject(it) }.map {
+            val c0 = it.optDouble("cost", 0.0).let { c -> if (c.isNaN()) 0.0 else c }
+            // старые задачи AnyModel записаны токенами — считаем рубли по коэффициенту модели
+            val c1 = if (c0 <= 0.0 && it.optLong("ti") + it.optLong("to") > 0) AnyPrice.rub(it.optString("model"), it.optLong("ti") + it.optLong("to")) ?: c0 else c0
             TaskRec(it.optLong("ts"), it.optString("title"), it.optInt("steps"), it.optString("model"),
-                it.optDouble("cost", 0.0).let { c -> if (c.isNaN()) 0.0 else c }, it.optBoolean("ok", true),
+                c1, it.optBoolean("ok", true),
                 it.optLong("dur"), it.optString("res"), it.optString("log"), it.optString("items"), it.optLong("ti"), it.optLong("to"))
         }
     }
@@ -202,4 +213,23 @@ fun rub(v: Double): String = when {
     v < 10 -> String.format(java.util.Locale("ru"), "%.2f ₽", v)
     v < 100 -> String.format(java.util.Locale("ru"), "%.1f ₽", v)
     else -> String.format(java.util.Locale("ru"), "%.0f ₽", v)
+}
+
+/** Цена AnyModel: баланс в «токенах AnyModel», 500 ₽ ≈ 124 млн → 4,03 ₽ за миллион; модель списывает реальные токены × свой коэффициент. */
+object AnyPrice {
+    const val RUB_PER_M = 4.03
+    /** Коэффициенты (Алим, 02.11.2026). По названию модели или её короткому имени из Истории. */
+    fun coef(model: String): Double? {
+        val m = model.lowercase()
+        return when {
+            "astra" in m -> 4.0
+            Regex("(^|[^a-z])sol([^a-z]|$)").containsMatchIn(m) -> 2.0
+            "terra" in m -> 1.5
+            "sonnet" in m -> 3.0
+            "deepseek-v4-pro" in m || "deepseek-v4-flash-vision" in m -> 0.5
+            "gemini-3-flash" in m -> 0.6
+            else -> null
+        }
+    }
+    fun rub(model: String, tokens: Long): Double? = coef(model)?.let { tokens * it / 1_000_000.0 * RUB_PER_M }
 }

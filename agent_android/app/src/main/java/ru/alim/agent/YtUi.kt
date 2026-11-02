@@ -104,7 +104,7 @@ fun YtScreen(back: () -> Unit) {
     }
     var pickFavs by remember { mutableStateOf(false) }
     Screen("YouTube", back) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = when { !YtMe.configured -> "нет ключей (YT_CLIENT_ID)"; YtMe.ready -> YtMe.me.ifBlank { "подключён" }; else -> "не подключён" }
             Section("YouTube", st, statusColor = if (YtMe.ready) Muted else Amber) {
                 Text("Пилот покажет новое из подписок, твои лайкнутые видео и добавит ролик в твой плейлист — всё прямо здесь, без перехода в приложение YouTube. Вход — через твой Google-аккаунт. Нужен VPN.",

@@ -696,7 +696,7 @@ object Deleg {
     }
 
     /** Модель без «яндексовского» фильтра тем: фон (Gemini), чат, если не Яндекс, иначе Claude Haiku. */
-    private fun altModel(): String = listOf(Prefs.smartModel, Prefs.bgModel, Prefs.fastModel).firstOrNull { !Llm.isYandex(it) } ?: "claude-5.5-haiku"
+    private fun altModel(): String = listOf(Prefs.smartModel, Prefs.bgModel, Prefs.fastModel).firstOrNull { !Llm.isYandex(it) } ?: "ds/deepseek-v4-flash-vision"
 
     /** Убрать заглушки [Имя] и лишние пробелы. */
     private fun cleanOut(t: String): String = t.replace(Regex(",?\\s*[\\[<{][^\\]>}]{1,25}[\\]>}]"), "").replace(Regex("\\s+([!?.,])"), "$1").trim()

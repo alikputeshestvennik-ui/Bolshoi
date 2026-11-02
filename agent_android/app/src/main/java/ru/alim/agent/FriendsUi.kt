@@ -137,7 +137,7 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
     }
 
     Screen("Профиль", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Avatar(112.dp, online = Online.online, f = f)
                 Text(f.name.ifBlank { "Без имени" }, style = body(22, FontWeight.Bold))
@@ -215,9 +215,8 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                     style = body(12, color = Muted))
                 Text("Модель", style = body(12, color = Muted))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("" to "Как в настройках", "claude-5.5-sonnet" to "Claude Sonnet", "claude-5.5-haiku" to "Claude Haiku",
-                        "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT", "yc:deepseek-v4.1-flash" to "DeepSeek", "yc:qwen3.6-35b-a3b" to "Qwen",
-                        "google:gemini-3.5-flash-lite" to "Gemini Lite · бесплатно")
+                    listOf("" to "Как в настройках", "cc/claude-sonnet-5" to "Claude Sonnet 5 · Any", "cx/gpt-6.1-terra" to "GPT-6.1 Terra · Any",
+                        "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT", "yc:deepseek-v4.1-flash" to "DeepSeek")
                         .forEach { (id, label) ->
                             val on = f.model == id
                             Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) AccentSoft else Th.c.bg)

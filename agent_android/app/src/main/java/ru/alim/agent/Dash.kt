@@ -703,7 +703,7 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
         .padding(horizontal = 10.dp).padding(top = 24.dp, bottom = 10.dp)) {
         // как в чате: пока что-то идёт — над кнопками «Активные · N» (на самой странице «Активные» не нужна)
         if (here != Scr.Active) { ActiveButton(go); if (Activity.count() > 0) Spacer(Modifier.height(10.dp)) }
-        NavBar(haze, here, go) { ChatJump.searchReq = true; go(Scr.Home) }
+        NavBar(haze, here, go)
         Spacer(Modifier.height(10.dp))
         Composer(haze, chat, chat.friend)
     }

@@ -265,10 +265,6 @@ object Tools {
             if (launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)))) "открыл в браузере" else "браузер не открылся"
         },
 
-        Tool("gptunnel_balance", "{} — баланс счёта gptunnel") { _, _ ->
-            val b = Llm.balance(); Prefs.lastBalance = rub(b); "баланс ${rub(b)}"
-        },
-
         Tool("spend", "{} — сколько агент потратил сегодня и за месяц") { ctx, _ ->
             val d = Journal.since(ctx, Journal.startOfDay()); val m = Journal.since(ctx, Journal.startOfMonth())
             "сегодня ${d.size} задач на ${rub(d.sumOf { it.cost })}, за месяц ${m.size} на ${rub(m.sumOf { it.cost })}, лимит ${Prefs.monthLimit} ₽"

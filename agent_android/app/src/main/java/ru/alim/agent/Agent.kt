@@ -148,8 +148,10 @@ object Agent {
         val isMain: Boolean get() = fid == Friends.MAIN
         /** Сейчас выполняется просьба, переданная другим другом. */
         @Volatile var delegated = false
-        fun fast(): String = Friends.get(fid).model.ifBlank { Prefs.fastModel }
-        fun smart(): String = Friends.get(fid).model.ifBlank { Prefs.smartModel }
+        /** Модель друга — только из поддерживаемых (GPTunnel и Google убраны), иначе как в настройках. */
+        private fun friendModel(): String = Friends.get(fid).model.takeIf { m -> Llm.isAny(m) || Llm.isYandex(m) }.orEmpty()
+        fun fast(): String = friendModel().ifBlank { Prefs.fastModel }
+        fun smart(): String = friendModel().ifBlank { Prefs.smartModel }
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         private var job: Job? = null
@@ -392,7 +394,7 @@ object Agent {
             var cap = if (hard0) 40 else 18   // шагов на задачу: сложному подбору нужно место для обходов
             var wrap = assemble         // шаги кончились (или Алим остановил поиск) — даём собрать итог из найденного
             var emptyRetry = 0
-            var noMoneyAlt: String? = null   // GPTunnel пуст — дальше вся задача на этой модели, без повторных попыток
+            var noMoneyAlt: String? = null   // AnyModel пуст — дальше вся задача на этой модели, без повторных попыток
             var announced = ""
             var junkRetry = 0
             var conclRetry = 0
@@ -438,13 +440,12 @@ object Agent {
                         @Suppress("UNREACHABLE_CODE") error("")
                     } }
                     catch (e: Llm.NoMoney) {
-                        // на GPTunnel кончились деньги — продолжаем на своей модели (Яндекс, Google), один раз и до конца задачи
-                        // кончились деньги на AnyModel, а на GPTunnel есть — доделывает Claude Sonnet (сильная модель, а не бесплатная заглушка)
-                        val alt = (if (Llm.isAny(m) && Llm.key.isNotBlank() && !Llm.broke) "claude-5.5-sonnet" else null) ?: (
+                        // на AnyModel кончились деньги — продолжаем на модели Яндекса, один раз и до конца задачи
+                        val alt = (
                             (listOf(fast(), smart(), Prefs.bgModel).filter { Llm.isYandex(it) || Llm.isGoogle(it) } + "yc:aliceai-llm-flash")
                             .firstOrNull { it != m && (Llm.isYandex(it) || Llm.isGoogle(it)) }?.takeIf { Llm.isGoogle(it) || YaCloud.llmKey.isNotBlank() } ?: throw e)
                         noMoneyAlt = alt
-                        steps.add(Step("На ${if (Llm.isAny(m)) "AnyModel" else "GPTunnel"} нет денег — дальше задачу делает ${Agent.short(alt)}").also { it.done = true })
+                        steps.add(Step("На AnyModel нет денег — дальше задачу делает ${Agent.short(alt)}").also { it.done = true })
                         m = alt; model = alt
                         withContext(Dispatchers.IO) { Llm.chat(alt, msgs, maxTok) }
                     }
@@ -456,14 +457,13 @@ object Agent {
                                 Llm.isGoogle(m) && Llm.whyNotWanted == "region" -> " — Gemini недоступен с этого VPN-сервера, смени сервер"
                                 Llm.isGoogle(m) && Llm.whyNotWanted == "error" -> " — Google не ответил (VPN?)"
                                 Llm.isGoogle(m) -> " — у неё кончился лимит"
-                                Llm.broke -> " — на GPTunnel нет денег"
                                 else -> "" }).also { it.done = true })
                         }
                         model = used
                     }
-                    // модель-заглушка отказалась (чаще YandexGPT) — переспрашиваем Claude
-                    if (refusal(r.text) && !m.contains("claude", true) && Llm.key.isNotBlank()) {
-                        model = "claude-5.5-sonnet"
+                    // модель-заглушка отказалась (чаще YandexGPT) — переспрашиваем «Руки» (если это не она сама)
+                    if (refusal(r.text) && smart() != m && Llm.isAny(smart())) {
+                        model = smart()
                         r = runCatching { withContext(Dispatchers.IO) { Llm.chat(model, msgs, maxTok) } }.getOrElse { if (it is CancellationException) throw it; r }
                     }
                     // пустой ответ или «null» (бывает у Qwen) — один раз переспрашиваем, потом передаём умной модели
@@ -924,7 +924,7 @@ object Agent {
         private fun friendly(e: Exception): String {
             val m = e.message.orEmpty()
             return when {
-                e is Llm.NoMoney -> "На GPTunnel закончился баланс — пополни счёт или поставь в «Руки» модель Google или Яндекса (они не с этого счёта)."
+                e is Llm.NoMoney -> "На AnyModel закончился баланс — пополни счёт или поставь модель Яндекса (она не с этого счёта)."
                 e is java.io.IOException || m.contains("timeout", true) -> "Связь пропала на полпути — напиши ещё раз, как появится интернет."
                 Regex("\\b(500|502|503|504|429)\\b").containsMatchIn(m) -> "Сервер моделей сейчас подвис, это не у тебя. Повтори через минутку — должно пройти."
                 m.contains("доступ", true) || m.contains("ключ", true) -> "Не пускает к модели: $m"

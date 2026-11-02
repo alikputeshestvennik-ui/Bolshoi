@@ -1,5 +1,7 @@
 package ru.alim.agent
 
+import androidx.compose.animation.animateContentSize
+
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -109,11 +112,19 @@ private fun SecLabel(t: String) = Text(t.uppercase(), style = body(11, FontWeigh
 
 /** «Думал 12 мин · 14 шагов ›» над ответом: нажал — раскрываются мысли и шаги, как шли. */
 @Composable
-fun ThinkChip(p: JSONObject) {
+fun ThinkChip(p: JSONObject, fresh: Boolean = false) {
     val log = Rich.list(p.optJSONArray("log"))
     if (log.isEmpty()) return
     var open by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // только что закончил: бабл мыслей схлопывается в одну строку «Думал …»
+    val bubbleH = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.21f).dp
+    var big by remember { mutableStateOf(fresh) }
+    LaunchedEffect(Unit) { if (big) { kotlinx.coroutines.delay(60); big = false } }
+    Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)
+        .animateContentSize(androidx.compose.animation.core.tween(460, easing = androidx.compose.animation.core.FastOutSlowInEasing)),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (big) { Box(Modifier.fillMaxWidth().height(bubbleH).clip(RoundedCornerShape(22.dp))
+            .background(Th.c.card.copy(alpha = if (Th.c.dark) 0.30f else 0.42f)).border(1.dp, Th.c.line.copy(alpha = 0.7f), RoundedCornerShape(22.dp))); return@Column }
         Row(Modifier.clip(RoundedCornerShape(16.dp)).background(Th.c.card.copy(alpha = 0.85f)).border(1.dp, Th.c.line, RoundedCornerShape(16.dp))
             .clickable(onClickLabel = if (open) "Свернуть" else "Как думал") { open = !open }.padding(horizontal = 12.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically) {

@@ -88,7 +88,7 @@ object Proactive {
             // не чаще раза в 6 часов и не больше двух раз в день
             if (now - initAt < 6 * 3600_000L) continue
             if (Prefs.initCount(f.id, day) >= 2) continue
-            val model = f.model.ifBlank { Prefs.bg }
+            val model = f.model.takeIf { m -> Llm.isAny(m) || Llm.isYandex(m) }.orEmpty().ifBlank { Prefs.bg }
             fun mark() { Prefs.setNudgedAt(f.id, now); Prefs.addInitCount(f.id, day) }
             // 1) разговор оборвался — мягко вернуться (один раз)
             if (now - last.ts in 3 * 3600_000L..36 * 3600_000L && last.me.not() && lastMine > 0) {

@@ -8,19 +8,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/** Запросы к gptunnel (формат OpenAI) — как в Маршруте: ключ из секрета GPTUNNEL_KEY, оплата с личного счёта. */
+/** Запросы к моделям: AnyModel (OpenAI-формат), Yandex AI Studio, Google AI Studio. GPTunnel убран. */
 object Llm {
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(200, TimeUnit.SECONDS).callTimeout(300, TimeUnit.SECONDS).build()   // тяжёлый ход DeepSeek с большим контекстом думает дольше 2 минут
     private val JSON = "application/json; charset=utf-8".toMediaType()
     /** Рассуждающие модели AnyModel отвечают целиком и долго (минуты) — таймауты длиннее общих. */
     private val anyHttp by lazy { http.newBuilder().readTimeout(600, TimeUnit.SECONDS).callTimeout(900, TimeUnit.SECONDS).build() }
-    private const val BASE = "https://gptunnel.ru/v1"
-
-    /** Как gptunnel принимает ключ: «Authorization: ключ» или «Bearer ключ» — запоминаем сработавший. */
-    @Volatile private var bearer = false
-
-    val key: String get() = BuildConfig.GPTUNNEL_KEY.trim()
     /** Ключ AnyModel (секрет ANYMODEL_KEY на GitHub, в сборку попадает через BuildConfig — в коде его нет). */
     val anyKey: String get() = BuildConfig.ANYMODEL_KEY.trim()
     /** Модели AnyModel, которые уже отвечали в этом запуске: их «не найдена» — сбой, а не опечатка. */
@@ -30,27 +24,14 @@ object Llm {
     fun isAny(m: String) = m.startsWith("any:") || Regex("^(cx|cc|ds|ag|kmc)/", RegexOption.IGNORE_CASE).containsMatchIn(m)
     /** Какая модель реально ответила на последний запрос (Google при лимите тихо переключается на соседнюю или запасную). */
     @Volatile var lastUsed = ""
-    /** Когда GPTunnel последний раз сказал «нет денег» — 15 минут его не трогаем как запасной. */
-    @Volatile var brokeAt = 0L
     /** Почему ответила не выбранная модель: «limit», «region» (VPN-сервер в стране, где Gemini нет), «error». */
     @Volatile var whyNotWanted = ""
-    val broke: Boolean get() = System.currentTimeMillis() - brokeAt < 15 * 60_000L
 
     class Reply(val text: String, val inTok: Int, val outTok: Int, private val apiCost: Double) {
-        /** Цена в рублях: из ответа gptunnel, если он её прислал, иначе по ценам из настроек. */
+        /** Цена в рублях: AnyModel — по коэффициенту модели (AnyPrice), остальное — по ценам из настроек. */
         fun cost(model: String): Double = if (apiCost > 0) apiCost else Prefs.price(model, inTok, outTok)
     }
 
-    private fun post(url: String, body: JSONObject, br: Boolean): Pair<Int, String> =
-        http.newCall(Request.Builder().url(url)
-            .header("Authorization", if (br) "Bearer $key" else key)
-            .post(body.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
-
-    private fun get(url: String, br: Boolean): Pair<Int, String> =
-        http.newCall(Request.Builder().url(url)
-            .header("Authorization", if (br) "Bearer $key" else key).get().build()).execute().use { it.code to (it.body?.string() ?: "") }
-
-    /** Один ход модели. Неизвестное gptunnel название модели — подбираем верное, запоминаем и повторяем. */
     /** YandexGPT и другие модели Yandex AI Studio: «yandexgpt-5.1/latest» или полный «gpt://каталог/…». */
     fun isYandex(m: String) = m.startsWith("gpt://") || m.startsWith("yc:") || m.startsWith("yandex", true)
     /** Google AI Studio: «google:gemini-3.5-flash-lite», «gemini-…», «gemma-…». Нужен VPN. */
@@ -58,16 +39,15 @@ object Llm {
     /** Платная ли модель (для подсказок в настройках). */
     fun free(m: String) = isGoogle(m)
 
-    /** Запасная модель, если Google не ответил (нет VPN, лимит): Claude через gptunnel, иначе Яндекс. */
+    /** Запасная модель, если Google не ответил (нет VPN, лимит): Яндекс. */
     private fun fallback(): String = when {
-        key.isNotBlank() && !broke -> "claude-5.5-haiku"
         YaCloud.llmKey.isNotBlank() -> "yc:aliceai-llm-flash"
         else -> ""
     }
 
     class GoogleLimit(val daily: Boolean, msg: String) : Exception(msg)
     class GoogleRegion(msg: String) : Exception(msg)
-    /** На счёте gptunnel кончились деньги (402) — повтор не поможет, нужна другая модель или пополнение. */
+    /** На счёте AnyModel кончились деньги (402) — повтор не поможет, нужна другая модель или пополнение. */
     class NoMoney(msg: String) : Exception(msg)
 
     /**
@@ -237,70 +217,8 @@ object Llm {
 
     private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply =
         if (isAny(model)) anyChat(model, messages, maxTokens, json)
-        else if (isYandex(model)) yandexChat(model, messages, maxTokens, json) else try {
-            chatOnce(model, messages, maxTokens, json)
-        } catch (e: ModelNotFound) {
-            val fixed = findModel(model) ?: error("gptunnel не знает модель «$model», и подобрать название не вышло — впиши его в «Подключениях»")
-            if (model == Prefs.fastModel) Prefs.fastModel = fixed
-            if (model == Prefs.smartModel) Prefs.smartModel = fixed
-            chatOnce(fixed, messages, maxTokens, json)
-        }
-
-    class ModelNotFound(msg: String) : Exception(msg)
-
-    /** Названия-кандидаты: у gptunnel бывает «claude-4.5-haiku», бывает и наоборот; плюс список /v1/models, если он есть. */
-    fun findModel(model: String): String? {
-        val m = model.lowercase()
-        val kind = listOf("haiku", "sonnet", "opus").firstOrNull { m.contains(it) } ?: return null
-        val ver = Regex("(\\d+)[.-](\\d+)").find(m)?.let { "${it.groupValues[1]}.${it.groupValues[2]}" }
-            ?: Regex("(\\d+)").find(m)?.groupValues?.get(1) ?: return null
-        val listed = runCatching { models() }.getOrDefault(emptyList())
-            .filter { it.lowercase().contains(kind) && (it.contains(ver) || it.contains(ver.replace('.', '-'))) }
-        val guesses = listOf("claude-$ver-$kind", "claude-$kind-$ver", "claude-$kind-${ver.replace('.', '-')}",
-            "claude-${ver.replace('.', '-')}-$kind", "anthropic/claude-$kind-$ver")
-        for (c in (listed + guesses).distinct()) {
-            if (c == model) continue
-            val ok = runCatching {
-                chatOnce(c, JSONArray().put(JSONObject().put("role", "user").put("content", "ok")), 5, false); true
-            }.getOrElse { it !is ModelNotFound && it.message?.contains("404") != true }
-            if (ok) return c
-        }
-        return null
-    }
-
-    /** Список моделей gptunnel (формат OpenAI: data[].id), если такой адрес у них есть. */
-    fun models(): List<String> {
-        val r = get("$BASE/models", bearer)
-        if (r.first !in 200..299) return emptyList()
-        val a = JSONObject(r.second).optJSONArray("data") ?: return emptyList()
-        return (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("id")?.takeIf { s -> s.isNotBlank() } }
-    }
-
-    private fun chatOnce(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
-        if (key.isBlank()) error("В сборке нет ключа GPTUNNEL_KEY — проверь секрет на GitHub и пересобери")
-        fun body(js: Boolean) = JSONObject().put("model", model).put("temperature", 0.2).put("max_tokens", maxTokens)
-            .put("useWalletBalance", true).put("messages", messages)
-            .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
-        var b = body(json)
-        var r = post("$BASE/chat/completions", b, bearer)
-        if (r.first == 401 || r.first == 403) {
-            val r2 = post("$BASE/chat/completions", b, !bearer)
-            if (r2.first in 200..299) bearer = !bearer
-            r = r2
-        }
-        if (r.first == 400 && json) { b = body(false); r = post("$BASE/chat/completions", b, bearer) }
-        if (r.first == 404 || r.second.contains("invalid_model_error") || r.second.contains("Model not found", true))
-            throw ModelNotFound("модель «$model» не найдена")
-        if (r.first == 402 || r.second.contains("Insufficient quota", true) || r.second.contains("balance is too low", true))
-            { brokeAt = System.currentTimeMillis(); throw NoMoney("на GPTunnel закончился баланс") }
-        if (r.first !in 200..299) error("модель «$model» ответила ${r.first}: ${r.second.take(200)}")
-        val j = JSONObject(r.second)
-        val text = content(j.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
-        val u = j.optJSONObject("usage") ?: JSONObject()
-        val apiCost = u.optDouble("total_cost", 0.0).let { if (it.isNaN()) 0.0 else it }
-        lastUsed = model
-        return Reply(text, u.optInt("prompt_tokens"), u.optInt("completion_tokens"), apiCost)
-    }
+        else if (isYandex(model)) yandexChat(model, messages, maxTokens, json)
+        else error("Модель «$model» больше не поддерживается (GPTunnel убран) — выбери модель в настройках")
 
     /**
      * Потоковый ответ (SSE) — для «быстрой полосы»: текст приходит по кусочкам через onDelta.
@@ -327,10 +245,7 @@ object Llm {
                 if (anyKey.isBlank()) error("нет ключа AnyModel")
                 streamSse(ANY_URL, "Bearer $anyKey", model.removePrefix("any:"), messages, maxTokens, onDelta)
             }
-            else -> {
-                if (key.isBlank()) error("нет ключа gptunnel")
-                streamSse("$BASE/chat/completions", if (bearer) "Bearer $key" else key, model, messages, maxTokens, onDelta)
-            }
+            else -> error("модель «$model» не поддерживается")
         }
     }
 
@@ -356,43 +271,5 @@ object Llm {
             }
         }
         return sb.toString()
-    }
-
-    /** Баланс личного счёта gptunnel в рублях (GET /v1/balance?useWalletBalance=true). */
-    fun balance(): Double {
-        if (key.isBlank()) error("нет ключа")
-        val url = "$BASE/balance?useWalletBalance=true"
-        var r = get(url, bearer)
-        if (r.first == 401 || r.first == 403) {
-            val r2 = get(url, !bearer)
-            if (r2.first in 200..299) bearer = !bearer
-            r = r2
-        }
-        if (r.first !in 200..299) error("баланс: ${r.first} ${r.second.take(120)}")
-        return findNumber(r.second) ?: error("не понял ответ: ${r.second.take(120)}")
-    }
-
-    /** Ответ бывает {"balance": 512.3} или вложенным — ищем первое число в знакомых полях. */
-    private fun findNumber(txt: String): Double? {
-        txt.trim().toDoubleOrNull()?.let { return it }
-        val j = runCatching { JSONObject(txt) }.getOrNull() ?: return null
-        return scan(j)
-    }
-
-    private fun scan(j: JSONObject): Double? {
-        for (k in listOf("balance", "amount", "sum", "value", "total")) {
-            if (j.has(k)) {
-                val v = j.opt(k)
-                if (v is Number) return v.toDouble()
-                if (v is String) v.replace(',', '.').toDoubleOrNull()?.let { return it }
-                if (v is JSONObject) scan(v)?.let { return it }
-            }
-        }
-        val it = j.keys()
-        while (it.hasNext()) {
-            val v = j.opt(it.next())
-            if (v is JSONObject) scan(v)?.let { n -> return n }
-        }
-        return null
     }
 }

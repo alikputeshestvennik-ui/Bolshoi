@@ -42,7 +42,7 @@ import java.io.ByteArrayOutputStream
 
 /**
  * Вложения к задаче: текстовые файлы читаются как текст, фото и PDF «смотрит» модель с распознаванием картинок
- * (Claude через gptunnel) и пересказывает — так с ними работает любая основная модель, в том числе яндексовская.
+ * (модель со зрением) и пересказывает — так с ними работает любая основная модель, в том числе яндексовская.
  */
 object Attach {
     class Att(val uri: Uri, val name: String, val mime: String, val size: Long)
@@ -141,20 +141,19 @@ object Attach {
         return t.length < 220 && Regex("не могу|не буду|не в состоянии|cannot|can.t|unable to|i'm sorry|извините|не имею возможности|обсуждать эту тему").containsMatchIn(l)
     }
 
-    /** Модель с распознаванием изображений: Claude через gptunnel (яндексовские модели картинки не видят). */
+    /** Модель с распознаванием изображений: не яндексовская (они картинки не видят) — «Руки»/чат, иначе DeepSeek Flash Vision через AnyModel. */
     private fun look(urls: List<String>): String {
         if (urls.isEmpty()) return "(не удалось открыть)"
-        val model = Prefs.bg.takeUnless { Llm.isYandex(it) } ?: Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "claude-5.5-haiku"
+        val model = Prefs.bg.takeUnless { Llm.isYandex(it) } ?: Prefs.fastModel.takeUnless { Llm.isYandex(it) } ?: Prefs.smartModel.takeUnless { Llm.isYandex(it) } ?: "ds/deepseek-v4-flash-vision"
         val content = JSONArray().put(JSONObject().put("type", "text").put("text",
             "Опиши по-русски, что на изображении, и перепиши весь видимый текст как есть. Если это вещь или товар — назови тип, бренд и модель как можно точнее " +
                 "(по логотипу, надписям, дизайну), цвет, материал; если место или здание — что это и где, если узнаёшь. В конце строка «Для поиска: …» — 3-6 слов, по которым это искать. Коротко, по делу."))
         urls.forEach { content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", it))) }
         val body = JSONArray().put(JSONObject().put("role", "user").put("content", content))
         var out = runCatching { Llm.chat(model, body, 1500, json = false).text.trim() }.getOrDefault("")
-        // Google иногда отказывается описывать фото (например, где есть ребёнок в рекламе) — тогда просим Claude
-        if (out.isBlank() || isRefusal(out)) {
-            if (Llm.key.isNotBlank()) out = runCatching { Llm.chat("claude-5.5-haiku", body, 1500, json = false).text.trim() }.getOrDefault(out)
-        }
+        // модель отказалась или промолчала — просим модель со зрением через AnyModel
+        if ((out.isBlank() || isRefusal(out)) && Llm.anyKey.isNotBlank() && model != "ds/deepseek-v4-flash-vision")
+            out = runCatching { Llm.chat("ds/deepseek-v4-flash-vision", body, 1500, json = false).text.trim() }.getOrDefault(out)
         return out.take(6000).ifBlank { "(не удалось рассмотреть изображение)" }
     }
 }

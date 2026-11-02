@@ -1,5 +1,9 @@
 package ru.alim.agent
 
+import androidx.compose.foundation.layout.height
+
+import androidx.compose.foundation.layout.Spacer
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.WebResourceRequest
@@ -165,6 +169,7 @@ fun YooScreen(back: () -> Unit) {
     var done by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     Screen("Подключить ЮMoney", back) {
+        Spacer(Modifier.height(LocalTopPad.current - 14.dp))
         if (Yoo.clientId.isBlank()) {
             Text("В сборке нет YOOMONEY_CLIENT_ID — добавь секрет и пересобери.", style = body(15, color = Amber))
             return@Screen

@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -111,6 +112,7 @@ import kotlin.math.roundToInt
 private val hhmm = SimpleDateFormat("HH:mm", Locale("ru"))
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     val chat = remember(fid) { Chat.of(fid) }
     val core = chat.core
@@ -126,7 +128,19 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         if (q.isEmpty()) msgs.toList() else msgs.filter { it.text.contains(q, true) }
     }
     // новые сообщения — прокрутка вниз
-    LaunchedEffect(msgs.size, core.busy) { if (search == null && ChatJump.target == 0L) list.animateScrollToItem(0) }
+    LaunchedEffect(msgs.size, core.busy) {
+        if (search != null || ChatJump.target != 0L) return@LaunchedEffect
+        val last = msgs.lastOrNull()
+        if (last != null && !last.me && !core.busy && core.pending == null && System.currentTimeMillis() - last.ts < 8000) {
+            // большой ответ: показываем его начало, а не низ (карточка не «пролистана до конца»)
+            list.scrollToItem(0)
+            delay(32)
+            val info = list.layoutInfo
+            val it0 = info.visibleItemsInfo.firstOrNull { it.index == 0 }
+            val view = info.viewportSize.height - info.beforeContentPadding - info.afterContentPadding
+            if (it0 != null && it0.size > view) list.scrollToItem(0, it0.size - view)
+        } else list.animateScrollToItem(0)
+    }
     LaunchedEffect(ChatJump.searchReq) { if (ChatJump.searchReq) { search = ""; ChatJump.searchReq = false } }
     // переход с панели — к нужному сообщению, с подсветкой
     LaunchedEffect(ChatJump.target) {
@@ -171,8 +185,12 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 rev.forEachIndexed { i, m ->
                     item(key = m.id) {
                         val rich = remember(m.best) { if (m.me) null else Rich.parse(m.best) }
-                        Column(Modifier.fillMaxWidth()) {
-                            if (rich != null && !ChatSel.on) ThinkChip(rich)
+                        // только что пришёл ответ — плавно проявляется и чуть поднимается
+                        val fresh = remember(m.id) { !m.me && System.currentTimeMillis() - m.ts < 6000 }
+                        val appear = remember(m.id) { androidx.compose.animation.core.Animatable(if (fresh) 0f else 1f) }
+                        LaunchedEffect(m.id) { if (fresh) { delay(180); appear.animateTo(1f, androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing)) } }
+                        Column(Modifier.fillMaxWidth().graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 28.dp.toPx() }) {
+                            if (rich != null && !ChatSel.on) ThinkChip(rich, fresh)
                             MsgRow(m, chat = chat, f = f, showButtons = Prefs.quickButtons && i == 0 && !m.me && !core.busy && search == null)
                         }
                     }
@@ -233,7 +251,11 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
                 }
             } else {
+                val hap = androidx.compose.ui.platform.LocalHapticFeedback.current
                 Row(Modifier.fillMaxWidth().height(56.dp).glass(haze, RoundedCornerShape(28.dp))
+                    // долгий тап по шапке — поиск по переписке (бабл превращается в поле поиска)
+                    .combinedClickable(onClickLabel = null, onLongClickLabel = "Поиск по переписке", onClick = {},
+                        onLongClick = { hap.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); search = "" })
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Avatar(44.dp, f = f)
                     HGap(10)
@@ -269,7 +291,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             } else {
                 if (fid == Friends.MAIN) {
                     if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
-                    NavBar(haze, Scr.Home, go, searchOn = search != null) { search = if (search == null) "" else null }; Spacer(Modifier.height(10.dp))
+                    NavBar(haze, Scr.Home, go); Spacer(Modifier.height(10.dp))
                 }
                 Composer(haze, chat, f)
             }

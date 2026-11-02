@@ -397,7 +397,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val df = SimpleDateFormat("d MMMM", Locale("ru"))
 
     Screen("История", back, showBack = false) {
-        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(4.dp)) {
                     listOf("Сегодня", "Неделя", "Месяц").forEachIndexed { i, t ->
@@ -502,7 +502,7 @@ fun RulesScreen(back: () -> Unit) {
     val recent = remember(nv) { NotifStore.recent().takeLast(6).reversed() }
 
     Screen("Автоответчик", back) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(AccentSoft).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -564,13 +564,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
     var limit by remember { mutableStateOf(Prefs.monthLimit) }
     var speak by remember { mutableStateOf(Prefs.speak) }
     var check by remember { mutableStateOf<String?>(null) }
-    var balance by remember { mutableStateOf(Prefs.lastBalance) }
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(1500); tick++ } }
-    LaunchedEffect(Unit) {
-        val b = withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }
-        if (b != null) { balance = rub(b); Prefs.lastBalance = balance }
-    }
 
     fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
@@ -579,7 +574,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
     Screen(nav.page ?: "Настройки", { nav.page = null }, showBack = nav.page != null) {
       androidx.compose.runtime.CompositionLocalProvider(LocalSetNav provides nav) {
         val sc = remember(nav.page) { androidx.compose.foundation.ScrollState(0) }
-        Column(Modifier.weight(1f).verticalScroll(sc).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(sc).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Пилот: память, характер, вид — отдельные экраны
             if (nav.page == null) SetGroup {
                 listOf(Triple("Что Пилот помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
@@ -705,41 +700,24 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 if (missing.isEmpty()) Teal else Amber, if (missing.isEmpty()) Muted else Amber) {
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
-            Section("Для разработчика", "модели · расходы · квоты", Muted) {
-                // баланс — сразу на виду
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(AccentSoft).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Баланс GPTunnel", style = body(13, color = AccentSoftInk))
-                        Text(balance.ifBlank { "—" }, style = TextStyle(fontFamily = Fonts.display, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                    }
-                    IconTile(Icons.Filled.Refresh, "Обновить баланс", {
-                        scope.launch {
-                            withContext(Dispatchers.IO) { runCatching { Llm.balance() }.getOrNull() }?.let { balance = rub(it); Prefs.lastBalance = balance }
-                        }
-                    })
-                }
-                if (Llm.key.isBlank()) Text("Нет ключа GPTUNNEL_KEY — Claude недоступен", style = body(13, color = Amber))
+            Section("Для разработчика", "модели · расходы", Muted) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
-                Text("Выбери модель для каждой роли. Яндекс — бесплатно и без VPN, Google — бесплатно с VPN, Claude — платно, но самый толковый.", style = body(12, color = Muted), lineHeight = 16.sp)
-                ModelEditor("Чат — обычные сообщения и простые просьбы", "fast", fast, fastIn, fastOut,
-                    { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it })
-                ModelEditor("Руки — сложные дела (Ozon, много шагов)", "smart", smart, smartIn, smartOut,
-                    { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
-                ModelEditor("Фон — уведомления, сводки, сам пишет, поиск фото", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
+                Text("Модель для каждой роли. Яндекс — бесплатно и без VPN; AnyModel — платно: ${"%.2f".format(AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов баланса × коэффициент модели, расход в рублях — в «Истории».",
+                    style = body(12, color = Muted), lineHeight = 16.sp)
                 var fl by remember { mutableStateOf(Prefs.fastLane) }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Быстрые ответы", style = body(15, FontWeight.SemiBold))
-                        Text("Простую болтовню Пилот отвечает сразу лёгкой моделью, с печатью по словам. Дела по-прежнему делает агент.", style = body(12, color = Muted), lineHeight = 16.sp)
+                ModelEditor("Чат — сообщения, простые просьбы и быстрые ответы", "fast", fast, fastIn, fastOut,
+                    { fast = it; Prefs.fastModel = it }, { fastIn = it; Prefs.fastIn = it }, { fastOut = it; Prefs.fastOut = it }) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Быстрые ответы", style = body(14, FontWeight.SemiBold))
+                            Text("Простую болтовню — сразу этой моделью, с печатью по словам. Дела делает агент.", style = body(12, color = Muted), lineHeight = 16.sp)
+                        }
+                        Toggle(fl) { fl = it; Prefs.fastLane = it }
                     }
-                    Toggle(fl) { fl = it; Prefs.fastLane = it }
                 }
-                if (fl) {
-                    var lane by remember { mutableStateOf(Prefs.laneModel) }
-                    ModelEditor("Быстрая полоса — простая болтовня", "lane", lane, "0", "0", { lane = it; Prefs.laneModel = it }, {}, {})
-                }
-                Text(Quota.summary() + ". Лимит кончается — беру соседнюю бесплатную модель, потом Claude Haiku. Сброс около 10:00 МСК.",
-                    style = body(12, color = Muted), lineHeight = 17.sp)
+                ModelEditor("Руки — сложные дела (много шагов, подборки)", "smart", smart, smartIn, smartOut,
+                    { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
+                ModelEditor("Фон — уведомления, сводки, сам пишет", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
                 BigButton("Проверить связь", {
                     check = "Проверяю…"
                     scope.launch {
@@ -810,61 +788,31 @@ private fun PermsPage(rows: List<Pair<String, Boolean>>, ask: () -> Unit, notif:
 
 @Composable
 fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: String,
-                onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit) {
-    // Готовые варианты: Claude через gptunnel или модели Yandex AI Studio (ключ Yandex Cloud, без VPN)
-    val g = listOf(
-        Triple("Gemini 3.5 Lite · бесплатно", "google:gemini-3.5-flash-lite", "0" to "0"),
-        Triple("Gemini 3.1 Lite · бесплатно", "google:gemini-3.1-flash-lite", "0" to "0"),
-        Triple("Gemini 3.8 Flash · 20 в день", "google:gemini-3.8-flash", "0" to "0"),
-    )
-    val presets = if (slot == "bg") g.take(2) + listOf(
-        Triple("Claude Haiku", "claude-5.5-haiku", "0.03" to "0.15"),
-        Triple("Alice AI Flash", "yc:aliceai-llm-flash", "0" to "0"),
-        Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
-    ) else if (slot == "fast") listOf(
-        Triple("Claude Haiku", "claude-5.5-haiku", "0.03" to "0.15"),
-        Triple("Alice AI Flash", "yc:aliceai-llm-flash", "0" to "0"),
-        Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
-        Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
-        Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
-    ) + g else listOf(
-        Triple("Claude Sonnet", "claude-5.5-sonnet", "0.4" to "2"),
-        Triple("Alice AI", "yc:aliceai-llm", "0" to "0"),
-        Triple("YandexGPT 5.1 Pro", "yandexgpt-5.1/latest", "0" to "0"),
-        Triple("DeepSeek V4.1 Flash", "yc:deepseek-v4.1-flash", "0" to "0"),
-        Triple("Qwen3.6 35B", "yc:qwen3.6-35b-a3b", "0" to "0"),
-    ) + g.reversed() + listOf(
-        // AnyModel (ключ ANYMODEL_KEY): цены впиши после теста — пока 0
-        Triple("GPT-6 Astra · Any", "cx/gpt-6-astra", "0" to "0"),
-        Triple("GPT-6.1 Sol · Any", "cx/gpt-6.1-sol", "0" to "0"),
-        Triple("GPT-6.1 Terra · Any", "cx/gpt-6.1-terra", "0" to "0"),
-        Triple("Claude Opus 5.5 · Any", "cc/claude-opus-5-5", "0" to "0"),
-        Triple("Claude Opus 4.7 · Any", "cc/claude-opus-4-7", "0" to "0"),
-        Triple("Claude Sonnet 5 · Any", "cc/claude-sonnet-5", "0" to "0"),
-        Triple("Gemini 3 Flash · Any", "ag/gemini-3-flash", "0" to "0"),
-        Triple("DeepSeek V4 Pro · Any", "ds/deepseek-v4-pro", "0" to "0"),
-        Triple("DeepSeek V4 Flash Vision · Any", "ds/deepseek-v4-flash-vision", "0" to "0"),
-        Triple("Gemini 3.1 Pro Low · Any", "ag/gemini-3.1-pro-low", "0" to "0"),
-        Triple("K3.1 Pro · Any", "kmc/k3.1-pro", "0" to "0"),
-    )
+                onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit, extra: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null) {
+    val names = mapOf(
+        "yc:aliceai-llm-flash" to "Alice AI Flash", "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT 5.1 Pro",
+        "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
+        "cx/gpt-6.1-sol" to "GPT-6.1 Sol · Any", "cx/gpt-6.1-terra" to "GPT-6.1 Terra · Any", "cc/claude-sonnet-5" to "Claude Sonnet 5 · Any",
+        "ds/deepseek-v4-pro" to "DeepSeek V4 Pro · Any", "ds/deepseek-v4-flash-vision" to "DeepSeek V4 Flash Vision · Any")
+    val list = when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS }
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            presets.forEach { (label, m, p) ->
-                val on = model.equals(m, true) || (m.startsWith("claude") && !Llm.isYandex(model) && !Llm.isAny(model) && model.contains(m.substringAfterLast('-'), true))
+            list.forEach { m ->
+                val on = model.equals(m, true)
+                val k = AnyPrice.coef(m)
                 Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Line else Bg)
-                    .clickable { onModel(m); onIn(p.first); onOut(p.second) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                    Text(label, style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
+                    .clickable { onModel(m); onIn("0"); onOut("0") }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                    Text((names[m] ?: m) + if (k != null) " ×" + k.toString().removeSuffix(".0").replace('.', ',') else "", style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
                 }
             }
         }
         val note = when {
-            Llm.isGoogle(model) -> "бесплатно · нужен VPN · сверх лимита ответит Claude Haiku"
             Llm.isYandex(model) -> "бесплатно · без VPN"
-            Llm.isAny(model) -> "платно · AnyModel · расходы в «Истории» считаются по цене ниже (₽ за 1000 токенов)"
-            else -> "платно · с баланса gptunnel"
+            Llm.isAny(model) -> AnyPrice.coef(model)?.let { "платно · AnyModel ×${it.toString().removeSuffix(".0").replace('.', ',')} ≈ ${"%.1f".format(it * AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов" } ?: "платно · AnyModel"
+            else -> ""
         }
-        Text(note, style = body(12, color = Muted))
+        if (note.isNotBlank()) Text(note, style = body(12, color = Muted))
         if (Llm.isAny(model) && slot == "smart") {
             var eff by remember { mutableStateOf(Prefs.effort) }
             Text("Глубина рассуждений", style = body(13, FontWeight.SemiBold))
@@ -879,12 +827,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
             Text(when (eff) { "low" -> "Шаг — секунды. Для простых дел."; "medium" -> "Шаг — десятки секунд. Золотая середина."
                 else -> "Шаг может занимать минуты, вся задача — час и дольше. Для особо важных дел." }, style = body(12, color = Muted), lineHeight = 16.sp)
         }
-        if (Llm.isAny(model) && slot != "bg") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.weight(1f)) { Field("Вход, ₽/1000 ток.", pin, KeyboardType.Decimal) { onIn(it) } }
-            Box(Modifier.weight(1f)) { Field("Выход, ₽/1000 ток.", pout, KeyboardType.Decimal) { onOut(it) } }
-        }
-        if (slot == "smart" && !model.contains("claude", true) && !Llm.isAny(model))
-            Text("Для сложных дел лучше Claude Sonnet — бесплатные модели могут недоделывать длинные задачи.", style = body(12, color = Amber), lineHeight = 16.sp)
+        extra?.invoke(this)
     }
 }
 

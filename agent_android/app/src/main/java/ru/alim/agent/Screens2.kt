@@ -1,5 +1,7 @@
 package ru.alim.agent
 
+import androidx.compose.foundation.layout.Spacer
+
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -70,6 +72,7 @@ fun MemoryScreen(back: () -> Unit) {
     val add: () -> Unit = { if (input.isNotBlank()) { Memory.add(ctx, input, "ты"); input = "" } }
 
     Screen("Память", back) {
+        Spacer(Modifier.height(LocalTopPad.current - 14.dp))
         Text("Что агент знает о тебе. «Догадки» он вывел сам из уведомлений и писем — подтверди или удали.",
             style = body(13, color = Muted), lineHeight = 18.sp)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -115,7 +118,7 @@ fun DigestScreen(back: () -> Unit) {
     LaunchedEffect(dv) { busy = false }
 
     Screen("Сводки", back, showBack = false) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Сегодня увидел: уведомлений ${counts["notif"] ?: 0}, сообщений ${counts["msg"] ?: 0}, SMS ${counts["sms"] ?: 0}, писем ${counts["mail"] ?: 0}",
                 style = body(13, color = Muted))
             Label("Важное сегодня", Amber)
