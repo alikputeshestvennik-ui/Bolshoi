@@ -64,6 +64,9 @@ object Viz {
     /** Рисунки этой задачи по порядку — для вставки в PDF «[[рисунок 1]]». */
     val task = ArrayList<Docs.FileRef>()
 
+    /** В рисунках этой задачи есть ползунки/поля ввода. */
+    fun live(): Boolean = task.any { r -> Regex("<input|<select|type=.range", RegexOption.IGNORE_CASE).containsMatchIn(read(r)) }
+
     private fun hex(c: Color): String = String.format("#%06X", c.toArgb() and 0xFFFFFF)
 
     /** Серия цветов для графиков: в монохроме — оттенки серого, иначе цвета темы. */

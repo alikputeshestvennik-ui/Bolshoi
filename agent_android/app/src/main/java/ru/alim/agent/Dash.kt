@@ -358,7 +358,11 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
             }
         }
         Row(verticalAlignment = Alignment.Top) {
-            Text(parts.title.ifBlank { (files.firstOrNull() ?: vizs.firstOrNull())?.name?.substringBeforeLast('.').orEmpty() },
+            // «Калькулятор уже на экране», «График выше» — не вывод: заголовком название рисунка
+            val vizTitle = vizs.firstOrNull()?.name?.removeSuffix(".html")
+            val title = if (vizTitle != null && (parts.title.isBlank() || Regex("на экране|выше|ниже|смотри|вот (он|она|оно|график|калькулятор|схема|рисунок)|^(готово|нарисовал|сделал)", RegexOption.IGNORE_CASE).containsMatchIn(parts.title)))
+                vizTitle.replace(Regex("\\s*\\([^)]*\\)$"), "") else parts.title
+            Text(title.ifBlank { (files.firstOrNull() ?: vizs.firstOrNull())?.name?.substringBeforeLast('.').orEmpty() },
                 style = TextStyle(fontFamily = Fonts.display, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = Ink), modifier = Modifier.weight(1f))
             if (files.isNotEmpty()) { Spacer(Modifier.width(10.dp)); ShareBtn(share) }
         }
