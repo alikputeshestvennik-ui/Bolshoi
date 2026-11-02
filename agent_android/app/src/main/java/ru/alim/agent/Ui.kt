@@ -223,8 +223,7 @@ val LocalBarHaze = androidx.compose.runtime.compositionLocalOf<dev.chrisbanes.ha
  * стрелка «назад» выезжает из аватара и сдвигает бабл вправо.
  */
 @Composable
-fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "") {
-    val haze = LocalBarHaze.current
+fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "", haze: dev.chrisbanes.haze.HazeState? = null) {
     val glassBg = Th.c.glass.copy(alpha = if (haze != null) (if (Th.c.dark) 0.35f else 0.30f) else (if (Th.c.dark) 0.55f else 0.62f))
     fun Modifier.gl(shape: androidx.compose.ui.graphics.Shape): Modifier = this.clip(shape)
         .then(if (haze != null) Modifier.hazeChild(haze, shape) else Modifier).background(glassBg).border(1.dp, Th.c.glassLine, shape)
@@ -256,14 +255,18 @@ fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "") {
 @Composable
 fun Screen(title: String, back: () -> Unit, showBack: Boolean = true, trailing: String = "", content: @Composable ColumnScope.() -> Unit) {
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // своё размытие у страницы: шапка лежит ВНЕ размываемого слоя (иначе размывается она сама), под ней — содержимое
+    val haze = remember { dev.chrisbanes.haze.HazeState() }
     Box(Modifier.fillMaxSize()) {
-        androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 76.dp) {
-            Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+        Box(Modifier.fillMaxSize().background(Th.c.bg).haze(haze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 76.dp) {
+                Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+            }
         }
         // затемнение сверху вместе со строкой состояния: лента уходит под шапку плавно, как в чате
         Box(Modifier.fillMaxWidth().height(top + 96.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(
             listOf(Th.c.bg.copy(alpha = 0.95f), Th.c.bg.copy(alpha = 0.75f), Th.c.bg.copy(alpha = 0f)))))
-        ScreenHeader(title, if (showBack) back else null, trailing)
+        ScreenHeader(title, if (showBack) back else null, trailing, haze)
     }
 }
 
