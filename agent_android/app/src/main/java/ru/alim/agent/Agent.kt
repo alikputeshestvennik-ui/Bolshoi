@@ -316,6 +316,7 @@ object Agent {
             append("- Часовые пояса относительно Москвы и Крыма: Калининград −1; Самара, Ижевск +1; Екатеринбург, Тюмень, Челябинск +2; Омск +3; Новосибирск, Красноярск +4; Иркутск +5; Якутск +6; Владивосток +7. Время в расписаниях — местное. Если отправление и прибытие в разных поясах — time_calc с \"tz\" (на сколько часов пояс прибытия впереди пояса отправления), иначе дорога выйдет неверной.\n")
             append("- Заголовок report (title): «N дней в <городе> за X ₽» — N это дни В ГОРОДЕ (ночи + 1), а не вся поездка с дорогой; дорогу и общее число дней поездки — в lead.\n")
             append("- Таблица-файл: лист «Итог» ВСЕГДА описывает тот же лучший вариант, что и финальный ответ с report/best. Пересчитал или сменил выбор — обнови ВСЕ листы, не только один. Итоги (суммы) в xlsx — формулами (=SUM(B2:B6), =B2+C2), числа — отдельными ячейками. Не пересоздавай файл, если нет новых данных.\n")
+            append("- ДАЛЬНИЕ ДАТЫ: если на нужные даты билетов ещё нет (РЖД продаёт за 90 дней, автобусы — за 10–30 дней, в кэше Авиасейлса пусто или только дорогие рейсы с пересадками) — НЕ останавливайся на «нет данных». Расписание почти не меняется из года в год: найди его (Яндекс Расписания, Туту — web_page) и цены на ближайшие даты, где продажи уже идут (тот же день недели), и дай как «ориентир» с пометкой, когда откроются продажи (дату посчитай). Самолёт: проверь весь месяц (ГГГГ-ММ) и direct=true; если нашлась только пересадка, ночной прилёт раньше начала поездки или цена в разы выше обычной — проверь соседние даты и прямые рейсы, ориентиром дай прямой.\n")
             append("- Каждая цена, время отправления и прибытия в маршруте — ТОЛЬКО из результатов поиска ЭТОЙ задачи (flights, web_page/web_read, hotels, time_calc). Не бери цифры из памяти, прошлых задач в чате или «примерно как обычно»: нет данных — «—» или «нет данных», а не угаданное число. На каждый участок маршрута нужен свой поиск.\n")
             append("- Сложный подбор с жёсткими условиями (сроки, бюджет) — после ответа дай в buttons 1-3 уточнения, которые сильнее всего меняют результат («Могу выехать в четверг», «Вернуться можно к обеду»).\n")
             append("- Бюджет задан — варианты сверх бюджета не предлагай как подходящие (или явно пометь «не влезает»).\n")
@@ -402,6 +403,8 @@ object Agent {
             val seenAll = StringBuilder(if (assemble || follow) rootTask + "\n" + text else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
             if (base != null) for (k in 0 until base.length()) base.optJSONObject(k)?.takeIf { it.optString("role") == "user" && it.optString("content").startsWith("РЕЗУЛЬТАТ ") }?.let { seenAll.append('\n').append(it.optString("content")) }
             var evRetry = 0
+            var gapRetry = 0
+            var longSay: String? = null   // последний полный ответ словами: если в конце модель скажет одно «Готово.», покажем его
             var fileStreak = 0
             try {
                 var i = 0
@@ -541,6 +544,10 @@ object Agent {
                         fileStreak++
                     } else fileStreak = 0
                     val used = (calls[tool] ?: 0) + 1; calls[tool] = used
+                    if (tool == "file_create" && used > 3) {
+                        msgs.put(msg("user", "РЕЗУЛЬТАТ file_create: файл в этой задаче создан уже 3 раза — больше не пересоздавай, шаги нужны на поиск. Дай финальный ответ (tool null) с report и best; чего не нашёл — честно напиши."))
+                        continue
+                    }
                     val tcap = when (tool) { "shop_search" -> 3; "web_search" -> if (hard0) 20 else 8; "web_read", "web_page" -> if (hard0) 24 else 10; "file_create" -> 6; else -> 8 }
                     if (used > tcap) {
                         msgs.put(msg("user", "Ты уже вызывал $tool ${used - 1} раз(а) — лимит поиска на задачу. Больше не ищи. Доделай задачу из того, что уже узнал: если просили таблицу или файл — ОБЯЗАТЕЛЬНО создай его, недостающее пиши «нет данных». Потом дай итог Алиму и честно скажи, чего не нашёл."))
@@ -584,6 +591,7 @@ object Agent {
                 } }
                 // тяжёлая задача, а в ответе только «Всё готово!» — вывод словами обязателен
                 val fc = final
+                if (fc != null && dropCliche(fc).replace(Regex("🕓.*"), "").trim().length >= 140) longSay = fc
                 if (fc != null && conclRetry < 1 && (hard0 || follow) && (files.isNotEmpty() || calls.values.sum() >= 4) && dropCliche(fc).replace(Regex("🕓.*"), "").trim().length < 140) {
                     conclRetry++
                     steps.add(Step("Дописываю вывод").also { it.done = true })
@@ -631,6 +639,17 @@ object Agent {
                         final = null; continue
                     }
                 }
+                // пропуски, которые видно без модели-проверяющего (слабая модель проверяет сама себя и молчит)
+                if (final != null && hard0 && !follow && !assemble && !wrap && gapRetry < 2 && i < cap - 6) {
+                    val g = gaps(text, lastBest, calls)
+                    if (g.isNotEmpty()) {
+                        gapRetry++
+                        steps.add(Step("Доискиваю пропущенное").also { it.done = true })
+                        msgs.put(msg("user", "НЕ ДОДЕЛАНО (шагов ещё ${cap - i - 1}): ${g.joinToString("; ")}. Не сдавайся на «нет данных», пока не поискал: найди сейчас инструментами " +
+                            "(если на эти даты продаж ещё нет — расписание и цены на ближайшие даты как «ориентир», с датой открытия продаж). Потом повтори финальный ответ (tool null, report, best) и обнови тот же файл."))
+                        final = null; continue
+                    }
+                }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
                 if (fin == null || wrap || audits >= (if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)) break
@@ -644,6 +663,11 @@ object Agent {
                 final = null
                 }
                 lastSmart = smart
+                if (final != null && (hard0 || follow) && dropCliche(final!!).replace(Regex("🕓.*"), "").trim().length < 140) {
+                    val lead = Rich.parse(lastBest)?.optJSONObject("report")?.let { r -> listOf(r.optString("title"), r.optString("lead")).filter { it.isNotBlank() }.joinToString(". ") }.orEmpty()
+                    val short = dropCliche(final!!).trim()
+                    final = (longSay ?: lead.ifBlank { null })?.let { l -> if (short.length > 12 && !l.contains(short)) "$l\n$short" else l } ?: final
+                }
                 var out = dropCliche(final ?: "Не успел собрать итог — задача оказалась слишком длинной. Шаги выше показывают, что я нашёл; напиши «продолжи», и я доделаю.")
                 // задача с файлом (сравнение/таблица): карточки товаров — только упомянутые в ответе, без «витрины» поиска
                 if (final != null && files.isNotEmpty() && products.isNotEmpty() && Tools.taskVideos.isEmpty()) {
@@ -734,6 +758,7 @@ object Agent {
                     "«Не дособрал / не успел / не искал / скажи — дособеру» по пункту, которого НЕТ в сделанных шагах, — НЕ сделано (честное «не нашёл» засчитывается, только если по пункту был поиск). " +
                     "Ответ говорит «ничего не подходит / не успеваю / перенеси даты» вместо результата — проверь по шагам, считал ли он по часам выезд НАКАНУНЕ (ночной автобус, прибытие утром в день вылета — это успеваю). Не считал — НЕ сделано: «посчитай выезд накануне через расчёт времени и дай варианты». " +
                     "Лист «Итог» (или помеченный «выбран») в файле называет другой вариант, чем лучший в ответе, или цифры файла и ответа расходятся — НЕ сделано: «обнови лист Итог и остальные под выбранный вариант». " +
+                    "Выбран вариант с пересадкой, когда прямой не проверяли; прилёт ночью или накануне раньше начала поездки; цена в разы выше других найденных за то же — НЕ сделано: «проверь прямой рейс и соседние даты». " +
                     "Просили сравнить способы (самый дешёвый/быстрый и т.п.), а в ответе один способ без причины, почему других нет, — НЕ сделано: «проверь второй способ поиском (поезд, пересадка, другой город отправления)». " +
                     "Если дана ИСХОДНАЯ ЗАДАЧА и УТОЧНЕНИЕ — проверяй только ответ на уточнение; требования исходной задачи (разные направления, все пункты) к нему не применяй. " +
                     "Ответ ТОЛЬКО JSON: {\"missing\": [\"что именно не сделано, коротко\"]} — пустой список, если всё выполнено."))
@@ -744,6 +769,31 @@ object Agent {
             val j = parse(r.text) ?: return null
             val miss = j.optJSONArray("missing")?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotBlank() } }.orEmpty()
             return miss.take(4).joinToString("; ").ifBlank { null }
+        }
+
+        /** Пункты просьбы, которые видно пропущенными без модели: погода без weather, отели без hotels, «нет данных» на участке почти без поиска. */
+        private fun gaps(ask: String, best: String, calls: Map<String, Int>): List<String> {
+            val x = ask.lowercase()
+            val rep = Rich.parse(best)?.optJSONObject("report")
+            val out = ArrayList<String>()
+            fun c(t: String) = calls[t] ?: 0
+            if (Regex("погод").containsMatchIn(x) && c("weather") == 0) out += "погода — инструмент weather не вызывался"
+            if (Regex("отел|гостиниц|жиль").containsMatchIn(x) && c("hotels") == 0) out += "отели — инструмент hotels не вызывался"
+            Regex("по\\s+(\\d)(?:\\s*[–-]\\s*\\d)?\\s+вариант").find(x)?.let { m ->
+                val n = m.groupValues[1].toInt()
+                val stay = rep?.optJSONArray("stay")?.length() ?: 0
+                if (Regex("отел").containsMatchIn(x) && stay in 1 until n) out += "отелей в отчёте $stay — просили по $n вариант(а) в каждом месте"
+            }
+            if (Regex("чем заняться|что посмотреть|места|достопримеч").containsMatchIn(x) && (rep?.optJSONArray("places")?.length() ?: 0) == 0 &&
+                c("web_search") + c("web_read") + c("web_page") == 0) out += "что посмотреть — не искал"
+            val legs = ArrayList<JSONObject>()
+            rep?.optJSONArray("route")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { legs += it } }
+            val noData = legs.filter { it.optString("kind") in setOf("bus", "train", "flight", "car", "taxi", "ship") &&
+                Regex("нет данных|не найден|уточняется|^\\s*—\\s*$", RegexOption.IGNORE_CASE).containsMatchIn(it.optString("sub") + " " + it.optString("when")) }
+            val searches = listOf("web_search", "web_read", "web_page", "flights").sumOf { c(it) }
+            if (noData.isNotEmpty() && searches < 2 * legs.count { it.optString("kind") in setOf("bus", "train", "flight", "car", "taxi", "ship") })
+                out += "нет данных по участкам: ${noData.joinToString(", ") { it.optString("what").take(40) }} — а поисков транспорта всего $searches (поезда и автобусы — Туту, Яндекс Расписания через web_page)"
+            return out
         }
 
         /** Цифры отчёта, которых нет в результатах инструментов этой задачи: из памяти, из прошлых задач или выдуманные. Пусто — всё подтверждено. */
@@ -775,6 +825,7 @@ object Agent {
                     val h = m.groupValues[1].toInt(); val mi = m.groupValues[2]
                     val tok = "%02d:%s".format(h, mi)
                     if (flat.contains(tok) || flat.contains("$h:$mi")) return@forEach
+                    if (Regex("(≈|~|около|примерно|выезд|выйти|выезжать)\\s*$").containsMatchIn(t.substring(0, m.range.first).takeLast(12))) return@forEach
                     if (seenT.add("t$tok")) out += "время $tok («${what.take(40)}»)"
                 }
             }

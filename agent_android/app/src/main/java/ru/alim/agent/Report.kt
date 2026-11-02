@@ -271,7 +271,17 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
             }
 
             // ——— сравнение: нелучшие нажимаются — «почему нет» и всё равно купить ———
-            val cmp = Rich.list(r.optJSONArray("compare"))
+            // полностью одинаковые строки склеиваем; одинаковые названия различаем — иначе две строки «54 308 ₽ + обратный билет» не понять
+            val cmp = Rich.list(r.optJSONArray("compare")).distinctBy { listOf(it.optString("name"), it.optString("time"), it.optString("price")) }
+            val dupNames = cmp.groupingBy { it.optString("name").trim().lowercase() }.eachCount().filterValues { it > 1 }.keys
+            fun cmpName(c: org.json.JSONObject): String {
+                val n = c.optString("name")
+                if (n.trim().lowercase() !in dupNames) return n
+                val extra = listOf(c.optString("when"), c.optString("date"), c.optString("note")).firstOrNull { it.isNotBlank() }
+                    ?: Rich.list(c.optJSONArray("route")).firstOrNull()?.let { listOf(it.optString("when"), it.optString("what")).filter { x -> x.isNotBlank() }.joinToString(" ") }?.takeIf { it.isNotBlank() }
+                    ?: "вариант ${cmp.indexOf(c) + 1}"
+                return "$n · $extra"
+            }
             if (cmp.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SecLabel("Сравнение")
                 cmp.forEach { c ->
@@ -285,7 +295,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(c.optString("name"), style = body(14, FontWeight.SemiBold, if (ok) Ink else Ink.copy(alpha = 0.8f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(cmpName(c), style = body(14, FontWeight.SemiBold, if (ok) Ink else Ink.copy(alpha = 0.8f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
                             val sub = if (ok) c.optString("time") else listOf(c.optString("time"), "почему нет ›").filter { it.isNotBlank() }.joinToString(" · ")
                             if (sub.isNotBlank()) Text(sub, style = body(12, color = if (ok) Muted else Teal), maxLines = 1)
                         }
