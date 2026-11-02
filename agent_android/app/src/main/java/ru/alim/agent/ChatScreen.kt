@@ -428,7 +428,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
         }
         return
     }
-    if (!m.me && !ChatSel.on && m.meta.isNotBlank() && m.text.length > 260) {
+    if (!m.me && !ChatSel.on && m.meta.isNotBlank() && !m.meta.contains(" · ход ") && m.text.length > 260) {
         SheetCard(m, lit, showButtons, chat)
         return
     }
