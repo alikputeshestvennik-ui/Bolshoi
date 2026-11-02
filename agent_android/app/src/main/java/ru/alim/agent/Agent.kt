@@ -179,7 +179,9 @@ object Agent {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения" else "" }
             if (t.isEmpty() || busy) return
             val base = lastMsgs
-            if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
+            // новая большая задача (или тот же промпт ещё раз) — с чистого листа: старые ответы и цифры из прошлой переписки не тянем
+            val fresh = !t.contains("Собрать итог из найденного") && (t == rootTask || (hardText(t) && t.length > 250))
+            if (base == null || fresh || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
             photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             startedAt = System.currentTimeMillis(); endedAt = 0L; stopped = false
@@ -397,7 +399,7 @@ object Agent {
             var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
             Tools.parseDeadline(if (follow) rootTask else text)
-            val seenAll = StringBuilder(if (assemble) rootTask else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
+            val seenAll = StringBuilder(if (assemble || follow) rootTask + "\n" + text else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
             if (base != null) for (k in 0 until base.length()) base.optJSONObject(k)?.takeIf { it.optString("role") == "user" && it.optString("content").startsWith("РЕЗУЛЬТАТ ") }?.let { seenAll.append('\n').append(it.optString("content")) }
             var evRetry = 0
             var fileStreak = 0
@@ -618,8 +620,8 @@ object Agent {
                     final = null; continue
                 }
                 // защита от выдумок: цены и время в отчёте должны быть в результатах инструментов этой задачи
-                if (final != null && hard0 && !follow && evRetry < 2 && i < cap - 2) {
-                    val bad = unbacked(lastBest, seenAll.toString(), calls, assemble)
+                if (final != null && hard0 && evRetry < 2 && i < cap - 2) {
+                    val bad = unbacked(lastBest, seenAll.toString(), calls, assemble || follow)
                     if (bad.isNotEmpty()) {
                         evRetry++
                         steps.add(Step("Сверяю цифры с источниками").also { it.done = true })
@@ -679,7 +681,7 @@ object Agent {
                     lastBest = withContext(Dispatchers.IO) { runCatching { Buy.fix(lastBest, seen) }.getOrDefault(lastBest) }
                 }
                 // если после двух попыток что-то осталось неподтверждённым — прямо говорим об этом, а не оставляем как факт
-                if (final != null && hard0 && !follow) unbacked(lastBest, seenAll.toString(), calls, assemble).takeIf { it.isNotEmpty() }?.let { bad ->
+                if (final != null && hard0) unbacked(lastBest, seenAll.toString(), calls, assemble || follow).takeIf { it.isNotEmpty() }?.let { bad ->
                     out += "\n⚠ Не подтверждено поиском в этой задаче: ${bad.take(5).joinToString(", ")} — проверь перед покупкой."
                 }
                 finish(true, out)
