@@ -887,7 +887,7 @@ object Tools {
 
         Tool("shop_check", "{\"n\": \"1,2,3\", \"size\": \"43\"} — проверить у найденных товаров размер, продавца и отметку «Оригинал»") t@{ ctx, a ->
             val size = a.optString("size").trim()
-            val ns = a.optString("n", "1,2,3").split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.take(5)
+            val ns = a.optString("n").ifBlank { (1..lastShop.size.coerceAtMost(8)).joinToString(",") }.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.take(8)
             val pick = ns.mapNotNull { n -> lastShop.getOrNull(n - 1)?.let { n to it } }
             if (pick.isEmpty()) return@t "сначала shop_search"
             val res = coroutineScope {

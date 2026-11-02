@@ -164,11 +164,27 @@ object Shop {
   var i=b.search(/Выберите размер|Размер|РАЗМЕР/);
   var h=document.querySelector('h1'); var pm=b.match(/(\d[\d\s\u2009\u00a0]*)\s?₽/);
   var im=document.querySelector('img[src*="ozone"],img[srcset]');
-  // кнопки размеров: неактивная (disabled, полупрозрачная, зачёркнутая, бледнее остальных) — размер раскупили
+  // размеры на сайте Ozon часто спрятаны в выпадающий список «Выберите размер: 54 RU / XXL ▾» — раскрываем его один раз
+  window.__szt=(window.__szt||0)+1;
+  if(!window.__szo){
+    var all=document.querySelectorAll('div,button,span,input');
+    for(var q=0;q<all.length;q++){ var de=all[q]; var dx=(de.innerText||de.value||'').replace(/\s+/g,' ').trim();
+      if(/^\d{2}(?:[-–]\d{2})?\s*(?:RU|RUS|EU)?\s*\/\s*[0-9A-Z]{1,4}$/i.test(dx)||/^выберите размер$/i.test(dx)){
+        var dr=de.getBoundingClientRect(); if(dr.width<40||dr.width>700) continue;
+        var dc=de.closest('[role=button],[role=combobox],[role=listbox],button,[tabindex]')||de;
+        try{dc.click();}catch(z){} try{dc.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));}catch(z){}
+        window.__szo=1; break; } } }
+  // кнопки и строки размеров: неактивная (disabled, полупрозрачная, зачёркнутая, бледнее остальных, «нет в наличии») — раскупили
   var cand=[];
+  var sizeRe=/^(\d{2}(?:[-–\/]\d{2})?(?:\s*\(?(?:RU|RUS|EU)\)?)?(?:\s*\/\s*\d?X{0,3}[SML]{1,2}|\s*\/\s*\d{2})?|\d?X{0,3}[SML](?:\s*\(\d{2}(?:[-–]\d{2})?\))?|XXL|XXXL)/i;
+  document.querySelectorAll('li,[role=option],div,span,button').forEach(function(e){
+    var t=(e.innerText||'').replace(/\s+/g,' ').trim(); if(t.length<4||t.length>70) return;
+    var m=t.match(sizeRe); if(!m||m[0].length<2||m[0].length===t.length) return;
+    if(/нет в наличии|сообщить о поступлении|законч|распрод|нет на складе/i.test(t)) cand.push({t:m[0].trim(),off:true,lum:0,hard:true});
+  });
   document.querySelectorAll('button,div,span,label,a,li').forEach(function(e){
     if(e.children.length>2) return; var t=(e.innerText||'').replace(/\s+/g,' ').trim();
-    if(t.length>14||!/^(\d{2}(?:[-–\/]\d{2})?(?:\s*\(?(?:RU|RUS|EU)\)?)?|\d?X{0,3}[SML](?:\s*\(\d{2}(?:[-–]\d{2})?\))?|XXL|XXXL)$/i.test(t)) return;
+    if(t.length>20) return; var mm=t.match(sizeRe); if(!mm||mm[0].length!==t.length) return;
     var r=e.getBoundingClientRect(); if(r.width<14||r.width>170||r.height<14||r.height>100) return;
     var off=false, op=1, n=e;
     for(var d=0;d<4&&n;d++){ var cs=getComputedStyle(n); op*=parseFloat(cs.opacity||'1');
@@ -183,12 +199,15 @@ object Shop {
     cand.push({t:t,off:off,lum:lum});
   });
   // самые бледные надписи среди кнопок размеров — тоже «нет в наличии» (так Ozon рисует раскупленные)
-  if(cand.length>=3){ var ls=cand.map(function(x){return x.lum}).sort(function(a,b){return a-b}); var med=ls[Math.floor(ls.length/2)];
-    cand.forEach(function(x){ if(x.lum-med>70) x.off=true; }); }
+  var soft=cand.filter(function(x){return !x.hard});
+  if(soft.length>=3){ var ls=soft.map(function(x){return x.lum}).sort(function(a,b){return a-b}); var med=ls[Math.floor(ls.length/2)];
+    soft.forEach(function(x){ if(x.lum-med>70) x.off=true; }); }
   var sz={};
-  cand.forEach(function(x){ if(sz[x.t]===undefined||(sz[x.t]==='off'&&!x.off)) sz[x.t]=x.off?'off':'ok'; });
+  // «нет в наличии» текстом — решающее; иначе: хоть одна активная кнопка размера — есть
+  cand.forEach(function(x){ if(x.hard){ sz[x.t]='off'; return; } if(sz[x.t]==='off'&&cand.some(function(y){return y.hard&&y.t===x.t})) return;
+    if(sz[x.t]===undefined||(sz[x.t]==='off'&&!x.off)) sz[x.t]=x.off?'off':'ok'; });
   var szl=[]; for(var k in sz) szl.push(k+':'+sz[k]);
-  return JSON.stringify({sz:szl.length>=3?szl:[],seller:s.slice(0,3),orig:/Оригинал/.test(b),sizes:i<0?'':b.slice(i,i+500).replace(/\s+/g,' '),
+  return JSON.stringify({szt:window.__szt,sz:szl.length>=2?szl:[],seller:s.slice(0,3),orig:/Оригинал/.test(b),sizes:i<0?'':b.slice(i,i+500).replace(/\s+/g,' '),
     title:h?h.innerText.trim():document.title,price:pm?pm[0]:'',img:im?(im.currentSrc||im.src||''):'',n:b.length});
 })()
 """.trimIndent()
@@ -203,8 +222,10 @@ object Shop {
     /** Страница товара Ozon: продавец, отметка «Оригинал», размеры, цена. */
     suspend fun ozonInfo(ctx: Context, url: String): OzonInfo? {
         val raw = WebReader.run(ctx, url, OZON_ITEM_JS, { r ->
-            runCatching { val j = JSONObject(r); j.optInt("n") > 1500 && (j.optJSONArray("seller")?.length() ?: 0) > 0 }.getOrDefault(false)
-        }, 16_000)
+            // ждём продавца и размеры (после раскрытия списка размеров — ещё пару тиков)
+            runCatching { val j = JSONObject(r); j.optInt("n") > 1500 && (j.optJSONArray("seller")?.length() ?: 0) > 0 &&
+                ((j.optJSONArray("sz")?.length() ?: 0) > 0 || j.optInt("szt") >= 4) }.getOrDefault(false)
+        }, 22_000)
         val j = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if (j.optInt("n") < 300) return null
         val sel = j.optJSONArray("seller")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
