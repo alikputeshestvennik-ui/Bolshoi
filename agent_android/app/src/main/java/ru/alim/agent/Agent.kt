@@ -818,27 +818,29 @@ object Agent {
                 h.optJSONArray("prices")?.let { p -> for (q in 0 until p.length()) p.optJSONObject(q)?.let { texts += (h.optString("name") to it.optString("price")) } }
             } }
             val seenT = HashSet<String>()
-            // итоги (карточка, «лучший выбор», сравнение, заголовок): принимаем, если это число из поиска/формулы таблицы
-            // или сумма найденных цен маршрута и отелей (в т.ч. «за человека ×2»)
-            val parts = ArrayList<Int>()
-            for ((_, t) in texts) priceRe.findAll(t).forEach { m -> m.groupValues[1].replace(Regex("\\D"), "").toIntOrNull()?.takeIf { backed(it) }?.let { parts += it } }
-            val comp = parts.distinct().take(12)
-            fun isSum(x: Int): Boolean {
-                val opts = comp.flatMap { listOf(it, it * 2) }.distinct().take(20)
-                val reach = HashSet<Int>(); reach += 0
-                for (o in opts) { val add = reach.map { it + o }.filter { it <= x }; reach += add; if (x in reach) return true }
-                return x in reach
+            // итоги («лучший выбор», заголовок, строки «итого/всего» в карточке): принимаем, если число есть в поиске/формулах таблицы
+            // или равно сумме цен выбранного маршрута (цена «за человека» — ×1 или ×2). Альтернативы не трогаем — там свои подстановки.
+            val legPrices = ArrayList<Pair<Int, Boolean>>()   // (цена, «за человека»)
+            val chosen = ArrayList<String>()
+            rep.optJSONArray("route")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { chosen += it.optString("sub") } }
+            for (t in chosen) priceRe.find(t)?.let { m -> m.groupValues[1].replace(Regex("\\D"), "").toIntOrNull()?.let { v ->
+                legPrices += v to Regex("чел|человек|с человека", RegexOption.IGNORE_CASE).containsMatchIn(t.substring(m.range.last.coerceAtMost(t.length - 1)).take(25)) } }
+            val routeSums = HashSet<Int>()
+            if (legPrices.size in 2..10) {
+                var acc = listOf(0)
+                for ((v, per) in legPrices) acc = acc.flatMap { if (per) listOf(it + v, it + 2 * v) else listOf(it + v) }.distinct()
+                routeSums += acc
             }
+            fun okTotal(x: Int) = backed(x) || routeSums.any { kotlin.math.abs(it - x) <= maxOf(2, it / 200) }
             val tot = ArrayList<Pair<String, String>>()
-            rep.optJSONArray("totals")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { tot += (it.optString("label") to it.optString("value")) } }
+            rep.optJSONArray("totals")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { o ->
+                if (Regex("итог|всего|сумм|на двоих|поездк", RegexOption.IGNORE_CASE).containsMatchIn(o.optString("label"))) tot += (o.optString("label") to o.optString("value")) } }
             tot += ("заголовок" to rep.optString("title"))
-            Rich.parse(best)?.optJSONObject("best")?.let { b -> tot += (b.optString("name") to b.optString("value"))
-                b.optJSONArray("alt")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { tot += (it.optString("name") to it.optString("value")) } } }
-            rep.optJSONArray("compare")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { tot += (it.optString("name") to it.optString("price")) } }
-            for ((what, t) in tot) priceRe.findAll(t).forEach { m ->
+            Rich.parse(best)?.optJSONObject("best")?.let { b -> tot += (b.optString("name") to b.optString("value")) }
+            if (routeSums.isNotEmpty()) for ((what, t) in tot) priceRe.findAll(t).forEach { m ->
                 val v = m.groupValues[1].replace(Regex("\\D"), "").toIntOrNull() ?: return@forEach
-                if (v < 1000 || backed(v) || isSum(v)) return@forEach
-                if (seenT.add("p$v")) out += "сумма ${m.value.trim()} («${what.take(40)}») — не сходится ни с таблицей, ни с суммой найденных цен, пересчитай"
+                if (v < 1000 || okTotal(v)) return@forEach
+                if (seenT.add("p$v")) out += "сумма ${m.value.trim()} («${what.take(40)}») — не сходится ни с таблицей, ни с суммой цен маршрута, пересчитай"
             }
             for ((what, t) in texts) {
                 priceRe.findAll(t).forEach { m ->
