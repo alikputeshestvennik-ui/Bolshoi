@@ -8,7 +8,7 @@ on:
       - '.github/workflows/AGENT_APK.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -108,3 +108,13 @@ jobs:
           path: agent_android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish APK for direct download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(ls agent_android/app/build/outputs/apk/**/*.apk agent_android/app/build/outputs/apk/*/*.apk 2>/dev/null | head -1)
+          cp "$apk" "$RUNNER_TEMP/Ten.apk"
+          gh release view ten-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create ten-latest -R "$GITHUB_REPOSITORY" --title "Тень — последняя сборка" --notes "Прямая ссылка на последнюю сборку Тени" --target "$GITHUB_SHA"
+          gh release upload ten-latest "$RUNNER_TEMP/Ten.apk" -R "$GITHUB_REPOSITORY" --clobber
