@@ -43,7 +43,7 @@ fun TgScreen(back: () -> Unit) {
                 Tg.St.ERROR -> "ошибка"
             }
             Section("Личный Telegram", status, statusColor = if (st == Tg.St.READY) Muted else Amber) {
-                Text("Пилот подключается к твоему Telegram как сторонний клиент (Telegram это разрешает) на твоих ключах. " +
+                Text("Тень подключается к твоему Telegram как сторонний клиент (Telegram это разрешает) на твоих ключах. " +
                     "Сможет показывать твои чаты и искать по переписке, а писать — только по твоей просьбе и с подтверждением. " +
                     "Коды входа он не читает и не пересылает.", style = body(13, color = Muted), lineHeight = 18.sp)
 

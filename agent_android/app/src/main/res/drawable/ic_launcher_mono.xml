@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Со-пилот силуэтом (значки в шторке и тематические иконки): шарик с прорезью визора и глазами -->
+<!-- «Тень» силуэтом (тематические значки): рамка квадрата и тень -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
-        android:pathData="M25,54a29,29 0 1,0 58,0a29,29 0 1,0 -58,0zM45.6,43.3h16.8a12.5,12.5 0 0,1 0,25h-16.8a12.5,12.5 0 0,1 0,-25z" />
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.2" android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M39.7,57.6A4.4,3.8 0 0,1 47.9,57.6M60.1,57.6A4.4,3.8 0 0,1 68.3,57.6" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M30,30h40v40h-40zM34,34v32h32v-32z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M70,43h9v36h-36v-9h27z" />
 </vector>

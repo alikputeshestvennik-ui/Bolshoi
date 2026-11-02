@@ -107,7 +107,7 @@ object Git {
             runCatching {
                 androidx.core.app.NotificationManagerCompat.from(ctx).notify(7301, androidx.core.app.NotificationCompat.Builder(ctx, "important")
                     .setSmallIcon(R.drawable.ic_launcher_mono).setContentTitle("Обновление скачано")
-                    .setContentText("Нажми, чтобы установить новую версию Пилота").setContentIntent(pi).setAutoCancel(true).build())
+                    .setContentText("Нажми, чтобы установить новую версию Тени").setContentIntent(pi).setAutoCancel(true).build())
             }
             return "скачал свежую сборку — нажми уведомление «Обновление скачано», чтобы установить"
         }
@@ -147,8 +147,8 @@ object BuildWatch {
         if (status != "completed") { soon(ctx); return null }
         if (num <= installed(ctx) || num <= Prefs.buildSeen) return null
         Prefs.buildSeen = num
-        val (title, text) = if (concl == "success") "Новая версия Пилота готова" to "Сборка #$num собрана. Скажи «обновись» или нажми уведомление — поставлю."
-            else "Сборка #$num не собралась" to "Новая версия Пилота упала при сборке — на телефоне остаётся текущая."
+        val (title, text) = if (concl == "success") "Новая версия Тени готова" to "Сборка #$num собрана. Скажи «обновись» или нажми уведомление — поставлю."
+            else "Сборка #$num не собралась" to "Новая версия Тени упала при сборке — на телефоне остаётся текущая."
         Monitor.notify(ctx, 7300, title, if (concl == "success") "Сборка #$num собрана. Нажми — поставлю." else text, open = if (concl == "success") "update" else "")
         return "🛠 $title. ${text}"
     }

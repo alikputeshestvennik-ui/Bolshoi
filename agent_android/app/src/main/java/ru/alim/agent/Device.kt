@@ -94,7 +94,7 @@ object Device {
         // беззвучный/вибро на новых Android требуют доступа к «Не беспокоить»
         val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
         if (m != AudioManager.RINGER_MODE_NORMAL && Build.VERSION.SDK_INT >= 23 && !nm.isNotificationPolicyAccessGranted) {
-            openDndAccess(ctx); return "дай разрешение «Доступ к режиму Не беспокоить» для «Пилота», и повтори"
+            openDndAccess(ctx); return "дай разрешение «Доступ к режиму Не беспокоить» для «Тени», и повтори"
         }
         return runCatching { am.ringerMode = m; when (m) {
             AudioManager.RINGER_MODE_SILENT -> "беззвучный режим"; AudioManager.RINGER_MODE_VIBRATE -> "вибрация"; else -> "звук включён" } }
@@ -105,7 +105,7 @@ object Device {
     fun dnd(ctx: Context, on: Boolean): String {
         val nm = ctx.getSystemService(android.app.NotificationManager::class.java) ?: return "нет доступа"
         if (Build.VERSION.SDK_INT < 23) return "не поддерживается на этой версии"
-        if (!nm.isNotificationPolicyAccessGranted) { openDndAccess(ctx); return "дай разрешение «Доступ к режиму Не беспокоить» для «Пилота», и повтори" }
+        if (!nm.isNotificationPolicyAccessGranted) { openDndAccess(ctx); return "дай разрешение «Доступ к режиму Не беспокоить» для «Тени», и повтори" }
         return runCatching {
             nm.setInterruptionFilter(if (on) android.app.NotificationManager.INTERRUPTION_FILTER_NONE else android.app.NotificationManager.INTERRUPTION_FILTER_ALL)
             if (on) "«Не беспокоить» включён" else "«Не беспокоить» выключен"

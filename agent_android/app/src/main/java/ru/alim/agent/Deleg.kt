@@ -169,7 +169,7 @@ object Deleg {
             else -> " Фото: ${files.size} шт., приложу, когда к месту."
         }
         val bg = runCatching { ctx.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName) }.getOrDefault(true)
-        val bgNote = if (bg) "" else " ⚠️ Чтобы я продолжал с выключенным экраном, разреши Пилоту работать без ограничений батареи: Настройки → Мониторинг → «Не давать Samsung усыплять агента»."
+        val bgNote = if (bg) "" else " ⚠️ Чтобы я продолжал с выключенным экраном, разреши Тени работать без ограничений батареи: Настройки → Мониторинг → «Не давать Samsung усыплять агента»."
         return "поручение запущено: пишу ${who} (${if (channel == "tg") "Telegram" else "SMS"}).$fileNote Отчитаюсь, когда договорюсь или если понадобится твоё решение. Экран можно выключить.$bgNote"
     }
 

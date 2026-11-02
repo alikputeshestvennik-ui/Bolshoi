@@ -90,7 +90,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(10.dp).clip(circ).background(Teal)); Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(core.task.ifBlank { "Пилот работает" }, style = body(14, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(core.task.ifBlank { "Тень работает" }, style = body(14, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(core.steps.lastOrNull()?.text ?: "взлетаю…", style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Text("в кабину ›", style = body(13, FontWeight.SemiBold, Teal))
@@ -192,7 +192,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                     Avatar(46.dp)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Пилот", style = TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink))
+                        Text("Тень", style = TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink))
                         val now2 = remember(tick / 15) { SimpleDateFormat("EEE, d MMMM · HH:mm", Locale("ru")).format(Date()) }
                         Text(if (core.busy) "работает · " + core.task.take(40) else now2, style = body(12, color = if (core.busy) Teal else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -451,7 +451,7 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
             }.padding(14.dp), contentAlignment = Alignment.Center) {
                 Text("Открыть всё (${items.size})", style = body(14, FontWeight.Bold, Th.c.onAccent))
             }
-            Text("Цены — из поиска; точная будет на сайте при покупке. Платишь сам — Пилот ничего не покупает.", style = body(11, color = Muted))
+            Text("Цены — из поиска; точная будет на сайте при покупке. Платишь сам — Тень ничего не покупает.", style = body(11, color = Muted))
         }
     }
 }

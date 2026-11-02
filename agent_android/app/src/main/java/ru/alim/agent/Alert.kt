@@ -44,7 +44,7 @@ object Alert {
     /** Кнопка «Проверить» в настройках — всё сразу, мимо уровней. */
     fun test(ctx: Context) {
         val c = ctx.applicationContext
-        wake(c); flash(c, 3); say(c, "Пилот на связи. Так звучат важные уведомления.")
+        wake(c); flash(c, 3); say(c, "Тень на связи. Так звучат важные уведомления.")
     }
 
     private fun dnd(c: Context): Boolean = runCatching {

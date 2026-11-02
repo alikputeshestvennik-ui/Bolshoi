@@ -151,7 +151,7 @@ private fun QuickSheet(kind: String, source: String, files: Int, close: () -> Un
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(f.name, style = body(16, FontWeight.Bold))
-                    Text(if (core.busy) (core.steps.lastOrNull()?.text ?: "думаю…") else "Пилот", style = body(12, color = if (core.busy) Teal else Muted),
+                    Text(if (core.busy) (core.steps.lastOrNull()?.text ?: "думаю…") else "Тень", style = body(12, color = if (core.busy) Teal else Muted),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text("Открыть чат", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clip(shp(12.dp)).clickable { expand() }.padding(8.dp))

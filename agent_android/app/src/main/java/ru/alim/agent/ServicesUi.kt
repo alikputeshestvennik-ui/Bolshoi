@@ -26,7 +26,7 @@ fun MusicScreen(back: () -> Unit) {
         Column(Modifier.padding(top = LocalTopPad.current, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Section("Яндекс Музыка", if (YaMusic.ready) "подключена" else "не подключена",
                 statusColor = if (YaMusic.ready) Muted else Amber) {
-                Text("Пилот найдёт трек или альбом, покажет твои плейлисты и поставит музыку в приложении Яндекс Музыки. Вход — через твой аккаунт Яндекса (тот, где подписка).",
+                Text("Тень найдёт трек или альбом, покажет твои плейлисты и поставит музыку в приложении Яндекс Музыки. Вход — через твой аккаунт Яндекса (тот, где подписка).",
                     style = body(13, color = Muted), lineHeight = 18.sp)
                 if (YaMusic.ready) BigButton("Выйти", { YaMusic.logout() }, bg = Card, fg = Ink, border = Line)
                 else BigButton("Подключить Яндекс Музыку", { login = true })

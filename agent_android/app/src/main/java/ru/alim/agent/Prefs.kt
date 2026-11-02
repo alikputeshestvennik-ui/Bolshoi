@@ -48,6 +48,7 @@ object Prefs {
     /** Глубина рассуждений у моделей AnyModel для «рук»: low / medium / high. high думает минутами на каждом шаге. */
     var effort: String get() = s("eff", "medium"); set(v) = put("eff", v)
     /** Авто-тема: какая днём и какая вечером. */
+    var renamedTen: Boolean get() = b("ren_ten", false); set(v) = putB("ren_ten", v)
     var autoDay: String get() = s("aday", ""); set(v) = put("aday", v)
     var autoNight: String get() = s("anight", ""); set(v) = put("anight", v)
     var fastIn: String get() = s("fi", "0.03"); set(v) = put("fi", v.trim())

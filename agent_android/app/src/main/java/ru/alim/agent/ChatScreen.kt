@@ -806,13 +806,25 @@ fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false, f: Friend
     val path = f.avatar
     val bmp = remember(path, ver) { if (path.isNotBlank()) loadBitmap(path, 400) else null }
     Box(Modifier.size(size)) {
-        if (f.id == Friends.MAIN) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CopilotOrb(0, size * 1.3f, Modifier.requiredSize(size * 1.3f)) }
+        if (f.id == Friends.MAIN && bmp == null) TenMark(size)
+        else if (f.id == Friends.MAIN) Image(bmp!!, null, Modifier.fillMaxSize().clip(circ), contentScale = ContentScale.Crop)
         else Box(Modifier.fillMaxSize().clip(circ).background(Teal), contentAlignment = Alignment.Center) {
             if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(f.name.take(1).uppercase(), style = body((size.value * 0.42f).toInt(), FontWeight.Bold, OnAccent))
         }
         if (online) Box(Modifier.align(Alignment.BottomEnd).size(size * 0.28f).clip(circ).background(Th.c.card).padding(2.dp)
             .clip(circ).background(Ink))
+    }
+}
+
+/** Знак «Тени»: квадрат и его сдвинутая серая тень (в монохроме — без закруглений). */
+@Composable
+fun TenMark(size: androidx.compose.ui.unit.Dp) {
+    val fg = if (Th.c.dark) Color(0xFFF2F2F0) else Color(0xFF111111)
+    val cut = if (Th.c.dark) Color(0xFF111111) else Color.White
+    Box(Modifier.size(size).clip(if (Th.c.square) androidx.compose.ui.graphics.RectangleShape else shp(size * 0.22f)).background(fg)) {
+        Box(Modifier.offset(size * 0.36f, size * 0.36f).size(size * 0.36f).background(Color(0xFF9A9A96)))
+        Box(Modifier.offset(size * 0.22f, size * 0.22f).size(size * 0.42f).background(cut).padding(size * 0.04f).background(fg))
     }
 }
 

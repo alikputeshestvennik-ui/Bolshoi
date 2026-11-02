@@ -265,7 +265,7 @@ object Tools {
             if (launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url)))) "открыл в браузере" else "браузер не открылся"
         },
 
-        Tool("spend", "{} — сколько Пилот потратил (сегодня, за месяц), средняя цена задачи по моделям, во сколько обходятся быстрые ответы. На любые вопросы про расходы и «во сколько обойдётся» — только по этим цифрам") { ctx, _ ->
+        Tool("spend", "{} — сколько Тень потратил (сегодня, за месяц), средняя цена задачи по моделям, во сколько обходятся быстрые ответы. На любые вопросы про расходы и «во сколько обойдётся» — только по этим цифрам") { ctx, _ ->
             val d = Journal.since(ctx, Journal.startOfDay()); val m = Journal.since(ctx, Journal.startOfMonth())
             val lane = m.filter { it.title.startsWith("Быстрые ответы") }
             val tasks = m.filter { !it.background }
@@ -280,7 +280,19 @@ object Tools {
                 "Средняя цена задачи за месяц по моделям:\n" + byModel.ifBlank { "пока нет задач" }
         },
 
-        Tool("history_search", "{\"query\": \"Тула\", \"days\": 14} — найти прошлые задачи Пилота (что Алим просил и что ты ответил): «помнишь…», «та задача», «что ты вчера нашёл», «повтори для …». query пустой — последние задачи") { ctx, a ->
+        Tool("calc", "{\"expr\": \"итого: 25572 + 1200 + 2200 + 25592; на человека: (25572+25592)/2; скидка: 8799*0.56\"} — посчитать ТОЧНО (+ − * / ^ %, скобки; несколько выражений через «;», можно с подписью «имя:»). Любые суммы, разницы, проценты, «×2 на двоих» — только через calc, не в уме") t@{ _, a ->
+            val src = a.optString("expr").ifBlank { a.optString("expression") }.trim()
+            if (src.isEmpty()) return@t "нужно expr"
+            src.split(';', '\n').map { it.trim() }.filter { it.isNotEmpty() }.take(30).joinToString("\n") { part ->
+                val label = part.substringBefore(':', "").takeIf { part.contains(':') && !Regex("\\d:\\d").containsMatchIn(part) }?.trim().orEmpty()
+                val ex = if (label.isNotEmpty()) part.substringAfter(':') else part
+                runCatching { Calc(ex).run() }.fold(
+                    { v -> (if (label.isNotEmpty()) "$label = " else "$ex = ") + fmtNum(v) },
+                    { e -> "${label.ifEmpty { ex }}: не посчитал (${e.message})" })
+            }
+        },
+
+        Tool("history_search", "{\"query\": \"Тула\", \"days\": 14} — найти прошлые задачи Тени (что Алим просил и что ты ответил): «помнишь…», «та задача», «что ты вчера нашёл», «повтори для …». query пустой — последние задачи") { ctx, a ->
             val q = a.optString("query").trim().lowercase()
             val days = a.optInt("days", 30).coerceIn(1, 365)
             val from = System.currentTimeMillis() - days * 86_400_000L
@@ -515,7 +527,7 @@ object Tools {
         Tool("note_list", "{} — показать список заметок") t@{ _, _ -> Device.noteList() },
         Tool("note_done", "{\"which\": \"1 или текст\"} — убрать заметку из списка") t@{ _, a -> Device.noteDone(a.optString("which")) },
 
-        Tool("gh_build", "{} — статус последней сборки приложения «Пилот» на GitHub (идёт / успешно / упала)") t@{ _, _ ->
+        Tool("gh_build", "{} — статус последней сборки приложения «Тень» на GitHub (идёт / успешно / упала)") t@{ _, _ ->
             Git.lastBuild()
         },
 
@@ -550,7 +562,7 @@ object Tools {
             Tg.sendMessage(chat.first, text)
         },
 
-        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"sim\": \"1|2|оператор (для sms; две SIM и не сказано — спроси Алима)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\", \"start_at\": \"ГГГГ-ММ-ДДTЧЧ:ММ — начать позже (пусто — сразу)\", \"repeat\": \"daily 10:00 | weekdays 18:00 | weekly mon,fri 10:00 | every 2h — повторять по расписанию (пусто — один раз)\", \"until\": \"ГГГГ-ММ-ДД — до какого дня повторять\"} — ПОРУЧЕНИЕ: Пилот сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
+        Tool("delegate", "{\"who\": \"Егор\", \"channel\": \"telegram|sms\", \"chat\": \"имя или @ник в Telegram (для telegram)\", \"number\": \"+7… (для sms, можно пусто — найду в контактах)\", \"sim\": \"1|2|оператор (для sms; две SIM и не сказано — спроси Алима)\", \"goal\": \"ПОЛНОЕ поручение своими словами Алима: что выяснить/о чём договориться, все его условия и рамки, факты\", \"start_at\": \"ГГГГ-ММ-ДДTЧЧ:ММ — начать позже (пусто — сразу)\", \"repeat\": \"daily 10:00 | weekdays 18:00 | weekly mon,fri 10:00 | every 2h — повторять по расписанию (пусто — один раз)\", \"until\": \"ГГГГ-ММ-ДД — до какого дня повторять\"} — ПОРУЧЕНИЕ: Тень сам ведёт переписку от имени Алима (здоровается, пишет по шагам, ждёт ответы, прикладывает фото из вложений этой задачи), пока не договорится, и присылает итог. Для «свяжись с …», «спроси у …», «договорись с …», «уточни у … и напиши мне». Канал не назван: есть Telegram-чат с человеком — telegram, иначе sms",
             confirm = { a ->
                 val ch = if (a.optString("channel").startsWith("t", true)) "Telegram" else "SMS"
                 val to = a.optString(if (ch == "Telegram") "chat" else "number").ifBlank { a.optString("who") }
@@ -612,7 +624,7 @@ object Tools {
             Deleg.stop(ctx, a.optLong("id").takeIf { it > 0 })
         },
 
-        Tool("watch_start", "{\"topic\": \"Крымский мост\", \"what\": \"что именно отслеживать: открыт/закрыт, ограничения, пробки\", \"sources\": [\"@ник_канала\", \"https://…\", \"поисковый запрос\"], \"every_min\": 30, \"until\": \"ГГГГ-ММ-ДДTЧЧ:ММ (пусто — до конца дня)\", \"feed\": \"название или @ник Telegram-канала/группы — режим ЛЕНТЫ\"} — СЛЕЖКА. Режим ЛЕНТЫ (feed): «смотри посты в тг-группе …, присылай новое с фото/видео» — каждый новый пост приходит в чат с текстом и медиа. Иначе — СОСТОЯНИЕ: Пилот сам проверяет тему каждые N минут (≥15) в нескольких источниках, первый результат присылает сразу, дальше — ТОЛЬКО при изменениях, до указанного времени. Для «проверяй каждые …», «следи за …», «сообщай, если изменится». Источники подбери сами: официальный канал + новости + поиск") t@{ ctx, a ->
+        Tool("watch_start", "{\"topic\": \"Крымский мост\", \"what\": \"что именно отслеживать: открыт/закрыт, ограничения, пробки\", \"sources\": [\"@ник_канала\", \"https://…\", \"поисковый запрос\"], \"every_min\": 30, \"until\": \"ГГГГ-ММ-ДДTЧЧ:ММ (пусто — до конца дня)\", \"feed\": \"название или @ник Telegram-канала/группы — режим ЛЕНТЫ\"} — СЛЕЖКА. Режим ЛЕНТЫ (feed): «смотри посты в тг-группе …, присылай новое с фото/видео» — каждый новый пост приходит в чат с текстом и медиа. Иначе — СОСТОЯНИЕ: Тень сам проверяет тему каждые N минут (≥15) в нескольких источниках, первый результат присылает сразу, дальше — ТОЛЬКО при изменениях, до указанного времени. Для «проверяй каждые …», «следи за …», «сообщай, если изменится». Источники подбери сами: официальный канал + новости + поиск") t@{ ctx, a ->
             val topic = a.optString("topic").trim().ifBlank { return@t "за чем следить?" }
             val src = a.optJSONArray("sources")?.let { s -> (0 until s.length()).map { s.optString(it) } }
                 ?: a.optString("sources").split(',', ';').map { it.trim() }
@@ -1353,6 +1365,32 @@ object Tools {
                 return cell(r.first, r.second, r.third) ?: 0.0
             }
         }
+    }
+
+    /** 25572 → «25 572», 0.5 → «0,5». */
+    fun fmtNum(v: Double): String {
+        val r = Math.round(v * 100) / 100.0
+        val whole = if (r % 1.0 == 0.0) r.toLong().toString() else null
+        return if (whole != null) whole.reversed().chunked(3).joinToString(" ").reversed().replace("- ", "-")
+               else String.format(java.util.Locale("ru"), "%,.2f", r).replace('\u00A0', ' ').trimEnd('0').trimEnd(',')
+    }
+
+    /** Точный калькулятор выражений: числа (пробелы и запятая допускаются), + − * / ^ %, скобки. */
+    private class Calc(src: String) {
+        private val t = src.replace(Regex("(?<=\\d)[ \\u00A0\\u202F](?=\\d)"), "").replace('×', '*').replace('÷', '/').replace('−', '-').replace("₽", "").replace(" ", "")
+        private var i = 0
+        fun run(): Double { val v = expr(); if (i < t.length) error("лишнее: «${t.substring(i).take(10)}»"); return v }
+        private fun expr(): Double { var v = term(); while (i < t.length && (t[i] == '+' || t[i] == '-')) { val op = t[i++]; val r = term(); v = if (op == '+') v + r else v - r }; return v }
+        private fun term(): Double { var v = pow(); while (i < t.length && (t[i] == '*' || t[i] == '/')) { val op = t[i++]; val r = pow(); if (op == '/' && r == 0.0) error("деление на 0"); v = if (op == '*') v * r else v / r }; return v }
+        private fun pow(): Double { val b = unary(); return if (i < t.length && t[i] == '^') { i++; Math.pow(b, pow()) } else b }
+        private fun unary(): Double = if (i < t.length && t[i] == '-') { i++; -unary() } else if (i < t.length && t[i] == '+') { i++; unary() } else atom()
+        private fun atom(): Double {
+            if (i < t.length && t[i] == '(') { i++; val v = expr(); if (i >= t.length || t[i] != ')') error("нет «)»"); i++; return pct(v) }
+            val m = Regex("^\\d+(?:[.,]\\d+)?").find(t.substring(i)) ?: error("ожидал число")
+            i += m.value.length
+            return pct(m.value.replace(',', '.').toDouble())
+        }
+        private fun pct(v: Double): Double = if (i < t.length && t[i] == '%') { i++; v / 100.0 } else v
     }
 
     @Volatile var deadline: java.time.LocalDateTime? = null

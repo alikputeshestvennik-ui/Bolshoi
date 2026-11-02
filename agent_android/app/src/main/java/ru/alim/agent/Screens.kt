@@ -128,7 +128,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
                 },
                 style = body(20, FontWeight.SemiBold), textAlign = TextAlign.Center,
             )
-            Text(hint ?: if (voice.listening) "Говори, я записываю" else "Нажми на микрофон или на Пилота",
+            Text(hint ?: if (voice.listening) "Говори, я записываю" else "Нажми на микрофон или на Тень",
                 style = body(14, color = if (hint != null) Amber else Muted), textAlign = TextAlign.Center)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Погода на завтра", "Последние сообщения", "Сколько потратил?", "Будильник на 7:00").forEach { s ->
@@ -307,7 +307,7 @@ fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
                     }).copy(letterSpacing = if (touchdown) 3.sp else 1.5.sp))
                     Gap(2)
                     Text("%d:%02d".format(secs / 60, secs % 60), style = TextStyle(fontFamily = Fonts.display, fontSize = 38.sp, fontWeight = FontWeight.SemiBold, color = Sky.ink))
-                    Text(if (Agent.busy) "Пилот ведёт рейс" else "время в пути", style = body(12, color = Sky.inkMuted))
+                    Text(if (Agent.busy) "Тень ведёт рейс" else "время в пути", style = body(12, color = Sky.inkMuted))
                 }
             }
             Text("МАРШРУТ", style = body(12, FontWeight.Bold, Sky.inkMuted).copy(letterSpacing = 1.5.sp))
@@ -577,7 +577,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
         Column(Modifier.weight(1f).verticalScroll(sc).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Пилот: память, характер, вид — отдельные экраны
             if (nav.page == null) SetGroup {
-                listOf(Triple("Что Пилот помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
+                listOf(Triple("Что Тень помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
                     Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules), Triple("Оформление", if (Th.auto) "авто: днём и вечером — свои темы" else Th.c.title, Scr.Look)).forEachIndexed { i, (t, sub, sc2) ->
                     SetRow(t, sub, first = i == 0) { open(sc2) }
                 }
@@ -589,7 +589,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 var tileMsg by remember { mutableStateOf<String?>(null) }
                 BigButton("Добавить плитку «Спросить» в шторку", { QuickTile.requestAdd(ctx) { tileMsg = it } }, bg = Card, fg = Ink, border = Line)
                 tileMsg?.let { Text(it, style = body(13, color = Muted)) }
-                Text("Боковая кнопка: сделай Пилота цифровым помощником (Приложения по умолчанию → Цифровой помощник → Пилот), затем Настройки → Дополнительные функции → Боковая кнопка → Нажатие и удержание → Цифровой помощник.",
+                Text("Боковая кнопка: сделай Тень цифровым помощником (Приложения по умолчанию → Цифровой помощник → Тень), затем Настройки → Дополнительные функции → Боковая кнопка → Нажатие и удержание → Цифровой помощник.",
                     style = body(12, color = Muted), lineHeight = 17.sp)
                 BigButton("Приложения по умолчанию", {
                     runCatching { ctx.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -625,7 +625,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Сводка Telegram при открытии", style = body(15, FontWeight.SemiBold))
-                        Text("Список новых личных сообщений в чате, когда открываешь Пилота. Выключено — спроси сам: «что в телеграме?».", style = body(12, color = Muted), lineHeight = 16.sp)
+                        Text("Список новых личных сообщений в чате, когда открываешь Тень. Выключено — спроси сам: «что в телеграме?».", style = body(12, color = Muted), lineHeight = 16.sp)
                     }
                     Toggle(dig) { dig = it; Prefs.tgDigest = it }
                 }
@@ -761,7 +761,7 @@ private fun PermsPage(rows: List<Pair<String, Boolean>>, ask: () -> Unit, notif:
             Text("$ok", style = TextStyle(fontFamily = Fonts.display, fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = Ink))
             Text(" из ${rows.size}", style = body(16, FontWeight.SemiBold, Muted), modifier = Modifier.padding(bottom = 6.dp))
         }
-        Text(if (all) "Всё выдано — Пилоту доступно всё, что нужно" else "Без недостающих Пилот не сможет часть дел", style = body(13, color = Muted))
+        Text(if (all) "Всё выдано — Тени доступно всё, что нужно" else "Без недостающих Тень не сможет часть дел", style = body(13, color = Muted))
         Box(Modifier.fillMaxWidth().height(6.dp).clip(shp(3.dp)).background(Line)) {
             Box(Modifier.fillMaxWidth(ok / rows.size.toFloat().coerceAtLeast(1f)).height(6.dp).clip(shp(3.dp)).background(if (all) Teal else Amber))
         }
