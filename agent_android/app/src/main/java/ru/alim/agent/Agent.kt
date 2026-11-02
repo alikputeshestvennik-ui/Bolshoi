@@ -170,7 +170,7 @@ object Agent {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
             if (t.isEmpty() || busy) return
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
-            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false
+            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false; paused = false
             model = fast(); phase = Phase.WORKING
             lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             delegIntent = Regex("свяж(ись|итесь)|договор(ись|иться)|уточни у|спроси у|узнай у|напиши .{0,30}(и|чтобы) (уточни|спроси|узнай|договор)|переговор", RegexOption.IGNORE_CASE).containsMatchIn(t)
@@ -183,7 +183,10 @@ object Agent {
             if (t.isEmpty() || busy) return
             val base = lastMsgs
             // новая большая задача (или тот же промпт ещё раз) — с чистого листа: старые ответы и цифры из прошлой переписки не тянем
-            val fresh = !t.contains("Собрать итог из найденного") && (t == rootTask || (hardText(t) && t.length > 250))
+            val resume = t.contains("Собрать итог из найденного") || Regex("^\\s*(продолж|доделай|дальше|давай дальше)", RegexOption.IGNORE_CASE).containsMatchIn(t)
+            // после стопа/обрыва чужую просьбу (аптеки рядом) не приклеиваем к прерванной задаче
+            val fresh = !resume && (paused || t == rootTask || (hardText(t) && t.length > 250))
+            paused = false
             if (base == null || fresh || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
             photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
@@ -200,10 +203,12 @@ object Agent {
 
         /** Остановили вручную: отмена сети кидает IOException «Canceled» — это не «связь пропала», второе сообщение не нужно. */
         @Volatile private var stopped = false
+        /** Прошлая задача прервана (стоп или обрыв связи): продолжаем её только по «Продолжить»/«Собрать итог», остальное — новая задача. */
+        @Volatile private var paused = false
 
         fun stop() {
             if (!busy) return
-            stopped = true
+            stopped = true; paused = true
             // тяжёлая задача уже что-то нашла — не выбрасываем это, а предлагаем собрать итог из найденного
             val heavy = lastMsgs != null && hardText(rootTask) && steps.count { it.done } >= 3
             job?.cancel()
@@ -382,7 +387,10 @@ object Agent {
             val assemble = base != null && text.contains("Собрать итог из найденного")
             val follow = !assemble && base != null && rootTask.isNotBlank() && rootTask != text
             val ask = if (assemble) "Алим остановил поиск и просит собрать итог. Больше НИЧЕГО не ищи: инструменты не нужны (кроме file_create, если просили таблицу и её ещё нет). Из уже найденного в переписке оформи полный итоговый ответ: вывод с цифрами, \"report\" и \"best\" как для большой задачи. Чего не успели найти — честно «нет данных», ничего не выдумывай."
-                else if (follow) "$text\n\n(Это уточнение к задаче выше. Всё уже найденное — в переписке: используй его, заново ищи только то, что меняется от уточнения. Файл — обнови тот же или сделай новый с пересчётом. Дай вывод с цифрами.)" else text
+                else if (follow && Regex("^\\s*(продолж|доделай|дальше|давай дальше)", RegexOption.IGNORE_CASE).containsMatchIn(text))
+                    "$text\n\n(Продолжай прерванную задачу выше с того места, где остановился: найденное уже в переписке, заново не ищи; доделай недостающие пункты и дай полный итог.)"
+                else if (follow) "$text\n\n(Если это уточнение к задаче выше — всё уже найденное в переписке: используй его, заново ищи только то, что меняется от уточнения; файл — обнови тот же или сделай новый с пересчётом; дай вывод с цифрами. " +
+                "Если это НОВАЯ отдельная просьба (о другом) — выполни ТОЛЬКО её, прошлую задачу не продолжай и не упоминай.)" else text
             msgs.put(msg("user", if (extra.isBlank()) ask else "$ask\n\n$extra"))
             lastMsgs = msgs
             var smart = smartStart
@@ -740,7 +748,7 @@ object Agent {
                 if (!stopped) {
                     val net = e is java.io.IOException || e.message.orEmpty().contains("timeout", true) || Regex("\\b(500|502|503|504|429)\\b").containsMatchIn(e.message.orEmpty())
                     if (net && lastMsgs != null && steps.count { it.done } >= 3 && e !is Llm.NoMoney) {
-                        lastSmart = true
+                        lastSmart = true; paused = true
                         lastButtons = listOf("Продолжить", "Собрать итог из найденного")
                         finish(false, friendly(e).substringBefore(" —").substringBefore(" напиши") + ". Всё найденное сохранил: «Продолжить» — доделаю с того же места, «Собрать итог из найденного» — оформлю ответ без новых поисков.")
                     } else finish(false, friendly(e))
