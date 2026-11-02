@@ -159,7 +159,7 @@ fun TgPhotoGrid(entries: List<String>) {
                             else { loading = entry; scope.launch { val f = Tg.fetchFile(vid); loading = null; if (f != null) openVid = f } }
                         }, contentAlignment = androidx.compose.ui.Alignment.Center) {
                         if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        if (vid != null) Box(Modifier.size(42.dp).clip(androidx.compose.foundation.shape.circ)
+                        if (vid != null) Box(Modifier.size(42.dp).clip(circ)
                             .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             androidx.compose.material3.Text(if (loading == entry) "…" else "\u25B6", style = body(20, color = androidx.compose.ui.graphics.Color.White))
                         }
