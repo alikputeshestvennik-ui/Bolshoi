@@ -89,9 +89,13 @@ object Attach {
                         "Текст файла:\n" + txt.take(15000) + if (txt.length > 15000) "\n…(обрезано)" else ""
                     }
                     a.name.endsWith(".docx", true) -> { onStep("Читаю ${a.name}"); "Документ Word (разметка: # заголовки, **жирный**, | таблицы |):\n" + Docs.read(ctx, a.uri, a.name).take(15000) }
-                    a.name.endsWith(".xlsx", true) -> { onStep("Читаю ${a.name}"); "Таблица Excel (JSON листов и строк, формулы через =):\n" + Docs.read(ctx, a.uri, a.name).take(15000) }
+                    a.name.endsWith(".xlsx", true) -> { onStep("Читаю ${a.name}")
+                        val js = ctx.contentResolver.openInputStream(a.uri)?.use { Docs.readXlsx(it) } ?: error("файл не открылся")
+                        onStep("Сверяю цифры в ${a.name}")
+                        val rev = runCatching { Tools.reviewXlsx(js.optJSONArray("sheets")) }.getOrDefault("")
+                        "Таблица Excel (JSON листов и строк, формулы через =):\n" + js.toString().take(15000) + (if (rev.isNotBlank()) "\n\n$rev" else "") }
                     a.mime.startsWith("image/") -> { onStep("Смотрю ${a.name}"); "Что на изображении:\n" + look(listOfNotNull(image(ctx, a.uri))) }
-                    a.mime == "application/pdf" -> { onStep("Читаю PDF ${a.name}"); "Содержимое PDF (первые страницы):\n" + look(pdfPages(ctx, a.uri, 3)) }
+                    a.mime == "application/pdf" || a.name.endsWith(".pdf", true) -> { onStep("Читаю PDF ${a.name}"); Pdf.readForModel(ctx, a.uri) { look(pdfPages(ctx, a.uri, 3)) } }
                     else -> "(файл такого типа прочитать нельзя, но его можно переслать)"
                 }
             }.getOrElse { "(не удалось прочитать: ${it.message?.take(100)})" }

@@ -370,10 +370,10 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         val rest = files.filter { rows == null || it != xls }
         if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             rest.forEach { f ->
-                val xl = f.mime == Docs.XLSX
-                Box(Modifier.size(44.dp).clip(shp(12.dp)).background(if (xl) Color(0xFF1E7A4C) else Color(0xFF2B579A))
+                val (tag, bg) = fileBadge(f.mime)
+                Box(Modifier.size(44.dp).clip(shp(12.dp)).background(bg)
                     .clickable(onClickLabel = "Открыть ${f.name}") { open(f) }, contentAlignment = Alignment.Center) {
-                    Text(if (xl) "XLS" else "DOC", style = body(11, FontWeight.Bold, Color.White))
+                    Text(tag, style = body(11, FontWeight.Bold, if (Th.c.square) Th.c.bg else Color.White))
                 }
             }
         }

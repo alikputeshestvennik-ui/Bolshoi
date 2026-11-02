@@ -82,4 +82,6 @@ dependencies {
     // Gmail по IMAP
     implementation("com.sun.mail:android-mail:1.6.7")
     implementation("com.sun.mail:android-activation:1.6.7")
+    // PDF: чтение текста, правка, склейка, формы (порт Apache PDFBox для Android)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }

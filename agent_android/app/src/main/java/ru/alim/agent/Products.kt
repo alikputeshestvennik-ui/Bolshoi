@@ -84,6 +84,13 @@ fun ProductCards(items: List<Shop.Item>) {
     }
 }
 
+/** Значок файла: тип и цвет (в монохроме — чернилами темы). */
+fun fileBadge(mime: String): Pair<String, Color> = when (mime) {
+    Docs.XLSX -> "XLS" to if (Th.c.square) Th.c.ink else Color(0xFF1D6F42)
+    Docs.PDF -> "PDF" to if (Th.c.square) Th.c.ink else Color(0xFFB3261E)
+    else -> "DOC" to if (Th.c.square) Th.c.ink else Color(0xFF2B579A)
+}
+
 /** Файлы, которые сделал агент: нажатие — открыть в Word/Excel/Документах, «Отправить» — поделиться. */
 @Composable
 fun FileCards(files: List<Docs.FileRef>) {
@@ -94,9 +101,9 @@ fun FileCards(files: List<Docs.FileRef>) {
                 runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                val xl = f.mime == Docs.XLSX
-                Box(Modifier.size(48.dp).clip(shp(12.dp)).background(if (xl) Color(0xFF1D6F42) else Color(0xFF2B579A)), contentAlignment = Alignment.Center) {
-                    Text(if (xl) "XLS" else "DOC", style = body(13, FontWeight.Bold, Color.White))
+                val (tag, bg) = fileBadge(f.mime)
+                Box(Modifier.size(48.dp).clip(shp(12.dp)).background(bg), contentAlignment = Alignment.Center) {
+                    Text(tag, style = body(13, FontWeight.Bold, if (Th.c.square) Th.c.bg else Color.White))
                 }
                 HGap(12)
                 Column(Modifier.weight(1f)) {

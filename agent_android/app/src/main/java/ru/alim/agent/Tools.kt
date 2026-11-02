@@ -50,7 +50,7 @@ object Tools {
     /** Что доступно второстепенным друзьям; остальное они просят у главного через ask_main. */
     val FRIEND_TOOLS = setOf("now", "weather", "web_search", "web_read", "web_page", "tg_channel", "memory_save", "memory_search",
         "youtube_search", "youtube_open", "shop_search", "shop_check", "shop_open", "maps_route", "maps_search",
-        "file_create", "file_read", "image_generate", "escalate", "ask_main")
+        "file_create", "file_read", "pdf_edit", "image_generate", "escalate", "ask_main")
 
     /** Фото из последнего поиска — их можно отправить, не перечисляя. */
     val lastPhotos = ArrayList<Long>()
@@ -987,7 +987,7 @@ object Tools {
             if (ok) "открыл поиск «$q» в Яндекс Картах" else "Карты не открылись"
         },
 
-        Tool("file_create", "{\"type\": \"docx\", \"name\": \"Список дел\", \"text\": \"# Заголовок\\n## Раздел\\n- пункт\\n**жирный**\\n| Колонка | Колонка |\\n| a | b |\"} или {\"type\": \"xlsx\", \"name\": \"Бюджет\", \"sheets\": [{\"name\": \"Октябрь\", \"rows\": [[\"Статья\", \"Сумма\"], [\"Еда\", 15000], [\"Итого\", \"=SUM(B2:B2)\"]]}]} — создать документ Word или таблицу Excel (формулы через =). Сохраняется в Загрузки/Свои, карточка на экране") t@{ ctx, a ->
+        Tool("file_create", "{\"type\": \"docx\", \"name\": \"Список дел\", \"text\": \"# Заголовок\\n## Раздел\\n- пункт\\n**жирный**\\n| Колонка | Колонка |\\n| a | b |\"} или {\"type\": \"xlsx\", \"name\": \"Бюджет\", \"sheets\": [{\"name\": \"Октябрь\", \"rows\": [[\"Статья\", \"Сумма\"], [\"Еда\", 15000], [\"Итого\", \"=SUM(B2:B2)\"]]}]} — создать документ Word или таблицу Excel (формулы через =); {\"type\": \"pdf\", \"name\": …, \"text\": та же разметка, что у docx} — PDF. Сохраняется в Загрузки/Свои, карточка на экране") t@{ ctx, a ->
             // модели (Alice Flash) иногда кладут sheets строкой или лист — строкой JSON: чиним, а не падаем непонятной ошибкой
             (a.opt("sheets") as? String)?.let { s -> runCatching { a.put("sheets", org.json.JSONArray(s)) } }
             if (!a.has("sheets") && a.has("rows")) a.put("sheets", org.json.JSONArray().put(org.json.JSONObject().put("name", "Лист1").put("rows", a.opt("rows"))))
@@ -1035,7 +1035,8 @@ object Tools {
                 if (dataRows == 0) return@t "ошибка: в таблице только заголовки, строк с данными нет. Заполни строки найденными данными (по строке на вариант) и повтори file_create."
             }
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
-            val ref = if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, runCatching { Docs.xlsx(a) }.getOrElse { e ->
+            val ref = if (type == "pdf") Docs.save(ctx, name, Docs.PDF, runCatching { Pdf.create(a.optString("text").ifBlank { return@t "нужен text" }) }.getOrElse { e -> return@t "PDF не собрался: ${e.message?.take(80)}" })
+                else if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, runCatching { Docs.xlsx(a) }.getOrElse { e ->
                     return@t "ошибка формата таблицы (${e.message?.take(80)}). Нужно: \"sheets\": [{\"name\": \"Сравнение\", \"rows\": [[\"Город\", \"Цена\"], [\"Казань\", 12000]]}] — массив объектов, rows — массив массивов. Повтори file_create в этом формате." })
                 else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
             withContext(Dispatchers.Main) {
@@ -1054,14 +1055,36 @@ object Tools {
                 (if (badRefs.isNotEmpty()) "\nВНИМАНИЕ: формулы ссылаются на ячейки с ТЕКСТОМ (${badRefs.distinct().take(6).joinToString()}) — Excel посчитает их как 0, итог неверный. Пересоздай файл (тот же name): числа (цены) — отдельными столбцами только числом, пояснения — в соседнем столбце." else "")
         },
 
-        Tool("file_read", "{\"n\": 1, \"from\": \"attachment\" | \"made\"} — прочитать .docx/.xlsx (из вложений Алима или из файлов, сделанных агентом), чтобы ответить по ним или поправить") t@{ ctx, a ->
+        Tool("file_read", "{\"n\": 1, \"from\": \"attachment\" | \"made\"} — прочитать .docx/.xlsx/.pdf (из вложений Алима или из файлов, сделанных агентом), чтобы ответить по ним или поправить") t@{ ctx, a ->
             val n = a.optInt("n", 1)
-            val att = Attach.sent.filter { it.name.endsWith(".docx", true) || it.name.endsWith(".xlsx", true) }
+            val att = Attach.sent.filter { it.name.endsWith(".docx", true) || it.name.endsWith(".xlsx", true) || it.name.endsWith(".pdf", true) }
             val useMade = a.optString("from").lowercase() == "made" || att.isEmpty()
             val (uri, name) = if (useMade) Docs.made.getOrNull(n - 1)?.let { it.uri to it.name } ?: return@t "файлов Word/Excel нет"
                 else att.getOrNull(n - 1)?.let { it.uri to it.name } ?: return@t "нет такого вложения"
             val t = Docs.read(ctx, uri, name)
-            "Файл «$name»:\n${t.take(14000)}\n\nЧтобы изменить — file_create с тем же type и исправленным содержимым целиком (новый файл рядом, оригинал не тронется)."
+            "Файл «$name»:\n${t.take(14000)}\n\n" + if (name.endsWith(".pdf", true)) "Чтобы изменить PDF — pdf_edit (замена текста на месте, вписать, поля формы, страницы); переписать целиком — file_create type pdf. Оригинал не тронется."
+                else "Чтобы изменить — file_create с тем же type и исправленным содержимым целиком (новый файл рядом, оригинал не тронется)."
+        },
+
+        Tool("pdf_edit", "{\"n\": 1, \"from\": \"attachment\" | \"made\", \"name\": \"Договор исправленный\", \"ops\": [{\"op\": \"replace\", \"from\": \"старый текст\", \"to\": \"новый\"}, " +
+            "{\"op\": \"add_text\", \"page\": 1, \"x\": 20, \"y\": 250, \"text\": \"Подпись: ____\", \"size\": 11}, {\"op\": \"fill\", \"fields\": {\"ФИО\": \"…\"}}, " +
+            "{\"op\": \"delete_pages\", \"pages\": [3]}, {\"op\": \"extract\", \"pages\": [1,2]}, {\"op\": \"rotate\", \"pages\": [2], \"deg\": 90}, {\"op\": \"reorder\", \"order\": [2,1,3]}, " +
+            "{\"op\": \"merge\", \"with\": [2]}, {\"op\": \"watermark\", \"text\": \"КОПИЯ\"}, {\"op\": \"cover\", \"page\": 1, \"x\": 20, \"y\": 40, \"w\": 60, \"h\": 8}]} — поправить PDF: " +
+            "замена текста прямо на странице, вписать текст (x, y — мм от левого верхнего угла; без y — внизу), заполнить поля формы, удалить/оставить/повернуть/переставить страницы, склеить с другими вложенными PDF (with — номера вложений), водяной знак, закрыть область. Результат — новый файл, оригинал цел") t@{ ctx, a ->
+            val n = a.optInt("n", 1)
+            val att = Attach.sent.filter { it.name.endsWith(".pdf", true) || it.mime == Docs.PDF }
+            val made = Docs.made.filter { it.mime == Docs.PDF }
+            val useMade = a.optString("from").lowercase() == "made" || att.isEmpty()
+            val (uri, name) = if (useMade) made.getOrNull(n - 1)?.let { it.uri to it.name } ?: return@t "PDF-файлов нет: пришли PDF вложением или сделай его file_create type pdf"
+                else att.getOrNull(n - 1)?.let { it.uri to it.name } ?: return@t "нет такого PDF во вложениях (их ${att.size})"
+            val ops = a.optJSONArray("ops") ?: (a.opt("ops") as? String)?.let { runCatching { org.json.JSONArray(it) }.getOrNull() }
+                ?: a.optString("op").takeIf { it.isNotBlank() }?.let { org.json.JSONArray().put(a) } ?: return@t "нужен ops — список действий"
+            val (bytes, log) = runCatching { Pdf.edit(ctx, uri, ops, att.map { it.uri }) }.getOrElse { e -> return@t "PDF не открылся для правки: ${e.message?.take(100)}" }
+            val out = a.optString("name").ifBlank { name.substringBeforeLast('.') + " (правка)" }
+            val ref = Docs.save(ctx, out, Docs.PDF, bytes)
+            withContext(Dispatchers.Main) { Agent.cur().files.add(0, ref) }
+            val check = runCatching { Pdf.text(ctx, ref.uri, 6) }.getOrDefault("").take(3000)
+            "сделал «${ref.name}» в Загрузки (карточка на экране). Что сделано:\n$log" + (if (check.isNotBlank()) "\n\nТекст результата для проверки (первые страницы):\n$check" else "")
         },
 
         Tool("file_send", "{\"n\": 1, \"app\": \"telegram|whatsapp|max|any\"} — отправить файл, сделанный агентом",
@@ -1249,6 +1272,109 @@ object Tools {
                         append("$sn!${'A' + c}${r + 1}").append(if (lab.isNotBlank()) " «$lab»" else "").append(" = ")
                             .append(Math.round(v).toString().reversed().chunked(3).joinToString(" ").reversed()).append('\n'); n++
                     } } }
+        }.trim()
+    }
+
+    /** Сверка присланной таблицы без модели: формулы, итоговые строки, числа сводки против строк других листов. */
+    fun reviewXlsx(sheets: org.json.JSONArray?): String {
+        if (sheets == null || sheets.length() == 0) return ""
+        val fe = FormulaEval(sheets)
+        fun col(c: Int): String = if (c < 26) "${'A' + c}" else "${'A' + (c / 26 - 1)}${'A' + c % 26}"
+        fun f(v: Double) = fmtNum(v)
+        val names = fe.order
+        fun rowsOf(k: Int) = sheets.optJSONObject(k)?.optJSONArray("rows") ?: org.json.JSONArray()
+        fun lab(row: org.json.JSONArray?) = (row?.opt(0) as? String)?.trim().orEmpty()
+        val ok = ArrayList<String>(); val bad = ArrayList<String>(); val calc = ArrayList<String>()
+        // 1) формулы: что дают, отрицательные итоги
+        for ((k, sn) in names.withIndex()) { val rows = rowsOf(k)
+            for (r in 0 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                for (c in 0 until row.length()) { val fm = row.opt(c) as? String ?: continue
+                    if (!fm.startsWith("=")) continue
+                    val v = fe.cell(sn.lowercase(), c, r)
+                    val head = (rows.optJSONArray(0)?.opt(c) as? String)?.take(30) ?: (rows.optJSONArray(1)?.opt(c) as? String)?.take(30)
+                    val where = "$sn!${col(c)}${r + 1}" + (if (lab(row).isNotBlank()) " «${lab(row).take(30)}»" else "") + (if (!head.isNullOrBlank()) " [${head}]" else "")
+                    if (v == null) { bad += "$where: формула $fm не считается (ошибка или ссылка на текст)"; continue }
+                    if (calc.size < 30) calc += "$where $fm = ${f(v)}"
+                    if (v < 0) bad += "$where = ${f(v)} — отрицательно (перерасход/минус)"
+                } } }
+        // 2) строки «итого/всего» с числом: совпадает ли с суммой чисел выше
+        for ((k, sn) in names.withIndex()) { val rows = rowsOf(k)
+            for (r in 2 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                val l = lab(row).lowercase()
+                if (!(l.startsWith("итог") || l.startsWith("всего") || l.startsWith("сумма"))) continue
+                for (c in 1 until row.length()) {
+                    val v = fe.cell(sn.lowercase(), c, r) ?: continue
+                    var s = 0.0; var n = 0
+                    for (q in r - 1 downTo 1) { val x = fe.cell(sn.lowercase(), c, q) ?: break; s += x; n++ }
+                    if (n < 2) continue
+                    if (kotlin.math.abs(s - v) < 0.5) ok += "$sn!${col(c)}${r + 1} «${lab(row)}» = ${f(v)} — равно сумме $n строк выше"
+                    else bad += "$sn!${col(c)}${r + 1} «${lab(row)}» = ${f(v)}, а сумма $n строк выше = ${f(s)} (разница ${f(v - s)})"
+                } } }
+        // 3) строки с одинаковым названием на других листах (детали) против чисел строки сводки
+        data class Det(val sheet: String, val label: String, val text: String, val vals: List<Double>)
+        val dets = ArrayList<Det>()
+        val summaryLabels = HashMap<Int, List<Pair<Int, String>>>()
+        for ((k, _) in names.withIndex()) { val rows = rowsOf(k)
+            summaryLabels[k] = (1 until rows.length()).mapNotNull { r -> lab(rows.optJSONArray(r)).takeIf { it.length in 2..60 }?.let { r to it } } }
+        for ((k, sn) in names.withIndex()) { val rows = rowsOf(k)
+            for (r in 1 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                val l = lab(row); if (l.isBlank()) continue
+                val vals = (1 until row.length()).mapNotNull { c -> if (row.opt(c) is Number || (row.opt(c) as? String)?.startsWith("=") == true) fe.cell(sn.lowercase(), c, r) else null }.filter { it >= 100 }
+                val txt = (1 until minOf(row.length(), 4)).mapNotNull { c -> (row.opt(c) as? String)?.takeIf { !it.startsWith("=") && it.length > 3 } }.joinToString(", ").take(70)
+                dets += Det(sn, l, txt, vals)
+            } }
+        val sourced = HashSet<String>()
+        for ((k, sn) in names.withIndex()) { val rows = rowsOf(k)
+            val myLabels = summaryLabels[k].orEmpty().map { it.second.lowercase() }
+            for ((r, l0) in summaryLabels[k].orEmpty()) {
+                val l = l0.lowercase(); val row = rows.optJSONArray(r) ?: continue
+                // детали других листов: точное имя или «<имя> — …», но не те, у которых в этой сводке есть своя строка точнее
+                val group = dets.filter { d -> d.sheet != sn && d.vals.size == 1 && run {
+                    val dl = d.label.lowercase()
+                    (dl == l || dl.startsWith("$l ") || dl.startsWith("$l—") || dl.startsWith("$l -")) &&
+                        myLabels.none { o -> o != l && o.length > l.length && (dl == o || dl.startsWith("$o ")) } } }
+                if (group.size < 2) continue
+                val gv = group.map { it.vals[0] }; val total = gv.sum()
+                val cells = (1 until row.length()).mapNotNull { c -> if (row.opt(c) is Number) c to (row.opt(c) as Number).toDouble() else null }.filter { it.second >= 100 }
+                val hit = cells.firstOrNull { kotlin.math.abs(it.second - total) < 0.5 }
+                if (hit != null) { ok += "$sn!${col(hit.first)}${r + 1} «$l0» = ${f(hit.second)} — сходится с суммой ${group.size} строк листа «${group[0].sheet}»"; sourced += "$k:${hit.first}:$r"; continue }
+                // число сводки = сумма части строк → какие строки забыты
+                if (gv.size <= 12) for ((c, v) in cells) {
+                    var found = -1
+                    for (mask in 1 until (1 shl gv.size)) { if (Integer.bitCount(mask) < 1 || mask == (1 shl gv.size) - 1) continue
+                        if (kotlin.math.abs(gv.indices.filter { mask shr it and 1 == 1 }.sumOf { gv[it] } - v) < 0.5) { found = mask; break } }
+                    if (found > 0) {
+                        val miss = group.indices.filter { found shr it and 1 == 0 }
+                        bad += "$sn!${col(c)}${r + 1} «$l0» = ${f(v)}, но на листе «${group[0].sheet}» у «$l0» ${group.size} строк на ${f(total)}; не учтено: " +
+                            miss.joinToString("; ") { "${group[it].text.ifBlank { group[it].label }} — ${f(gv[it])}" } + " (должно быть ${f(total)}, разница ${f(total - v)})"
+                        sourced += "$k:$c:$r"; break
+                    }
+                }
+            }
+        }
+        // 4) числа-константы, которых нет больше нигде в файле — не подкреплены
+        val allVals = HashMap<Long, Int>()
+        for ((k, sn) in names.withIndex()) { val rows = rowsOf(k)
+            for (r in 0 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                for (c in 0 until row.length()) { val v = fe.cell(sn.lowercase(), c, r) ?: continue; if (v >= 100) allVals.merge(Math.round(v), 1) { x, y -> x + y } }
+                // числа внутри текста («от 6 175 ₽») тоже считаем подтверждением
+                for (c in 0 until row.length()) { val s = row.opt(c) as? String ?: continue; if (s.startsWith("=")) continue
+                    Regex("\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+|\\d{3,}").findAll(s).forEach { m -> m.value.filter(Char::isDigit).toLongOrNull()?.let { allVals.merge(it, 1) { x, y -> x + y } } } }
+            } }
+        val lone = ArrayList<String>()
+        for ((k, sn) in names.withIndex()) { val rows = rowsOf(k)
+            for (r in 1 until rows.length()) { val row = rows.optJSONArray(r) ?: continue
+                for (c in 1 until row.length()) { val v = (row.opt(c) as? Number)?.toDouble() ?: continue
+                    if (v < 100 || "$k:$c:$r" in sourced) continue
+                    if ((allVals[Math.round(v)] ?: 0) <= 1) lone += "$sn!${col(c)}${r + 1}" + (if (lab(row).isNotBlank()) " «${lab(row).take(25)}»" else "") + " = ${f(v)}"
+                } } }
+        return buildString {
+            append("СВЕРКА ТАБЛИЦЫ (посчитала Тень сама, точно — опирайся на неё, цифры бери отсюда):\n")
+            if (calc.isNotEmpty()) append("Формулы дают:\n").append(calc.joinToString("\n")).append('\n')
+            if (ok.isNotEmpty()) append("Сходится:\n").append(ok.joinToString("\n") { "+ $it" }).append('\n')
+            if (bad.isNotEmpty()) append("ОШИБКИ / РАСХОЖДЕНИЯ:\n").append(bad.joinToString("\n") { "! $it" }).append('\n')
+            if (lone.isNotEmpty()) append("Числа без подтверждения в файле (ни на других листах, ни в тексте — откуда взяты, неясно; возможно, оценка):\n").append(lone.take(15).joinToString("\n") { "? $it" }).append('\n')
+            if (bad.isEmpty()) append("Арифметических ошибок не нашла.\n")
         }.trim()
     }
 

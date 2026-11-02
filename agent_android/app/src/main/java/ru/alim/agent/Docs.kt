@@ -22,6 +22,7 @@ import java.util.zip.ZipOutputStream
 object Docs {
     const val DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     const val XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    const val PDF = "application/pdf"
 
     class FileRef(val name: String, val uri: Uri, val mime: String)
 
@@ -172,7 +173,7 @@ object Docs {
 
     /** Сохраняет в «Загрузки/Агент». Возвращает ссылку для открытия. */
     fun save(ctx: Context, name0: String, mime: String, bytes: ByteArray): FileRef {
-        val ext = if (mime == XLSX) ".xlsx" else ".docx"
+        val ext = when (mime) { XLSX -> ".xlsx"; PDF -> ".pdf"; else -> ".docx" }
         val name = name0.trim().ifBlank { "Документ" }.replace(Regex("[\\\\/:*?\"<>|]"), " ").removeSuffix(ext).take(80) + ext
         val uri: Uri = if (Build.VERSION.SDK_INT >= 29) {
             val cv = ContentValues().apply {
@@ -290,7 +291,8 @@ object Docs {
             when (ext) {
                 "docx" -> readDocx(s)
                 "xlsx" -> readXlsx(s).toString()
-                else -> error("читаю только .docx и .xlsx")
+                "pdf" -> Pdf.text(ctx, uri)
+                else -> error("читаю только .docx, .xlsx и .pdf")
             }
         } ?: error("файл не открылся")
     }
