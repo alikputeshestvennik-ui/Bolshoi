@@ -327,7 +327,9 @@ fun SidePanel(scr: Scr, go: (Scr) -> Unit) {
 @Composable
 fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Unit) {
     val ctx = LocalContext.current
-    val files = remember(m.files) { Chat.filesOf(m).distinctBy { it.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "") } }
+    val all = remember(m.files) { Chat.filesOf(m) }
+    val vizs = remember(all) { all.filter { it.mime == Viz.MIME } }
+    val files = remember(all) { all.filter { it.mime != Viz.MIME }.distinctBy { it.name.substringBeforeLast('.').replace(Regex("\\s*\\(\\d+\\)$"), "") } }
     val parts = remember(m.text) { splitResult(m.text) }
     val preview by androidx.compose.runtime.produceState<List<List<String>>?>(null, m.files) {
         value = files.firstOrNull { it.mime == Docs.XLSX }?.let { f ->
@@ -356,12 +358,13 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
             }
         }
         Row(verticalAlignment = Alignment.Top) {
-            Text(parts.title.ifBlank { files.firstOrNull()?.name?.substringBeforeLast('.').orEmpty() },
+            Text(parts.title.ifBlank { (files.firstOrNull() ?: vizs.firstOrNull())?.name?.substringBeforeLast('.').orEmpty() },
                 style = TextStyle(fontFamily = Fonts.display, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = Ink), modifier = Modifier.weight(1f))
             if (files.isNotEmpty()) { Spacer(Modifier.width(10.dp)); ShareBtn(share) }
         }
         if (parts.body.isNotBlank()) Text(parts.body, style = body(14, color = Ink.copy(alpha = 0.82f)).copy(lineHeight = 20.sp),
             maxLines = if (compact) 3 else 40, overflow = TextOverflow.Ellipsis)
+        vizs.forEach { VizCard(it) }
         val rows = preview?.takeIf { it.size >= 2 }
         // таблица — сама кнопка: тап открывает Excel
         if (rows != null && xls != null) Box(Modifier.clickable(onClickLabel = "Открыть таблицу") { open(xls) }) { MiniTable(rows) }
@@ -533,13 +536,23 @@ private fun splitResult(text: String): ResultParts {
     val split = Regex("(?<=[.!?])(?<!^\\d\\.)(?<![\\s:]\\d\\.)(?<![\\s:]\\d\\d\\.)\\s+(?=[А-ЯЁA-Z«\"(])|\\n+")   // «1. Куртка» — номер списка, не конец фразы
     fun sentences(x: String) = x.split(split).map { it.trim() }.filter { it.isNotBlank() }
     // служебные фразы про файл («Обновил файл в Загрузках», «Таблица лежит…») — выкидываем из текста целиком
-    val service = Regex("(файл|таблиц|документ|загрузк|xlsx|docx)", RegexOption.IGNORE_CASE)
+    val service = Regex("(файл|таблиц|документ|загрузк|xlsx|docx|pdf|пдф)", RegexOption.IGNORE_CASE)
     val verb = Regex("(готов|создал|сделал|сохранил|обновил|положил|собрал|теперь там|там есть|внёс|внес|лежит|открывается|в загрузк)", RegexOption.IGNORE_CASE)
-    sentences(t).filter { service.containsMatchIn(it) && verb.containsMatchIn(it) && it.length < 200 }.forEach { sv -> t = t.replaceFirst(sv, "") }
+    val removed = sentences(t).filter { service.containsMatchIn(it) && verb.containsMatchIn(it) && it.length < 200 }
+    removed.forEach { sv -> t = t.replaceFirst(sv, "") }
     t = t.replace(Regex("[ \\t]+\\n"), "\n").replace(Regex("\\n{3,}"), "\n\n").trim()
     val ss = sentences(t)
     // заголовок — вывод «самый выгодный — …», иначе первая фраза; длинный — режем по запятой/тире
-    val pick = ss.firstOrNull { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор|оптимальн", RegexOption.IGNORE_CASE).containsMatchIn(it) } ?: ss.firstOrNull().orEmpty()
+    // «Если нужно … — скажи», «Хочешь, добавлю…» — предложение, а не вывод: в заголовок не берём
+    val offer = Regex("^(если (нужно|надо|хочешь)|хочешь|могу |скажи|напиши,? (если|и)|дай знать)", RegexOption.IGNORE_CASE)
+    val pick0 = ss.firstOrNull { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор|оптимальн", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+        ?: ss.firstOrNull { !offer.containsMatchIn(it) }
+    // остались одни предложения — заголовком делаем саму фразу про файл («Сделал PDF о МПК и конкурентах»)
+    if (pick0 == null && removed.isNotEmpty()) {
+        val head = removed.first().replace(Regex("\\s*(в|во) (папк\\w*|загрузк\\w*)[^,.;]*", RegexOption.IGNORE_CASE), "").trim().trimEnd('.', ',', ':')
+        if (head.length in 8..120) return ResultParts(head, t, stamp)
+    }
+    val pick = pick0 ?: ss.firstOrNull().orEmpty()
     var title = pick
     // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия, список уходит в текст
     Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s)").find(title)?.let { m -> if (m.range.first >= 8) title = title.substring(0, m.range.first) }

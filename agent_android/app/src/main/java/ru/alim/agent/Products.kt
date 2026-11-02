@@ -97,6 +97,7 @@ fun FileCards(files: List<Docs.FileRef>) {
     val ctx = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         files.forEach { f ->
+            if (f.mime == Viz.MIME) { VizCard(f); return@forEach }
             Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).clickable(onClickLabel = "Открыть файл") {
                 runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

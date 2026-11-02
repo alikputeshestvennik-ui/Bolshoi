@@ -50,7 +50,7 @@ object Tools {
     /** Что доступно второстепенным друзьям; остальное они просят у главного через ask_main. */
     val FRIEND_TOOLS = setOf("now", "weather", "web_search", "web_read", "web_page", "tg_channel", "memory_save", "memory_search",
         "youtube_search", "youtube_open", "shop_search", "shop_check", "shop_open", "maps_route", "maps_search",
-        "file_create", "file_read", "pdf_edit", "image_generate", "escalate", "ask_main")
+        "file_create", "file_read", "pdf_edit", "draw", "image_generate", "escalate", "ask_main")
 
     /** Фото из последнего поиска — их можно отправить, не перечисляя. */
     val lastPhotos = ArrayList<Long>()
@@ -1035,7 +1035,12 @@ object Tools {
                 if (dataRows == 0) return@t "ошибка: в таблице только заголовки, строк с данными нет. Заполни строки найденными данными (по строке на вариант) и повтори file_create."
             }
             val name = a.optString("name").ifBlank { if (type == "xlsx") "Таблица" else "Документ" }
-            val ref = if (type == "pdf") Docs.save(ctx, name, Docs.PDF, runCatching { Pdf.create(a.optString("text").ifBlank { return@t "нужен text" }) }.getOrElse { e -> return@t "PDF не собрался: ${e.message?.take(80)}" })
+            // «[[рисунок N]]» в PDF — снимаем рисунки этой задачи на светлой бумаге
+            val pics = HashMap<Int, android.graphics.Bitmap>()
+            if (type == "pdf") Regex("\\[\\[\\s*рисунок\\s*(\\d+)\\s*]]", RegexOption.IGNORE_CASE).findAll(a.optString("text")).map { it.groupValues[1].toInt() }.distinct().forEach { n ->
+                Viz.task.ifEmpty { Agent.cur().files.filter { it.mime == Viz.MIME } }.getOrNull(n - 1)?.let { r -> Viz.shoot(ctx, Viz.wrap(Viz.read(r), paper = true)).bmp?.let { pics[n] = it } }
+            }
+            val ref = if (type == "pdf") Docs.save(ctx, name, Docs.PDF, runCatching { Pdf.create(a.optString("text").ifBlank { return@t "нужен text" }, pics) }.getOrElse { e -> return@t "PDF не собрался: ${e.message?.take(80)}" })
                 else if (type == "xlsx") Docs.save(ctx, name, Docs.XLSX, runCatching { Docs.xlsx(a) }.getOrElse { e ->
                     return@t "ошибка формата таблицы (${e.message?.take(80)}). Нужно: \"sheets\": [{\"name\": \"Сравнение\", \"rows\": [[\"Город\", \"Цена\"], [\"Казань\", 12000]]}] — массив объектов, rows — массив массивов. Повтори file_create в этом формате." })
                 else Docs.save(ctx, name, Docs.DOCX, Docs.docx(a.optString("text").ifBlank { return@t "нужен text" }))
@@ -1064,6 +1069,28 @@ object Tools {
             val t = Docs.read(ctx, uri, name)
             "Файл «$name»:\n${t.take(14000)}\n\n" + if (name.endsWith(".pdf", true)) "Чтобы изменить PDF — pdf_edit (замена текста на месте, вписать, поля формы, страницы); переписать целиком — file_create type pdf. Оригинал не тронется."
                 else "Чтобы изменить — file_create с тем же type и исправленным содержимым целиком (новый файл рядом, оригинал не тронется)."
+        },
+
+        Tool("draw", "{\"title\": \"Выручка пивоваров 2025\", \"html\": \"<svg …>…</svg><script>…</script>\"} — нарисовать живую картинку в чате: график, диаграмму, схему, шкалу времени, " +
+            "мини-калькулятор с ползунками, сравнение с сортировкой. Страница без интернета и библиотек: чистые SVG/canvas/HTML/JS. Ширина экрана ~360–400px, высота карточки ~320px (больше — откроют на весь экран). " +
+            "Цвета ТОЛЬКО из темы: CSS var(--ink) текст, var(--muted) подписи, var(--line) сетка, var(--bg) фон, var(--s1)…var(--s5) серии, var(--r) скругление; в JS — window.T.ink/.muted/.line/.series[]. " +
+            "Подсказки по тапу (наведения на телефоне нет). Подписи по-русски, числа с пробелами (40 100). Вставить в PDF — строкой [[рисунок N]] в text у file_create type pdf") t@{ ctx, a ->
+            val html = a.optString("html").ifBlank { return@t "нужен html" }
+            if (Regex("<script[^>]+src=|<link[^>]+href=\\s*[\"']?https?:|@import", RegexOption.IGNORE_CASE).containsMatchIn(html))
+                return@t "ошибка: внешние библиотеки и шрифты не загрузятся (интернета у рисунка нет). Перепиши на чистом SVG/canvas/JS и повтори draw."
+            val title = a.optString("title").ifBlank { "Рисунок" }
+            val shot = Viz.shoot(ctx, Viz.wrap(html), needBitmap = false)
+            if (shot.errors.isNotEmpty()) return@t "рисунок с ошибками JS, на экран не вывел: ${shot.errors.distinct().take(4).joinToString("; ")}. Исправь и повтори draw целиком."
+            val ref = Viz.save(ctx, title, html)
+            withContext(Dispatchers.Main) {
+                // перерисовал тот же рисунок — старую карточку убираем
+                Agent.cur().files.removeAll { it.mime == Viz.MIME && it.name == ref.name }
+                Agent.cur().files.add(ref)
+            }
+            Viz.task.removeAll { it.name == ref.name }; Viz.task.add(ref)
+            "нарисовал «$title» — живая карточка на экране (рисунок ${Viz.task.size} в этой задаче; в PDF — строка [[рисунок ${Viz.task.size}]]). Высота страницы ${shot.heightCss}px" +
+                (if (shot.heightCss > 420) " — выше карточки, в ленте видна верхняя часть; если главное не наверху — сделай компактнее." else ".") +
+                " В ответе не описывай рисунок подробно — он на экране; дай вывод словами."
         },
 
         Tool("pdf_edit", "{\"n\": 1, \"from\": \"attachment\" | \"made\", \"name\": \"Договор исправленный\", \"ops\": [{\"op\": \"replace\", \"from\": \"старый текст\", \"to\": \"новый\"}, " +

@@ -77,7 +77,9 @@ object Pdf {
     // ———————————————— создание ————————————————
 
     /** Разметка как у docx: «# », «## », «### », «- пункт», «1. », «**жирный**», таблицы «| a | b |», «---» — линия. */
-    fun create(text: String): ByteArray {
+    fun create(text0: String, pics: Map<Int, android.graphics.Bitmap> = emptyMap()): ByteArray {
+        // эмодзи в PDF рисуются криво — убираем
+        val text = text0.replace(Regex("[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{2300}-\\x{23FF}\\x{2B00}-\\x{2BFF}\\x{FE0F}\\x{200D}]"), "")
         val doc = PdfDocument()
         val W = 595; val H = 842; val M = 48f
         var pageNo = 0; var page: PdfDocument.Page? = null; var y = M
@@ -93,8 +95,14 @@ object Pdf {
         fun paint(size: Float, bold: Boolean = false) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = size; color = Color.BLACK; typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT }
         fun spans(s: String): CharSequence { val sb = SpannableStringBuilder()
-            s.split("**").forEachIndexed { i, p -> val st = sb.length; sb.append(p)
-                if (i % 2 == 1 && p.isNotEmpty()) sb.setSpan(StyleSpan(Typeface.BOLD), st, sb.length, 0) }
+            s.split("**").forEachIndexed { i, p ->
+                // внутри — одиночные *курсив*
+                p.split(Regex("(?<![\\w*])\\*(?=\\S)|(?<=\\S)\\*(?![\\w*])")).forEachIndexed { j, q ->
+                    val st = sb.length; sb.append(q)
+                    if (q.isNotEmpty() && i % 2 == 1) sb.setSpan(StyleSpan(Typeface.BOLD), st, sb.length, 0)
+                    if (q.isNotEmpty() && j % 2 == 1) sb.setSpan(StyleSpan(Typeface.ITALIC), st, sb.length, 0)
+                }
+            }
             return sb }
         fun layout(cs: CharSequence, tp: TextPaint, w: Int): StaticLayout =
             StaticLayout.Builder.obtain(cs, 0, cs.length, tp, maxOf(w, 20)).setLineSpacing(0f, 1.15f).build()
@@ -147,6 +155,17 @@ object Pdf {
                         y += h
                     }
                     y += 8f
+                }
+                Regex("^\\[\\[\\s*рисунок\\s*(\\d+)\\s*]]$", RegexOption.IGNORE_CASE).matches(t) -> {
+                    val n = Regex("\\d+").find(t)!!.value.toInt()
+                    pics[n]?.let { b ->
+                        var w = full.toFloat(); var h = b.height * w / b.width
+                        val maxH = H - 2 * M
+                        if (h > maxH) { w *= maxH / h; h = maxH }
+                        if (y + h > H - M) newPage()
+                        page!!.canvas.drawBitmap(b, null, android.graphics.RectF(M, y, M + w, y + h), Paint(Paint.FILTER_BITMAP_FLAG))
+                        y += h + 10f
+                    }
                 }
                 t == "---" || t == "***" -> { if (y + 10 > H - M) newPage()
                     page!!.canvas.drawLine(M, y + 4f, W - M, y + 4f, Paint().apply { color = Color.rgb(150, 150, 150); strokeWidth = 0.6f }); y += 12f }
