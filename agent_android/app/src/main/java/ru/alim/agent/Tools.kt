@@ -1074,13 +1074,14 @@ object Tools {
         Tool("draw", "{\"title\": \"Выручка пивоваров 2025\", \"html\": \"<svg …>…</svg><script>…</script>\"} — нарисовать живую картинку в чате: график, диаграмму, схему, шкалу времени, " +
             "мини-калькулятор с ползунками, сравнение с сортировкой. Страница без интернета и библиотек: чистые SVG/canvas/HTML/JS. Ширина экрана ~360–400px, высота карточки ~320px (больше — откроют на весь экран). " +
             "Цвета ТОЛЬКО из темы: CSS var(--ink) текст, var(--muted) подписи, var(--line) сетка, var(--bg) фон, var(--s1)…var(--s5) серии, var(--r) скругление; в JS — window.T.ink/.muted/.line/.series[]. " +
+            "SVG — всегда viewBox=\"0 0 360 H\" и width=\"100%\" (не фиксированные px); шкала от 0 до max×1,1, слева и снизу поля под подписи, легенда не наезжает. Что вылезло за край — Тень вернёт ошибкой. " +
             "Подсказки по тапу (наведения на телефоне нет). Подписи по-русски, числа с пробелами (40 100). Вставить в PDF — строкой [[рисунок N]] в text у file_create type pdf") t@{ ctx, a ->
             val html = a.optString("html").ifBlank { return@t "нужен html" }
             if (Regex("<script[^>]+src=|<link[^>]+href=\\s*[\"']?https?:|@import", RegexOption.IGNORE_CASE).containsMatchIn(html))
                 return@t "ошибка: внешние библиотеки и шрифты не загрузятся (интернета у рисунка нет). Перепиши на чистом SVG/canvas/JS и повтори draw."
             val title = a.optString("title").ifBlank { "Рисунок" }
             val shot = Viz.shoot(ctx, Viz.wrap(html), needBitmap = false)
-            if (shot.errors.isNotEmpty()) return@t "рисунок с ошибками JS, на экран не вывел: ${shot.errors.distinct().take(4).joinToString("; ")}. Исправь и повтори draw целиком."
+            if (shot.errors.isNotEmpty()) return@t "рисунок с ошибками, на экран не вывел: ${shot.errors.distinct().take(4).joinToString("; ")}. Исправь и повтори draw целиком."
             val ref = Viz.save(ctx, title, html)
             withContext(Dispatchers.Main) {
                 // перерисовал тот же рисунок — старую карточку убираем

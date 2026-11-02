@@ -87,7 +87,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:s
 body{padding:12px;overflow-x:hidden}svg{max-width:100%}
 button,input,select{font:inherit;color:inherit}</style>
 <script>window.T={bg:'${hex(c.card)}',ink:'${hex(c.ink)}',muted:'${hex(c.muted)}',line:'${hex(c.line)}',accent:'${if (c.square) hex(c.ink) else hex(c.accent)}',dark:${c.dark},square:${c.square},series:['${s.joinToString("','")}']};
-window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};</script>"""
+window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
+window.addEventListener('load',function(){document.querySelectorAll('svg').forEach(function(v){var w=parseFloat(v.getAttribute('width')),h=parseFloat(v.getAttribute('height'));
+if(!v.getAttribute('viewBox')&&w>0&&h>0&&String(v.getAttribute('width')).indexOf('%')<0){v.setAttribute('viewBox','0 0 '+w+' '+h)}
+if(v.getAttribute('viewBox')){v.setAttribute('width','100%');v.removeAttribute('height');v.style.height='auto'}})});</script>"""
         val body = html.trim().removePrefix("```html").removePrefix("```").removeSuffix("```").trim()
         val hm = Regex("<head[^>]*>", RegexOption.IGNORE_CASE).find(body)
         return if (hm != null) body.substring(0, hm.range.last + 1) + head + body.substring(hm.range.last + 1)
@@ -128,6 +131,12 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
         }
     }
 
+    /** После отрисовки: высота, ширина, что вылезло за край svg. */
+    private const val CHECK_JS = "(function(){var d=document.documentElement,W=d.clientWidth,bad=0,ex=[];" +
+        "document.querySelectorAll('svg').forEach(function(s){var r=s.getBoundingClientRect();s.querySelectorAll('rect,circle,ellipse,path,line,text,polyline,polygon').forEach(function(e){" +
+        "var b=e.getBoundingClientRect();if(b.width==0&&b.height==0)return;if(b.left<r.left-2||b.right>r.right+2||b.top<r.top-2||b.bottom>r.bottom+2){bad++;if(ex.length<3)ex.push(e.tagName+(e.textContent?' «'+e.textContent.trim().slice(0,20)+'»':''))}})});" +
+        "return JSON.stringify({h:Math.ceil(d.scrollHeight),w:W,sw:d.scrollWidth,bad:bad,ex:ex})})()"
+
     class Shot(val bmp: Bitmap?, val errors: List<String>, val heightCss: Int)
 
     /** Невидимо отрисовать: ошибки JS (для самопроверки модели) и картинка (для PDF). */
@@ -157,8 +166,14 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
                 override fun onPageFinished(view: WebView, url: String?) {
                     // даём скриптам дорисовать (анимации, canvas)
                     main.postDelayed({ if (!done) runCatching {
-                        wv.evaluateJavascript("Math.ceil(document.documentElement.scrollHeight)") { r ->
-                            val hCss = r?.trim('"')?.toDoubleOrNull()?.toInt()?.coerceIn(100, 4000) ?: 500
+                        wv.evaluateJavascript(CHECK_JS) { r ->
+                            val o = runCatching { org.json.JSONObject(org.json.JSONArray("[" + (r ?: "null") + "]").optString(0, "{}")) }.getOrDefault(org.json.JSONObject())
+                            val hCss = o.optInt("h", 500).coerceIn(100, 4000)
+                            val w = o.optInt("w"); val sw = o.optInt("sw")
+                            if (w > 0 && sw > w + 4) errs += "рисунок шире экрана (${sw}px при ширине ${w}px), справа обрезано — svg делай с viewBox и width=\"100%\", без фиксированной ширины в px"
+                            if (o.optInt("bad") > 0) errs += "${o.optInt("bad")} элементов вылезают за край svg и обрезаны (" +
+                                (o.optJSONArray("ex")?.let { a -> (0 until a.length()).joinToString(", ") { a.optString(it) } } ?: "") +
+                                ") — пересчитай масштаб: ось от 0 до max×1,1, поля под подписи"
                             if (!needBitmap) { finish(Shot(null, errs, hCss)); return@evaluateJavascript }
                             val hPx = (hCss * dens).toInt().coerceIn(200, 6000)
                             lay(hPx)
