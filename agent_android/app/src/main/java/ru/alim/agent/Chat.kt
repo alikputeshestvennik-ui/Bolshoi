@@ -395,7 +395,7 @@ class ChatStore(val fid: String) {
         // «обновись / установи» — без модели, сразу качаем и ставим (модель могла сочинить «я уже обновлён»)
         if (m.att.isBlank() && Updater.isCommand(m.text)) { Updater.run(Agent.app); drainQueue(); return }
         // Быстрая полоса: простую болтовню отвечаем сразу лёгкой моделью с потоковым выводом, минуя агента.
-        if (Prefs.fastLane && !queued && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
+        if (Prefs.fastLane && !queued && !prompt.contains("Собрать итог из найденного") && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
         else c.followUp(prompt)
     }
 

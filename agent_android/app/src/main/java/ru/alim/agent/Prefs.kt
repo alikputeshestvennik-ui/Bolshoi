@@ -144,7 +144,8 @@ object Prefs {
 
 /** Одна выполненная задача — для ленты «Сегодня» и экрана расходов. */
 data class TaskRec(val ts: Long, val title: String, val steps: Int, val model: String, val cost: Double, val ok: Boolean,
-                   val dur: Long = 0, val result: String = "", val log: String = "", val items: String = "") {
+                   val dur: Long = 0, val result: String = "", val log: String = "", val items: String = "",
+                   val tokIn: Long = 0, val tokOut: Long = 0) {
     /** Фоновые записи (мониторинг, итог дня, автоответ) — не просьбы Алима. */
     val background: Boolean get() = title.startsWith("Мониторинг") || title.startsWith("Итог дня") || title.startsWith("Автоответ")
 }
@@ -161,7 +162,7 @@ object Journal {
         return (0 until a.length()).map { a.getJSONObject(it) }.map {
             TaskRec(it.optLong("ts"), it.optString("title"), it.optInt("steps"), it.optString("model"),
                 it.optDouble("cost", 0.0).let { c -> if (c.isNaN()) 0.0 else c }, it.optBoolean("ok", true),
-                it.optLong("dur"), it.optString("res"), it.optString("log"), it.optString("items"))
+                it.optLong("dur"), it.optString("res"), it.optString("log"), it.optString("items"), it.optLong("ti"), it.optLong("to"))
         }
     }
 
@@ -171,7 +172,7 @@ object Journal {
         val a = JSONArray()
         list.forEachIndexed { i, it ->
             val o = JSONObject().put("ts", it.ts).put("title", it.title).put("steps", it.steps)
-                .put("model", it.model).put("cost", it.cost).put("ok", it.ok).put("dur", it.dur)
+                .put("model", it.model).put("cost", it.cost).put("ok", it.ok).put("dur", it.dur).put("ti", it.tokIn).put("to", it.tokOut)
             // подробности (шаги, ответ, товары) храним только у последних 120 записей
             if (i >= list.size - 120) o.put("res", it.result.take(2500)).put("log", it.log.take(2500)).put("items", it.items.take(4000))
             a.put(o)
@@ -188,6 +189,13 @@ object Journal {
     fun startOfDay(): Long = cal().timeInMillis
     fun startOfWeek(): Long = cal().apply { add(Calendar.DAY_OF_YEAR, -6) }.timeInMillis
     fun startOfMonth(): Long = cal().apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+}
+
+/** Токены словами: 4 194 180 → «4,2 млн ток.», 805 248 → «805 тыс ток.». */
+fun tok(n: Long): String = when {
+    n >= 1_000_000 -> "%.1f".format(n / 1_000_000.0).replace('.', ',') + " млн ток."
+    n >= 1_000 -> "${n / 1_000} тыс ток."
+    else -> "$n ток."
 }
 
 fun rub(v: Double): String = when {

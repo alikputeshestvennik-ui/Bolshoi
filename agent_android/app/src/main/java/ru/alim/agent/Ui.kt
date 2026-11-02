@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -160,12 +161,12 @@ fun App(voice: Voice) {
             // одна сцена полёта под чатом и задачей: из чата в задачу — тот же самолёт на той же полосе
             // кабина и 3D-полёт убраны: главный экран — Чат, идущие дела — на странице «Активные»
             // кнопки разделов и ввод — на всех экранах (в чате и задаче они свои)
-            val withBar = scr != Scr.Home && scr != Scr.Journal && scr != Scr.Task
+            val withBar = scr != Scr.Home && scr != Scr.Journal
             var barH by remember { mutableStateOf(0) }
             val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
             // экран идёт под кнопками, как в чате: вокруг кнопок прозрачно и размыто, в конце списков — запас на высоту кнопок
             val barHaze = remember { dev.chrisbanes.haze.HazeState() }
-            Box(Modifier.fillMaxSize().then(if (withBar) Modifier.background(Bg).haze(barHaze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f)) else Modifier)) {
+            Box(Modifier.fillMaxSize().then(if (withBar) Modifier.then(if (scr == Scr.Task) Modifier else Modifier.background(Bg)).haze(barHaze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f)) else Modifier)) {
               androidx.compose.runtime.CompositionLocalProvider(LocalBarPad provides (if (withBar) barDp else 0.dp)) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
@@ -186,7 +187,7 @@ fun App(voice: Voice) {
             }
             }
               }
-            if (withBar) GlobalBar(scr, go, barHaze, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
+            if (withBar) GlobalBar(scr, go, barHaze, Modifier.align(Alignment.BottomCenter).then(if (scr == Scr.Task) Modifier.navigationBarsPadding().imePadding() else Modifier).onSizeChanged { barH = it.height })
             if (Panel.open) Panel.open = false
         }
     }

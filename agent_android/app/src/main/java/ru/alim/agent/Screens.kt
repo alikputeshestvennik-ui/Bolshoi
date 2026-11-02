@@ -189,10 +189,12 @@ fun TaskRow(r: TaskRec, onClick: () -> Unit) {
         HGap(12)
         Column(Modifier.weight(1f)) {
             Text(r.title, style = body(15, FontWeight.SemiBold, if (r.background) Muted else Ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${hm.format(Date(r.ts))} · ${r.model}", style = body(12, color = Muted))
+            Text("${hm.format(Date(r.ts))} · ${r.model}" + (if (r.tokIn + r.tokOut > 0 && r.cost <= 0.0) " · ${tok(r.tokIn + r.tokOut)}" else ""), style = body(12, color = Muted))
         }
         HGap(8)
-        Text(rub(r.cost), style = body(14, FontWeight.SemiBold, if (r.cost > 0) Ink else Muted))
+        // у моделей без введённой цены рубли не посчитать — показываем токены (по ним видно расход баланса AnyModel)
+        if (r.cost <= 0.0 && r.tokIn + r.tokOut > 0) Text(tok(r.tokIn + r.tokOut), style = body(14, FontWeight.SemiBold, Ink))
+        else Text(rub(r.cost), style = body(14, FontWeight.SemiBold, if (r.cost > 0) Ink else Muted))
     }
 }
 
@@ -205,10 +207,7 @@ fun fieldColors() = OutlinedTextFieldDefaults.colors(
 // ————————————————— Задача —————————————————
 
 @Composable
-fun TaskScreen(voice: Voice, back: () -> Unit) {
-    val attach = rememberAttachPicker()
-    var reply by remember { mutableStateOf("") }
-    var hint by remember { mutableStateOf<String?>(null) }
+fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
     val phase = Agent.phase
     val running = phase == Agent.Phase.WORKING
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -267,7 +266,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
     androidx.compose.runtime.SideEffect { FlightBus.flying = flyNow; FlightBus.glow = glow; FlightBus.flash = flash }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { FlightBus.flying = false; FlightBus.flash = 0f } }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp)
+        Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 18.dp, vertical = 12.dp).padding(bottom = LocalBarPad.current)
             .graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 36.dp.toPx() },
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // верх: назад + задача
@@ -369,30 +368,7 @@ fun TaskScreen(voice: Voice, back: () -> Unit) {
                 }
             }
 
-            if (Agent.canFollowUp) {
-                if (voice.listening) Text(voice.partial.ifBlank { "Слушаю…" }, style = body(15, FontWeight.SemiBold, Color(0xFF8FEAFF)))
-                hint?.let { Text(it, style = body(13, color = Color(0xFFF2C58A))) }
-                AttachChips()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(glassBg).border(1.dp, glassLine, RoundedCornerShape(26.dp))
-                        .clickable(onClickLabel = "Прикрепить файл") { attach() }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Add, "Прикрепить файл", tint = Sky.ink, modifier = Modifier.size(24.dp))
-                    }
-                    HGap(8)
-                    OutlinedTextField(reply, { reply = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Дать команду Пилоту…", style = body(15, color = Muted)) },
-                        textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { if (reply.isNotBlank()) { Chat.userEcho(reply); Agent.followUp(reply); reply = "" } }))
-                    HGap(8)
-                    if (reply.isNotBlank() || Attach.pending.isNotEmpty()) IconTile(Icons.AutoMirrored.Filled.Send, "Отправить", { Chat.userEcho(reply); Agent.followUp(reply); reply = "" }, 52.dp)
-                    else Box(Modifier.size(52.dp).clip(RoundedCornerShape(26.dp)).background(if (voice.listening) Danger else Sky.glowCalm)
-                        .clickable(onClickLabel = "Ответить голосом") {
-                            hint = null
-                            if (voice.listening) voice.stopListen()
-                            else voice.listen(onText = { Chat.userEcho(it); Agent.followUp(it) }, onError = { hint = it })
-                        }, contentAlignment = Alignment.Center) { MicIcon(Sky.ink, 26.dp) }
-                }
-            }
+            // продолжить разговор — общим полем ввода внизу (как на остальных экранах): это та же переписка, что и в чате
             if (Agent.busy) BigButton("Остановить рейс", { Agent.stop() }, bg = glassBg, fg = Color(0xFFFF9A8F), border = Color(0x66FF9A8F))
         }
     }
@@ -473,7 +449,8 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
                     recs.groupBy { it.model }.entries.sortedByDescending { e -> e.value.sumOf { it.cost } }.forEach { (m, l) ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Text("$m · ${l.size}", style = body(14), modifier = Modifier.weight(1f))
-                            Text(rub(l.sumOf { it.cost }), style = body(14, FontWeight.SemiBold))
+                            val tk = l.sumOf { it.tokIn + it.tokOut }
+                            Text(if (l.sumOf { it.cost } <= 0.0 && tk > 0) tok(tk) else rub(l.sumOf { it.cost }), style = body(14, FontWeight.SemiBold))
                         }
                     }
                 }

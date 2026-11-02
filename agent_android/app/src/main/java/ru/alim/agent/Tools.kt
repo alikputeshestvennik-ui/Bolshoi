@@ -237,8 +237,11 @@ object Tools {
             val from = a.optString("from").trim().takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }
             val to = a.optString("to").trim().takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) } ?: from
             places.joinToString("\n\n") { place ->
-                runCatching { weather(place, from, to) }.getOrElse { e1 ->
-                    runCatching { wttr(place) }.getOrElse { e2 -> "$place: погода не пришла: open-meteo — ${e1.message}; wttr.in — ${e2.message}" }
+                // один повтор Open-Meteo (бывают разовые сбои), потом запасной wttr.in
+                runCatching { weather(place, from, to) }.recoverCatching { weather(place, from, to) }.getOrElse { e1 ->
+                    runCatching { wttr(place) }.getOrElse { e2 ->
+                        "ошибка: $place: погода не загрузилась (Open-Meteo — ${e1.message?.take(60)}; wttr.in — ${e2.message?.take(60)}). Скорее всего нет VPN или сети: скажи Алиму прямо «погоду не загрузил, проверь VPN», а не «нет данных» молча; в таблице и карточке погоду не выдумывай."
+                    }
                 }
             }
         },
@@ -412,7 +415,7 @@ object Tools {
             if (start < System.currentTimeMillis() - 60_000) return@t "дата ${Device.whenLabel(start)} уже прошла — проверь when"
             Device.createEvent(ctx, title, start, start + a.optInt("duration_min", 60) * 60_000L, a.optString("place")) + " (${Device.whenLabel(start)})"
         },
-        Tool("time_calc", "{\"start\": \"2027-01-02 16:55\", \"add\": \"1д 6ч 15м\"} — прибавить время в пути к отправлению; или {\"from\": \"2027-01-02 14:00\", \"to\": \"2027-01-03 07:35\"} — сколько между двумя моментами; {\"start\": …, \"add\": …, \"to\": \"момент вылета\"} — успеваю ли. Точный счёт по часам для цепочек поездки") t@{ _, a ->
+        Tool("time_calc", "{\"start\": \"2027-01-02 16:55\", \"add\": \"1д 6ч 15м\"} — прибавить время в пути к отправлению; или {\"from\": \"2027-01-02 14:00\", \"to\": \"2027-01-03 07:35\"} — сколько между двумя моментами; {\"start\": …, \"add\": …, \"to\": \"момент вылета\"} — успеваю ли. Если города в разных часовых поясах — добавь \"tz\": на сколько часов пояс прибытия впереди пояса отправления (Ялта → Екатеринбург: 2; Самара → Ялта: -1). Точный счёт по часам для цепочек поездки") t@{ _, a ->
             val f = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             // любой формат: «2027-01-02 16:55», «2027-01-02T16:55:00», «02.01.2027 16:55», «2 января 16:55»
             fun dt(x: String) = runCatching { java.time.LocalDateTime.parse(x.trim().replace('T', ' ').take(16), f) }.getOrNull()
@@ -423,6 +426,9 @@ object Tools {
             val st = pick("start", "from", "depart", "departure", "begin", "at")
             val add = pick("add", "duration", "travel", "plus", "dur", "in_path").lowercase()
             val to = pick("to", "end", "arrive", "arrival", "until")
+            // tz — на сколько часов пояс города прибытия впереди пояса отправления (Ялта → Екатеринбург: 2; Самара → Ялта: -1)
+            val tz = pick("tz", "tz_shift", "shift", "utc_shift").replace(Regex("[^-+\\d.]"), "").toDoubleOrNull() ?: 0.0
+            val tzMin = (tz * 60).toLong()
             val got = "получил: " + a.toString().take(160)
             if (st.isBlank()) return@t "нужен start+add или from+to; $got"
             val d0 = dt(st) ?: return@t "не понял момент «$st» — дай как ГГГГ-ММ-ДД ЧЧ:ММ; $got"
@@ -431,8 +437,18 @@ object Tools {
                 var mins = n("(д|дн|сут|d)") * 1440 + n("(ч|h)") * 60 + n("(м|мин|m)(?!е)")
                 Regex("^(\\d{1,2}):(\\d{2})$").find(add)?.let { mins = it.groupValues[1].toLong() * 60 + it.groupValues[2].toLong() }
                 if (mins == 0L) return@t "add нужен как «1д 6ч 15м»; $got"
-                val r = d0.plusMinutes(mins)
-                var out = "${lbl(d0)} + ${mins / 1440} д ${mins % 1440 / 60} ч ${mins % 60} м = ${lbl(r)}"
+                val r = d0.plusMinutes(mins + tzMin)
+                var out = "${lbl(d0)} + ${mins / 1440} д ${mins % 1440 / 60} ч ${mins % 60} м" +
+                    (if (tzMin != 0L) " + разница поясов ${if (tz > 0) "+" else ""}${tz.toString().removeSuffix(".0")} ч (время прибытия — местное)" else "") + " = ${lbl(r)}"
+                // срок возврата берём из ПРОСЬБЫ Алима, а не из того, что модель подставила: сверяем сами
+                deadline?.let { dl ->
+                    val toDt = to.takeIf { it.isNotBlank() }?.let { dt(it) }
+                    if (toDt != dl && r.isAfter(dl.minusHours(20)) && r.isBefore(dl.plusDays(4))) {
+                        val g2 = java.time.Duration.between(r, dl).toMinutes()
+                        out += "\nСРОК из просьбы Алима: ${lbl(dl)} — " + (if (g2 >= 0) "запас ${g2 / 60} ч ${g2 % 60} м" else "опоздание ${-g2 / 60} ч ${-g2 % 60} м") +
+                            (if (toDt != null) ". ВНИМАНИЕ: ты сравнивал с ${lbl(toDt)} — это не срок из просьбы" else "")
+                    }
+                }
                 if (to.isNotBlank()) dt(to)?.let { b ->
                     val gap = java.time.Duration.between(r, b).toMinutes()
                     out += if (gap >= 0) "; до ${lbl(b)} остаётся ${gap / 60} ч ${gap % 60} м — УСПЕВАЕШЬ" else "; это ПОЗЖЕ ${lbl(b)} на ${-gap / 60} ч ${-gap % 60} м — не успеваешь"
@@ -441,7 +457,7 @@ object Tools {
             }
             if (to.isNotBlank()) {
                 val b0 = dt(to) ?: return@t "не понял момент «$to» — дай как ГГГГ-ММ-ДД ЧЧ:ММ; $got"
-                val m = java.time.Duration.between(d0, b0).toMinutes()
+                val m = java.time.Duration.between(d0, b0).toMinutes() - tzMin   // реальное время в пути: местные часы минус разница поясов
                 val am = kotlin.math.abs(m)
                 return@t "от ${lbl(d0)} до ${lbl(b0)}: ${if (m < 0) "минус " else ""}${am / 1440} д ${am % 1440 / 60} ч ${am % 60} м" + if (m < 0) " — второй момент РАНЬШЕ первого, не успеваешь" else ""
             }
@@ -950,6 +966,23 @@ object Tools {
                     }
                 } }
             } }
+            // строка «Итого/Всего», где число равно сумме чисел над ней, — делаем формулой =SUM(): поправил цену в таблице — итог пересчитался
+            if (type == "xlsx") a.optJSONArray("sheets")?.let { sh -> for (k in 0 until sh.length()) sh.optJSONObject(k)?.optJSONArray("rows")?.let { rows ->
+                for (r in 2 until rows.length()) {
+                    val row = rows.optJSONArray(r) ?: continue
+                    val lab = (row.opt(0) as? String)?.trim()?.lowercase().orEmpty()
+                    if (!(lab.startsWith("итого") || lab.startsWith("всего") || lab.startsWith("итог "))) continue
+                    for (c in 1 until minOf(row.length(), 26)) {
+                        val v = (row.opt(c) as? Number)?.toDouble() ?: continue
+                        var sum = 0.0; var cnt = 0; var first = r
+                        for (q in r - 1 downTo 1) { val x = rows.optJSONArray(q)?.opt(c) as? Number ?: break; sum += x.toDouble(); cnt++; first = q }
+                        if (cnt >= 2 && kotlin.math.abs(sum - v) < 0.5) {
+                            val col = 'A' + c
+                            row.put(c, "=SUM($col${first + 1}:$col$r)")
+                        }
+                    }
+                }
+            } }
             // таблица из одних заголовков — не сохраняем и не даём сказать «таблица готова»
             if (type == "xlsx") a.optJSONArray("sheets")?.let { sh ->
                 val dataRows = (0 until sh.length()).sumOf { k -> ((sh.optJSONObject(k)?.optJSONArray("rows")?.length() ?: 0) - 1).coerceAtLeast(0) }
@@ -1151,6 +1184,21 @@ object Tools {
         return w.split(',', ' ', ';').mapNotNull { it.trim().toIntOrNull() }.mapNotNull { lastPhotos.getOrNull(it - 1) }.distinct()
     }
 
+    /** Срок из просьбы Алима («вернуться до 8:00 утра 20 июня») — time_calc сверяет с ним сам, не полагаясь на модель. */
+    @Volatile var deadline: java.time.LocalDateTime? = null
+    fun parseDeadline(text: String) {
+        deadline = runCatching {
+            val months = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+            val m = Regex("(?:до|к|не позже|не позднее)\\s+(\\d{1,2})[:.](\\d{2})\\s*(?:утра\\s+)?(\\d{1,2})\\s+(${months.joinToString("|")})", RegexOption.IGNORE_CASE).find(text)
+                ?: return@runCatching null
+            val mon = months.indexOf(m.groupValues[4].lowercase()) + 1
+            val y = Regex("\\b(20\\d\\d)\\b").find(text)?.groupValues?.get(1)?.toInt()
+            var dt = java.time.LocalDateTime.of(y ?: java.time.LocalDate.now().year, mon, m.groupValues[3].toInt(), m.groupValues[1].toInt(), m.groupValues[2].toInt())
+            if (y == null && dt.isBefore(java.time.LocalDateTime.now())) dt = dt.plusYears(1)
+            dt
+        }.getOrNull()
+    }
+
     private fun weather(place: String, from: String? = null, to: String? = null): String {
         val g = http.newCall(Request.Builder().url("https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name=" +
             URLEncoder.encode(place, "UTF-8")).build()).execute().use { it.body?.string().orEmpty() }
@@ -1191,17 +1239,26 @@ object Tools {
     private fun climate(lat: Double, lon: Double, from: String, to: String): String {
         val f = java.time.LocalDate.parse(from); val t = java.time.LocalDate.parse(to)
         val mins = ArrayList<Double>(); val maxs = ArrayList<Double>(); val rain = ArrayList<Double>()
+        // осадки считаем по окну шире нужных дат (±5 дней): за 3 года по 3–5 дням доля дождливых прыгает от 0 до 80 %
         for (y in 1..3) {
             val j = JSONObject(httpGet("https://archive-api.open-meteo.com/v1/archive?latitude=$lat&longitude=$lon" +
-                "&start_date=${f.minusYears(y.toLong())}&end_date=${t.minusYears(y.toLong())}" +
+                "&start_date=${f.minusYears(y.toLong()).minusDays(5)}&end_date=${t.minusYears(y.toLong()).plusDays(5)}" +
                 "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto")).optJSONObject("daily") ?: continue
-            fun arr(n: String, into: ArrayList<Double>) { j.optJSONArray(n)?.let { a -> for (k in 0 until a.length()) if (!a.isNull(k)) into += a.optDouble(k) } }
-            arr("temperature_2m_min", mins); arr("temperature_2m_max", maxs); arr("precipitation_sum", rain)
+            val times = j.optJSONArray("time")
+            for (k in 0 until (times?.length() ?: 0)) {
+                val day = runCatching { java.time.LocalDate.parse(times!!.optString(k)) }.getOrNull() ?: continue
+                val inRange = !day.isBefore(f.minusYears(y.toLong())) && !day.isAfter(t.minusYears(y.toLong()))
+                j.optJSONArray("precipitation_sum")?.takeIf { !it.isNull(k) }?.let { rain += it.optDouble(k) }
+                if (inRange) {
+                    j.optJSONArray("temperature_2m_min")?.takeIf { !it.isNull(k) }?.let { mins += it.optDouble(k) }
+                    j.optJSONArray("temperature_2m_max")?.takeIf { !it.isNull(k) }?.let { maxs += it.optDouble(k) }
+                }
+            }
         }
         if (mins.isEmpty()) return "Ориентир по прошлым годам не нашёлся."
         val wet = rain.count { it >= 1.0 } * 100 / rain.size.coerceAtLeast(1)
         return "Ориентир — эти же дни за 3 прошлых года: ночью ≈${mins.average().toInt()}°, днём ≈${maxs.average().toInt()}° " +
-            "(от ${mins.min().toInt()}° до ${maxs.max().toInt()}°), дождливых дней ≈$wet%. Это не прогноз, а норма."
+            "(от ${mins.min().toInt()}° до ${maxs.max().toInt()}°), дней с осадками ≥1 мм ≈$wet% (по ${rain.size} дням вокруг этих дат за 3 года). Это не прогноз, а норма."
     }
 
     /** Запасной источник погоды: wttr.in. */

@@ -128,6 +128,9 @@ object Agent {
         var result by mutableStateOf(""); private set
         var failed by mutableStateOf(false); private set
         var cost by mutableDoubleStateOf(0.0); private set
+        /** Токены задачи (вход/выход) — у моделей AnyModel баланс считается в токенах, рубли по ним не видны. */
+        var tokIn = 0L; private set
+        var tokOut = 0L; private set
         var model by mutableStateOf(""); private set
         var startedAt by mutableLongStateOf(0L); private set
         var endedAt by mutableLongStateOf(0L); private set
@@ -163,8 +166,8 @@ object Agent {
         fun start(text: String) {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
             if (t.isEmpty() || busy) return
-            task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList(); lastBest = ""
-            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t
+            task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
+            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false
             model = fast(); phase = Phase.WORKING
             lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
             delegIntent = Regex("свяж(ись|итесь)|договор(ись|иться)|уточни у|спроси у|узнай у|напиши .{0,30}(и|чтобы) (уточни|спроси|узнай|договор)|переговор", RegexOption.IGNORE_CASE).containsMatchIn(t)
@@ -177,9 +180,9 @@ object Agent {
             if (t.isEmpty() || busy) return
             val base = lastMsgs
             if (base == null || System.currentTimeMillis() - lastEnded > 30 * 60_000L) { phase = Phase.IDLE; start(t); return }
-            task = t; steps.clear(); result = ""; failed = false; cost = 0.0; pending = null; lastButtons = emptyList(); lastBest = ""
+            task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
             photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
-            startedAt = System.currentTimeMillis(); endedAt = 0L
+            startedAt = System.currentTimeMillis(); endedAt = 0L; stopped = false
             model = if (lastSmart) smart() else fast(); phase = Phase.WORKING
             val hard = lastSmart || looksHard(t)
             if (hard) model = smart()
@@ -190,11 +193,21 @@ object Agent {
 
         fun answer(yes: Boolean) { pending?.answer?.complete(yes) }
 
+        /** Остановили вручную: отмена сети кидает IOException «Canceled» — это не «связь пропала», второе сообщение не нужно. */
+        @Volatile private var stopped = false
+
         fun stop() {
             if (!busy) return
+            stopped = true
+            // тяжёлая задача уже что-то нашла — не выбрасываем это, а предлагаем собрать итог из найденного
+            val heavy = lastMsgs != null && hardText(rootTask) && steps.count { it.done } >= 3
             job?.cancel()
             pending?.answer?.cancel(); pending = null
-            finish(false, "Остановил по твоей команде.")
+            if (heavy) {
+                lastSmart = true
+                lastButtons = listOf("Собрать итог из найденного")
+                finish(true, "Остановил по твоей команде. Всё найденное сохранил — нажми «Собрать итог из найденного», и я оформлю ответ без новых поисков.")
+            } else finish(false, "Остановил по твоей команде.")
         }
 
         fun close() { if (phase == Phase.DONE) phase = Phase.IDLE }
@@ -297,6 +310,11 @@ object Agent {
             append("- Напоминание на дату («1 декабря», «за 3 дня до выезда») — event_create с when ГГГГ-ММ-ДД ЧЧ:ММ (дату вычисли сам). alarm_set — только будильник в ближайшие сутки.\n")
             append("- В таблицах числа (цены, часы) — ОТДЕЛЬНЫМИ столбцами, только число (12350, не «≈12 350 ₽ (автобус)»); пояснения — в соседнем текстовом столбце. Иначе формула «Итог» посчитает 0. Одни и те же данные (отель, цена, время) в таблице и ответе должны совпадать.\n")
             append("- Время в поездках проверяй по часам: рейс/поезд подходит, только если отправление ПОЗЖЕ, чем Алим реально доберётся до аэропорта/вокзала (с учётом работы и дороги), а обратный путь укладывается в срок. Неподходящий по времени вариант не называй «вписывается» — пометь «не успеваю» и ищи другой. В таблице — столбец «Успеваю?» с расчётом по часам.\n")
+            append("- СРОК ИЗ ПРОСЬБЫ («вернуться до 8:00 утра 20 июня») — точная дата и час, считай запас именно до него и не сдвигай на соседний день. time_calc сам напомнит срок из просьбы: если он пишет «ВНИМАНИЕ: ты сравнивал с…» — пересчитай.\n")
+            append("- Часовые пояса относительно Москвы и Крыма: Калининград −1; Самара, Ижевск +1; Екатеринбург, Тюмень, Челябинск +2; Омск +3; Новосибирск, Красноярск +4; Иркутск +5; Якутск +6; Владивосток +7. Время в расписаниях — местное. Если отправление и прибытие в разных поясах — time_calc с \"tz\" (на сколько часов пояс прибытия впереди пояса отправления), иначе дорога выйдет неверной.\n")
+            append("- Заголовок report (title): «N дней в <городе> за X ₽» — N это дни В ГОРОДЕ (ночи + 1), а не вся поездка с дорогой; дорогу и общее число дней поездки — в lead.\n")
+            append("- Таблица-файл: лист «Итог» ВСЕГДА описывает тот же лучший вариант, что и финальный ответ с report/best. Пересчитал или сменил выбор — обнови ВСЕ листы, не только один. Итоги (суммы) в xlsx — формулами (=SUM(B2:B6), =B2+C2), числа — отдельными ячейками. Не пересоздавай файл, если нет новых данных.\n")
+            append("- Каждая цена, время отправления и прибытия в маршруте — ТОЛЬКО из результатов поиска ЭТОЙ задачи (flights, web_page/web_read, hotels, time_calc). Не бери цифры из памяти, прошлых задач в чате или «примерно как обычно»: нет данных — «—» или «нет данных», а не угаданное число. На каждый участок маршрута нужен свой поиск.\n")
             append("- Сложный подбор с жёсткими условиями (сроки, бюджет) — после ответа дай в buttons 1-3 уточнения, которые сильнее всего меняют результат («Могу выехать в четверг», «Вернуться можно к обеду»).\n")
             append("- Бюджет задан — варианты сверх бюджета не предлагай как подходящие (или явно пометь «не влезает»).\n")
             append("- Подбор поездки/покупки: цены ТОЧНЫЕ с первого раза — билеты через flights (конкретный рейс, дата, цена), отели через web_search «отель <город> цена за ночь <месяц>» + web_read (название отеля и цена), еда/развлечения — найденные средние с источником. Круглые прикидки «35 000» без источника — нельзя.\n")
@@ -350,8 +368,11 @@ object Agent {
                 catch (e: CancellationException) { throw e } catch (e: Exception) { "ВЛОЖЕНИЯ: не удалось прочитать (${e.message})" })
                     .also { st.done = true; st.detail = it.lines().drop(1).firstOrNull { l -> l.isNotBlank() }.orEmpty().take(200) }
             }
-            val follow = base != null && rootTask.isNotBlank() && rootTask != text
-            val ask = if (follow) "$text\n\n(Это уточнение к задаче выше. Всё уже найденное — в переписке: используй его, заново ищи только то, что меняется от уточнения. Файл — обнови тот же или сделай новый с пересчётом. Дай вывод с цифрами.)" else text
+            // «Собрать итог из найденного» после ручной остановки: поиск закрыт, оформляем ответ из того, что уже есть в переписке
+            val assemble = base != null && text.contains("Собрать итог из найденного")
+            val follow = !assemble && base != null && rootTask.isNotBlank() && rootTask != text
+            val ask = if (assemble) "Алим остановил поиск и просит собрать итог. Больше НИЧЕГО не ищи: инструменты не нужны (кроме file_create, если просили таблицу и её ещё нет). Из уже найденного в переписке оформи полный итоговый ответ: вывод с цифрами, \"report\" и \"best\" как для большой задачи. Чего не успели найти — честно «нет данных», ничего не выдумывай."
+                else if (follow) "$text\n\n(Это уточнение к задаче выше. Всё уже найденное — в переписке: используй его, заново ищи только то, что меняется от уточнения. Файл — обнови тот же или сделай новый с пересчётом. Дай вывод с цифрами.)" else text
             msgs.put(msg("user", if (extra.isBlank()) ask else "$ask\n\n$extra"))
             lastMsgs = msgs
             var smart = smartStart
@@ -359,22 +380,27 @@ object Agent {
             val calls = HashMap<String, Int>()
             var truncRetry = 0
             var maxTok = 12000          // потолок ответа: платим только за реально написанное, так что не жмёмся
-            val hard0 = hardText(text)
+            val hard0 = hardText(text) || assemble
             var cap = if (hard0) 40 else 18   // шагов на задачу: сложному подбору нужно место для обходов
-            var wrap = false            // шаги кончились — даём собрать итог из найденного
+            var wrap = assemble         // шаги кончились (или Алим остановил поиск) — даём собрать итог из найденного
             var emptyRetry = 0
             var noMoneyAlt: String? = null   // GPTunnel пуст — дальше вся задача на этой модели, без повторных попыток
             var announced = ""
             var junkRetry = 0
             var conclRetry = 0
             var bestRetry = 0
-            var lazyRetry = 0
+            var lazyRetry = if (assemble) 2 else 0
             var reportRetry = 0
             var reportStale = false     // после доработки по проверке прежняя карточка могла устареть — просим свежую
             var tableRetry = 0
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
             SrcTime.reset(); Tools.taskVideos.clear()
+            Tools.parseDeadline(if (follow) rootTask else text)
+            val seenAll = StringBuilder(if (assemble) rootTask else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
+            if (base != null) for (k in 0 until base.length()) base.optJSONObject(k)?.takeIf { it.optString("role") == "user" && it.optString("content").startsWith("РЕЗУЛЬТАТ ") }?.let { seenAll.append('\n').append(it.optString("content")) }
+            var evRetry = 0
+            var fileStreak = 0
             try {
                 var i = 0
                 var audits = 0
@@ -439,7 +465,7 @@ object Agent {
                             continue
                         }
                     }
-                    cost += r.cost(m)
+                    cost += r.cost(m); tokIn += r.inTok; tokOut += r.outTok
                     msgs.put(msg("assistant", r.text))
                     steps.lastOrNull()?.done = true
                     val j = parse(r.text)
@@ -504,6 +530,14 @@ object Agent {
                         msgs.put(msg("user", "Инструмент «$tool» — у главного (${Friends.main.name}). Вызови ask_main с просьбой, а Алиму коротко скажи, что передал."))
                         continue
                     }
+                    // файл пересоздают снова и снова без новых данных (так Sol три раза переписала одну таблицу)
+                    if (tool == "file_create") {
+                        if (fileStreak >= 2) {
+                            msgs.put(msg("user", "РЕЗУЛЬТАТ file_create: файл уже пересоздан дважды подряд без новых поисков и расчётов — больше не пересоздавай. Дай финальный ответ (tool null) с report и best; чего не нашёл — честно напиши."))
+                            continue
+                        }
+                        fileStreak++
+                    } else fileStreak = 0
                     val used = (calls[tool] ?: 0) + 1; calls[tool] = used
                     val tcap = when (tool) { "shop_search" -> 3; "web_search" -> if (hard0) 20 else 8; "web_read", "web_page" -> if (hard0) 24 else 10; "file_create" -> 6; else -> 8 }
                     if (used > tcap) {
@@ -536,7 +570,8 @@ object Agent {
                     step.detail = res.take(500)
                     if (!Regex("^(ошибка|не получилось|не удалось|нет разрешения|не нашёл|не нашел|не подключ|нужно|нужен|нужна)", RegexOption.IGNORE_CASE).containsMatchIn(res.trim())) doneOk += tool
                     msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: ${res.take(if (tool == "file_read") 14000 else 8000)}"))
-                    if (!hard0) shrinkOld(msgs)   // в тяжёлой задаче ничего не урезаем: найденные цены нужны до самого итога
+                    if (seenAll.length < 600_000) seenAll.append('\n').append(res.take(20000))
+                    if (!hard0) shrinkOld(msgs) else squeezeOld(msgs)   // в тяжёлой задаче старые страницы сжимаем до строк с цифрами: цены и время остаются, проза уходит
                 }
                 // добросовестность: перед ответом сверяем каждый пункт просьбы; не доделано — доделываем (один заход)
                 // честность: «отправил/создал/поставил» — только если инструмент реально отработал
@@ -582,11 +617,23 @@ object Agent {
                     msgs.put(msg("user", "Повтори финальный JSON (tool null, тот же \"say\", тот же \"best\" если был) и добавь \"report\" — карточку-отчёт по формату из инструкции (title, lead, route, totals, compare, places, weather, sources, ask — только блоки с найденными данными)."))
                     final = null; continue
                 }
+                // защита от выдумок: цены и время в отчёте должны быть в результатах инструментов этой задачи
+                if (final != null && hard0 && !follow && evRetry < 2 && i < cap - 2) {
+                    val bad = unbacked(lastBest, seenAll.toString(), calls, assemble)
+                    if (bad.isNotEmpty()) {
+                        evRetry++
+                        steps.add(Step("Сверяю цифры с источниками").also { it.done = true })
+                        msgs.put(msg("user", "ПРОВЕРКА ИСТОЧНИКОВ: в отчёте есть цифры, которых нет в результатах поиска ЭТОЙ задачи (взяты из памяти, из прошлых задач или придуманы): ${bad.joinToString("; ")}. Так нельзя. " +
+                            "Найди каждую поиском сейчас (расписание и цены — web_page на Туту, Автовокзалы, БилетыПлюс, самолёты — flights, отели — hotels) или замени на «—»/«нет данных» и убери из итогов и таблицы. " +
+                            "Потом повтори финальный ответ (tool null, report, best) и обнови файл (тот же name)."))
+                        final = null; continue
+                    }
+                }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
                 if (fin == null || wrap || audits >= (if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)) break
                 audits++
-                val auditAsk = if (follow) "ИСХОДНАЯ ЗАДАЧА (уже выполнена раньше): $rootTask\n\nУТОЧНЕНИЕ, на которое сейчас отвечают (проверяй ТОЛЬКО его): $text" else text
+                val auditAsk = if (follow) "ИСХОДНАЯ ЗАДАЧА (уже выполнена раньше): $rootTask\n\nУТОЧНЕНИЕ, на которое сейчас отвечают (проверяй ТОЛЬКО его): $text" else if (assemble) rootTask else text
                 val miss = runCatching { audit(auditAsk, fin, steps.map { it.text }, files.map { it.name }) }.getOrNull()
                 if (miss.isNullOrBlank()) break
                 steps.add(Step("Доделываю: ${miss.take(50)}").also { it.done = true })
@@ -631,11 +678,15 @@ object Agent {
                     val seen = buildString { for (k in 0 until msgs.length()) msgs.optJSONObject(k)?.takeIf { it.optString("role") == "user" }?.let { append(it.optString("content")) } }
                     lastBest = withContext(Dispatchers.IO) { runCatching { Buy.fix(lastBest, seen) }.getOrDefault(lastBest) }
                 }
+                // если после двух попыток что-то осталось неподтверждённым — прямо говорим об этом, а не оставляем как факт
+                if (final != null && hard0 && !follow) unbacked(lastBest, seenAll.toString(), calls, assemble).takeIf { it.isNotEmpty() }?.let { bad ->
+                    out += "\n⚠ Не подтверждено поиском в этой задаче: ${bad.take(5).joinToString(", ")} — проверь перед покупкой."
+                }
                 finish(true, out)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                finish(false, friendly(e))
+                if (!stopped) finish(false, friendly(e))
             }
         }
 
@@ -648,7 +699,7 @@ object Agent {
             runCatching {
                 val log = steps.joinToString("\n") { it.text.replace('\n', ' ') + "\t" + it.detail.take(300).replace("\n", "⏎") }
                 Journal.add(Agent.app, TaskRec(startedAt, task, steps.size, Agent.short(model), cost, ok, endedAt - startedAt, text, log,
-                    if (products.isEmpty()) "" else Shop.toJson(products.take(8))))
+                    if (products.isEmpty()) "" else Shop.toJson(products.take(8)), tokIn, tokOut))
             }
             // мысли и шаги — к сообщению, чтобы потом раскрыть «Думал N мин ›»
             val payload = if (steps.size < 3) lastBest else runCatching {
@@ -680,6 +731,8 @@ object Agent {
                     "Сверь ВРЕМЯ с ограничениями из просьбы (когда Алим освобождается, к какому сроку вернуться, дорога до аэропорта/вокзала): если в ответе он выезжает раньше, чем свободен, дорога короче реальной или вариант назван «успеваю» без расчёта по часам — НЕ сделано: «пересчитай по часам с учётом <что именно>». Противоречия между вариантами (для одного учтено ограничение, для другого нет) — тоже НЕ сделано. " +
                     "«Не дособрал / не успел / не искал / скажи — дособеру» по пункту, которого НЕТ в сделанных шагах, — НЕ сделано (честное «не нашёл» засчитывается, только если по пункту был поиск). " +
                     "Ответ говорит «ничего не подходит / не успеваю / перенеси даты» вместо результата — проверь по шагам, считал ли он по часам выезд НАКАНУНЕ (ночной автобус, прибытие утром в день вылета — это успеваю). Не считал — НЕ сделано: «посчитай выезд накануне через расчёт времени и дай варианты». " +
+                    "Лист «Итог» (или помеченный «выбран») в файле называет другой вариант, чем лучший в ответе, или цифры файла и ответа расходятся — НЕ сделано: «обнови лист Итог и остальные под выбранный вариант». " +
+                    "Просили сравнить способы (самый дешёвый/быстрый и т.п.), а в ответе один способ без причины, почему других нет, — НЕ сделано: «проверь второй способ поиском (поезд, пересадка, другой город отправления)». " +
                     "Если дана ИСХОДНАЯ ЗАДАЧА и УТОЧНЕНИЕ — проверяй только ответ на уточнение; требования исходной задачи (разные направления, все пункты) к нему не применяй. " +
                     "Ответ ТОЛЬКО JSON: {\"missing\": [\"что именно не сделано, коротко\"]} — пустой список, если всё выполнено."))
                 .put(msg("user", "ПРОСЬБА: $ask\n\nСДЕЛАННЫЕ ШАГИ: ${steps.joinToString("; ").take(1500)}\nСОЗДАННЫЕ ФАЙЛЫ: ${files.joinToString(", ").ifBlank { "нет" }}" +
@@ -689,6 +742,56 @@ object Agent {
             val j = parse(r.text) ?: return null
             val miss = j.optJSONArray("missing")?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotBlank() } }.orEmpty()
             return miss.take(4).joinToString("; ").ifBlank { null }
+        }
+
+        /** Цифры отчёта, которых нет в результатах инструментов этой задачи: из памяти, из прошлых задач или выдуманные. Пусто — всё подтверждено. */
+        private fun unbacked(best: String, seen: String, calls: Map<String, Int>, skipSearch: Boolean = false): List<String> {
+            val rep = Rich.parse(best)?.optJSONObject("report") ?: return emptyList()
+            val flat = seen.replace(Regex("(?<=\\d)[ \\u00A0\\u202F](?=\\d{3}(?!\\d))"), "")
+            val nums = Regex("\\d{3,7}").findAll(flat).mapNotNull { it.value.toIntOrNull() }.toHashSet()
+            fun backed(x: Int) = x in nums || (2..14).any { n -> x % n == 0 && (x / n) in nums }
+            val out = ArrayList<String>()
+            val legs = ArrayList<JSONObject>()
+            fun addRoute(a: JSONArray?) { for (k in 0 until (a?.length() ?: 0)) a!!.optJSONObject(k)?.let { legs += it } }
+            addRoute(rep.optJSONArray("route"))
+            rep.optJSONArray("compare")?.let { c -> for (k in 0 until c.length()) addRoute(c.optJSONObject(k)?.optJSONArray("route")) }
+            val priceRe = Regex("(\\d{1,3}(?:[\\s\\u00A0\\u202F]\\d{3})+|\\d{3,7})\\s*(?:₽|руб|р\\.)")
+            val timeRe = Regex("\\b(\\d{1,2}):(\\d{2})\\b")
+            val texts = ArrayList<Pair<String, String>>()   // (что это, текст)
+            for (o in legs) { texts += (o.optString("what") to o.optString("sub")); texts += (o.optString("what") to o.optString("when")) }
+            rep.optJSONArray("stay")?.let { s -> for (k in 0 until s.length()) s.optJSONObject(k)?.let { h ->
+                h.optJSONArray("prices")?.let { p -> for (q in 0 until p.length()) p.optJSONObject(q)?.let { texts += (h.optString("name") to it.optString("price")) } }
+            } }
+            val seenT = HashSet<String>()
+            for ((what, t) in texts) {
+                priceRe.findAll(t).forEach { m ->
+                    val v = m.groupValues[1].replace(Regex("\\D"), "").toIntOrNull() ?: return@forEach
+                    if (v in 2020..2035 || backed(v)) return@forEach
+                    if (seenT.add("p$v")) out += "${m.value.trim()} («${what.take(40)}»)"
+                }
+                timeRe.findAll(t).forEach { m ->
+                    val h = m.groupValues[1].toInt(); val mi = m.groupValues[2]
+                    val tok = "%02d:%s".format(h, mi)
+                    if (flat.contains(tok) || flat.contains("$h:$mi")) return@forEach
+                    if (seenT.add("t$tok")) out += "время $tok («${what.take(40)}»)"
+                }
+            }
+            val transportLegs = legs.count { it.optString("kind") in setOf("bus", "train", "flight") }
+            val searches = listOf("web_search", "web_read", "web_page", "flights").sumOf { calls[it] ?: 0 }
+            if (!skipSearch && transportLegs >= 2 && searches < maxOf(2, transportLegs / 2)) out += "поисков маршрута было $searches на $transportLegs участков"
+            return out.take(8)
+        }
+
+        /** В тяжёлой задаче старые страницы (кроме 8 последних результатов) сжимаем до строк с цифрами: цены и время остаются, проза уходит. */
+        private fun squeezeOld(msgs: JSONArray) {
+            val idx = (0 until msgs.length()).filter { k -> msgs.optJSONObject(k)?.let { it.optString("role") == "user" && it.optString("content").startsWith("РЕЗУЛЬТАТ ") } == true }
+            for (k in idx.dropLast(8)) {
+                val o = msgs.getJSONObject(k); val c = o.optString("content")
+                if (c.length <= 5000 || c.startsWith("РЕЗУЛЬТАТ file_") || c.contains("[сжато")) continue
+                val head = c.substringBefore('\n')
+                val keep = c.lines().drop(1).filter { l -> l.any { ch -> ch.isDigit() } }.joinToString("\n")
+                o.put("content", head + "\n" + (if (keep.length in 200 until c.length) keep else c.drop(head.length)).take(4500) + "\n[сжато: оставлены строки с цифрами, ты это уже видел]")
+            }
         }
 
         /** Старые результаты инструментов (кроме 6 последних) сжимаем: модель их уже видела, а каждый шаг пересылает всю переписку — иначе длинная задача дорожает с каждым шагом. */
