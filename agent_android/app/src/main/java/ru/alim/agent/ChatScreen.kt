@@ -389,6 +389,26 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
         }
         return
     }
+    // служебное (остановил, обрыв связи, ошибка) — не бабл, а тёмная плашка на ширину листа с серым текстом
+    if (!m.me && !ChatSel.on && (m.failed || m.text.startsWith("Остановил по твоей команде"))) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xF01B1C1F))
+                .combinedClickable(onClick = {}, onLongClick = { ChatSel.toggle(m.id) }).padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(m.text, style = body(14, color = Color(0xFFB4B6BC)), lineHeight = 19.sp)
+                val tm = hhmm.format(Date(m.ts))
+                Text(if (m.meta.isNotBlank()) "${m.meta} · $tm" else tm, style = body(11, color = Color(0xFF7D8088)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (showButtons && m.buttons.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                m.buttons.forEach { b ->
+                    Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble.copy(alpha = 0.85f))
+                        .border(1.dp, Teal.copy(alpha = 0.5f), RoundedCornerShape(18.dp)).clickable { chat.send(b) }.padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center) { Text(b, style = body(14, FontWeight.SemiBold, Teal)) }
+                }
+            }
+        }
+        return
+    }
     val picked = m.id in ChatSel.ids
     val lit = ChatJump.glow == m.id
     // большая задача с отчётом — богатая карточка: маршрут, сравнение, места с фото, погода, покупка
@@ -470,8 +490,10 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
 @Composable
 private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStore) {
     val text = m.text.trim()
-    val cut = Regex("[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1
-    val title = if (cut > 0) text.take(cut).replace("**", "").trim().trimEnd('.') else ""
+    // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия; точка после номера списка («1.») — не конец фразы
+    val colon = Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s|\\n)").find(text)?.range?.first?.takeIf { it in 8..160 }
+    val cut = colon?.plus(1) ?: (Regex("(?<![\\s:]\\d)(?<![\\s:]\\d\\d)(?<!^\\d)[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1)
+    val title = if (cut > 0) text.take(cut).replace("**", "").trim().trimEnd('.', ':') else ""
     val rest = if (cut > 0) text.drop(cut).trim() else text
     val shape = RoundedCornerShape(22.dp)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {

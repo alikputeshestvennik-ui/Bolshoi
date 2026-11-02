@@ -530,7 +530,7 @@ private fun splitResult(text: String): ResultParts {
     var stamp = ""
     Regex("\\n?\\s*(🕓|🕐|⏰)\\s*([^\\n]+)").find(t)?.let { m -> stamp = m.groupValues[2].trim(); t = t.removeRange(m.range).trim() }
     // предложения режем только перед пробелом и заглавной — «15.01» и «9.3» целы
-    val split = Regex("(?<=[.!?])\\s+(?=[А-ЯЁA-Z«\"(])|\\n+")
+    val split = Regex("(?<=[.!?])(?<!^\\d\\.)(?<![\\s:]\\d\\.)(?<![\\s:]\\d\\d\\.)\\s+(?=[А-ЯЁA-Z«\"(])|\\n+")   // «1. Куртка» — номер списка, не конец фразы
     fun sentences(x: String) = x.split(split).map { it.trim() }.filter { it.isNotBlank() }
     // служебные фразы про файл («Обновил файл в Загрузках», «Таблица лежит…») — выкидываем из текста целиком
     val service = Regex("(файл|таблиц|документ|загрузк|xlsx|docx)", RegexOption.IGNORE_CASE)
@@ -541,6 +541,8 @@ private fun splitResult(text: String): ResultParts {
     // заголовок — вывод «самый выгодный — …», иначе первая фраза; длинный — режем по запятой/тире
     val pick = ss.firstOrNull { Regex("самый выгодн|выгоднее всего|лучший вариант|лучший выбор|оптимальн", RegexOption.IGNORE_CASE).containsMatchIn(it) } ?: ss.firstOrNull().orEmpty()
     var title = pick
+    // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия, список уходит в текст
+    Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s)").find(title)?.let { m -> if (m.range.first >= 8) title = title.substring(0, m.range.first) }
     if (title.length > 80) {
         val cut = Regex("[,;](\\s)|\\s[—–-]\\s").findAll(title).map { it.range.first }.firstOrNull { it in 20..80 }
         title = if (cut != null) title.substring(0, cut) else title
