@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -176,6 +177,17 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
         }
     }
 
+    /** Снимок для ленты: готовый .png рядом с .html (по теме), иначе рисуем невидимо и сохраняем. */
+    suspend fun preview(ctx: Context, ref: Docs.FileRef, wrapped: String): Bitmap? {
+        val src = File(ref.uri.path ?: return null)
+        val png = File(src.parentFile, src.nameWithoutExtension + "_" + Th.c.id + ".png")
+        if (png.exists()) return withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(png.path) }
+        // снимок не выше 2,5 экрана — хватит на превью
+        val b = shoot(ctx, wrapped, widthPx = 1000).bmp ?: return null
+        withContext(Dispatchers.IO) { runCatching { png.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } } }
+        return b
+    }
+
     /** Системная печать → «Сохранить как PDF». */
     fun print(ctx: Context, wv: WebView, title: String) {
         val pm = ctx.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
@@ -197,34 +209,46 @@ private fun VizWeb(html: String, modifier: Modifier, onReady: (WebView) -> Unit 
         update = { }, onRelease = { wv -> runCatching { wv.stopLoading(); wv.destroy() } }, modifier = modifier)
 }
 
-/** Живой рисунок в ленте: заголовок, сама страница, «Развернуть» на весь экран, «В PDF». */
+/**
+ * Рисунок в ленте — снимком (картинкой), живой — только на весь экран.
+ * Живой WebView внутри ленты под размытой шапкой ронял приложение (движок не умеет рисоваться в слой размытия).
+ */
 @Composable
 fun VizCard(ref: Docs.FileRef) {
     val ctx = LocalContext.current
     val html = remember(ref.uri) { Viz.wrap(Viz.read(ref)) }
     var full by remember { mutableStateOf(false) }
-    var web by remember { mutableStateOf<WebView?>(null) }
     val title = ref.name.removeSuffix(".html")
     val shape = shp(16.dp)
-    Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).border(1.dp, Th.c.line, shape)) {
-        Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = body(13, FontWeight.SemiBold, Th.c.ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("В PDF", style = body(12, FontWeight.SemiBold, Th.c.muted), modifier = Modifier.clip(shp(8.dp))
-                .clickable(onClickLabel = "Сохранить рисунок в PDF") { web?.let { Viz.print(ctx, it, title) } }.padding(horizontal = 10.dp, vertical = 10.dp))
-            Text("Развернуть", style = body(12, FontWeight.SemiBold, Th.c.ink), modifier = Modifier.clip(shp(8.dp))
-                .clickable(onClickLabel = "Развернуть рисунок") { full = true }.padding(horizontal = 10.dp, vertical = 10.dp))
-        }
-        VizWeb(html, Modifier.fillMaxWidth().height(340.dp)) { web = it }
+    val shot by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, ref.uri, Th.c.id) {
+        value = runCatching { Viz.preview(ctx, ref, html)?.asImageBitmap() }.getOrNull()
     }
-    if (full) Dialog(onDismissRequest = { full = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Column(Modifier.fillMaxSize().background(Th.c.card).statusBarsPadding()) {
+    Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).border(1.dp, Th.c.line, shape)
+        .clickable(onClickLabel = "Открыть рисунок") { full = true }) {
+        Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = body(13, FontWeight.SemiBold, Th.c.ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("Открыть ›", style = body(12, FontWeight.SemiBold, Th.c.muted))
+        }
+        Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.TopCenter) {
+            val b = shot
+            if (b != null) androidx.compose.foundation.Image(b, title, Modifier.fillMaxSize(), alignment = Alignment.TopCenter,
+                contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+            else Text("Рисую…", style = body(13, color = Th.c.muted), modifier = Modifier.padding(top = 120.dp))
+        }
+    }
+    if (full) Dialog(onDismissRequest = { full = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        var web by remember { mutableStateOf<WebView?>(null) }
+        Column(Modifier.fillMaxSize().background(Th.c.card)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = body(15, FontWeight.Bold, Th.c.ink), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 10.dp))
+                Box(Modifier.clip(shp(8.dp)).clickable(onClickLabel = "Сохранить в PDF") { web?.let { Viz.print(ctx, it, title) } }.padding(12.dp)) {
+                    Text("В PDF", style = body(13, FontWeight.SemiBold, Th.c.muted))
+                }
                 Box(Modifier.clip(shp(8.dp)).clickable(onClickLabel = "Закрыть") { full = false }.padding(12.dp)) {
                     Text("Закрыть", style = body(13, FontWeight.SemiBold, Th.c.ink))
                 }
             }
-            VizWeb(html, Modifier.fillMaxWidth().weight(1f))
+            VizWeb(html, Modifier.fillMaxWidth().weight(1f)) { web = it }
         }
     }
 }
