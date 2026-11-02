@@ -3,6 +3,7 @@ package ru.alim.agent
 import androidx.compose.foundation.layout.height
 
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.unit.dp
 
 import android.annotation.SuppressLint
 import android.content.Context
