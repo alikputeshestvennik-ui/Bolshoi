@@ -88,7 +88,8 @@ button,input,select{font:inherit;color:inherit}</style>
 <script>window.T={bg:'${hex(c.card)}',ink:'${hex(c.ink)}',muted:'${hex(c.muted)}',line:'${hex(c.line)}',accent:'${if (c.square) hex(c.ink) else hex(c.accent)}',dark:${c.dark},square:${c.square},series:['${s.joinToString("','")}']};
 window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};</script>"""
         val body = html.trim().removePrefix("```html").removePrefix("```").removeSuffix("```").trim()
-        return if (Regex("<head[^>]*>", RegexOption.IGNORE_CASE).containsMatchIn(body)) body.replaceFirst(Regex("<head[^>]*>", RegexOption.IGNORE_CASE)) { it.value + head }
+        val hm = Regex("<head[^>]*>", RegexOption.IGNORE_CASE).find(body)
+        return if (hm != null) body.substring(0, hm.range.last + 1) + head + body.substring(hm.range.last + 1)
         else "<!doctype html><html><head><meta charset=\"utf-8\">$head</head><body>$body</body></html>"
     }
 
