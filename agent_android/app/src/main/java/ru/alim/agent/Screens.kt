@@ -139,7 +139,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
         Row(Modifier.padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(Triple("Сводка", Scr.Digest, Amber), Triple("Память", Scr.Memory, Violet), Triple("Автоответ", Scr.Rules, Teal)).forEach { (t, s, c) ->
-                Row(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(14.dp)).background(Card).clickable { go(s) }.padding(horizontal = 12.dp),
+                Row(Modifier.weight(1f).height(48.dp).clip(shp(14.dp)).background(Card).clickable { go(s) }.padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Dot(c); HGap(8); Text(t, style = body(13, FontWeight.SemiBold), maxLines = 1, softWrap = false)
                 }
@@ -151,7 +151,7 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
         if (typing) {
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(input, { input = it }, Modifier.weight(1f).height(58.dp), placeholder = { Text("Что сделать?", style = body(15, color = Muted)) },
-                    textStyle = body(15), singleLine = true, shape = RoundedCornerShape(16.dp),
+                    textStyle = body(15), singleLine = true, shape = shp(16.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { send() }),
                     colors = fieldColors())
                 HGap(8)
@@ -165,10 +165,10 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
             HGap(12)
             IconTile(Icons.Filled.Edit, "Ввести текстом", { typing = !typing }, 52.dp)
             HGap(16)
-            Box(Modifier.size(76.dp).clip(RoundedCornerShape(38.dp)).background(if (voice.listening) Danger else Teal)
+            Box(Modifier.size(76.dp).clip(shp(38.dp)).background(if (voice.listening) Danger else Teal)
                 .clickable(onClickLabel = if (voice.listening) "Остановить запись" else "Говорить", onClick = onMic),
                 contentAlignment = Alignment.Center) {
-                if (voice.listening) Box(Modifier.size(22.dp).clip(RoundedCornerShape(5.dp)).background(Bg))
+                if (voice.listening) Box(Modifier.size(22.dp).clip(shp(5.dp)).background(Bg))
                 else MicIcon(Bg, 34.dp)
             }
             HGap(16)
@@ -179,9 +179,9 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
 @Composable
 fun TaskRow(r: TaskRec, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).clickable(onClickLabel = "Открыть", onClick = onClick).padding(14.dp),
+    Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).clickable(onClickLabel = "Открыть", onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(if (r.ok) AccentSoft else DangerBg),
+        Box(Modifier.size(36.dp).clip(shp(12.dp)).background(if (r.ok) AccentSoft else DangerBg),
             contentAlignment = Alignment.Center) {
             if (r.ok) Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(18.dp))
             else Text("!", style = body(16, FontWeight.Bold, Danger))
@@ -271,7 +271,7 @@ fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // верх: назад + задача
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).background(glassBg).border(1.dp, glassLine, RoundedCornerShape(22.dp))
+                Box(Modifier.size(44.dp).clip(shp(22.dp)).background(glassBg).border(1.dp, glassLine, shp(22.dp))
                     .clickable(onClickLabel = "Назад") { back() }, contentAlignment = Alignment.Center) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Sky.ink, modifier = Modifier.size(22.dp))
                 }
@@ -320,11 +320,11 @@ fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
                 items(Agent.steps) { s ->
                     if (s.think.isNotBlank()) Text(s.think, style = body(14, color = Sky.inkMuted).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
                         lineHeight = 20.sp, modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp))
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(panel).border(1.dp, glassLine, RoundedCornerShape(16.dp))
+                    Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(panel).border(1.dp, glassLine, shp(16.dp))
                         .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (s.done) Box(Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(glow.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                        if (s.done) Box(Modifier.size(26.dp).clip(shp(13.dp)).background(glow.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Filled.Check, null, tint = Sky.ink, modifier = Modifier.size(15.dp))
-                        } else Box(Modifier.size(26.dp).border(2.dp, Color(0xFFBFC9FF).copy(alpha = pulse), RoundedCornerShape(13.dp)))
+                        } else Box(Modifier.size(26.dp).border(2.dp, Color(0xFFBFC9FF).copy(alpha = pulse), shp(13.dp)))
                         HGap(12)
                         Column(Modifier.weight(1f)) {
                             Text(s.text, style = body(15, if (s.done) FontWeight.Normal else FontWeight.SemiBold, Sky.ink))
@@ -334,8 +334,8 @@ fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
                 }
                 Agent.pending?.let { p ->
                     item {
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xF02A1C0E))
-                            .border(1.dp, Sky.glowAsk.copy(alpha = 0.6f), RoundedCornerShape(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Color(0xF02A1C0E))
+                            .border(1.dp, Sky.glowAsk.copy(alpha = 0.6f), shp(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(p.text, style = body(16, FontWeight.SemiBold, Sky.ink), lineHeight = 22.sp)
                             BigButton("Да, делай", { Agent.answer(true) }, bg = Color(0xFFF2C58A), fg = Color(0xFF1A1206))
                             BigButton("Нет", { Agent.answer(false) }, bg = glassBg, fg = Sky.ink, border = glassLine)
@@ -349,9 +349,9 @@ fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
                 if (phase == Agent.Phase.DONE) item {
                     Column(Modifier.fillMaxWidth()
                         .graphicsLayer { translationY = cardY.value * 160.dp.toPx(); alpha = 1f - cardY.value.coerceIn(0f, 1f) * 0.9f }
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(shp(20.dp))
                         .background(if (Agent.failed) Color(0xF02A1C0E) else Color(0xF0122238))
-                        .border(1.dp, if (Agent.failed) Sky.glowAsk.copy(alpha = 0.6f) else glow.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
+                        .border(1.dp, if (Agent.failed) Sky.glowAsk.copy(alpha = 0.6f) else glow.copy(alpha = 0.7f), shp(20.dp))
                         .padding(16.dp)) {
                         Text(md(Agent.result), style = body(16, color = Sky.ink), lineHeight = 22.sp)
                     }
@@ -359,7 +359,7 @@ fun TaskScreen(@Suppress("UNUSED_PARAMETER") voice: Voice, back: () -> Unit) {
                 if (phase == Agent.Phase.DONE && Agent.main.lastButtons.isNotEmpty()) item {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Agent.main.lastButtons.forEach { b ->
-                            Box(Modifier.clip(RoundedCornerShape(18.dp)).background(glassBg).border(1.dp, glow.copy(alpha = 0.7f), RoundedCornerShape(18.dp))
+                            Box(Modifier.clip(shp(18.dp)).background(glassBg).border(1.dp, glow.copy(alpha = 0.7f), shp(18.dp))
                                 .clickable { Chat.userEcho(b); Agent.followUp(b) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
                                 Text(b, style = body(14, FontWeight.SemiBold, Sky.ink))
                             }
@@ -399,9 +399,9 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     Screen("История", back, showBack = false) {
         LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(4.dp)) {
+                Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Card).padding(4.dp)) {
                     listOf("Сегодня", "Неделя", "Месяц").forEachIndexed { i, t ->
-                        Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp))
+                        Box(Modifier.weight(1f).height(40.dp).clip(shp(11.dp))
                             .background(if (period == i) Line else Color.Transparent).clickable { period = i },
                             contentAlignment = Alignment.Center) {
                             Text(t, style = body(14, FontWeight.SemiBold, if (period == i) Ink else Muted))
@@ -420,8 +420,8 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
                     if (limit > 0) {
                         val f = (total / limit).toFloat().coerceIn(0f, 1f)
                         Gap(8)
-                        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Track)) {
-                            Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(if (f > 0.9f) Amber else Teal))
+                        Box(Modifier.fillMaxWidth().height(8.dp).clip(shp(4.dp)).background(Track)) {
+                            Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(shp(4.dp)).background(if (f > 0.9f) Amber else Teal))
                         }
                         Gap(4)
                         Text("лимит ${rub(limit)} · осталось ${rub((limit - total).coerceAtLeast(0.0))}", style = body(12, color = Muted))
@@ -477,7 +477,7 @@ fun DayBars(recs: List<TaskRec>, days: Int) {
         Row(Modifier.fillMaxWidth().height(110.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
             sums.forEachIndexed { i, v ->
                 val f = (v / max).toFloat().coerceIn(0.03f, 1f)
-                Box(Modifier.weight(1f).fillMaxHeight(f).clip(RoundedCornerShape(3.dp))
+                Box(Modifier.weight(1f).fillMaxHeight(f).clip(shp(3.dp))
                     .background(if (i == days - 1) Teal else if (v == sums.max() && v > 0) Violet else Teal.copy(alpha = 0.45f)))
             }
         }
@@ -503,7 +503,7 @@ fun RulesScreen(back: () -> Unit) {
 
     Screen("Автоответчик", back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(AccentSoft).padding(16.dp),
+            Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(AccentSoft).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Отвечать без меня", style = body(16, FontWeight.Bold))
@@ -512,7 +512,7 @@ fun RulesScreen(back: () -> Unit) {
                 Toggle(on) { on = it; Prefs.autoReply = it }
             }
             var known by remember { mutableStateOf(Prefs.replyKnown) }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Отвечать и тем, кто в контактах", style = body(15, FontWeight.SemiBold))
                     Text("Выключено — знакомым агент не отвечает, только сообщает тебе", style = body(12, color = Muted))
@@ -528,7 +528,7 @@ fun RulesScreen(back: () -> Unit) {
             }
             Label("Правила — своими словами")
             OutlinedTextField(rules, { rules = it; Prefs.rules = it }, Modifier.fillMaxWidth().height(220.dp),
-                textStyle = body(14), shape = RoundedCornerShape(16.dp), colors = fieldColors())
+                textStyle = body(14), shape = shp(16.dp), colors = fieldColors())
             Text("Агент читает каждое входящее, решает по этим правилам и присылает тебе уведомление, что ответил. Группы не трогает.",
                 style = body(13, color = Muted), lineHeight = 18.sp)
             CardBox(border = WarnLine, bg = WarnBg) {
@@ -538,7 +538,7 @@ fun RulesScreen(back: () -> Unit) {
             Label("Последние входящие")
             if (recent.isEmpty()) Text(if (access) "Пока ничего не пришло." else "Появятся после доступа к уведомлениям.", style = body(14, color = Muted))
             recent.forEach { m ->
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(12.dp)) {
+                Column(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Card).padding(12.dp)) {
                     Text("${m.app} · ${m.from} · ${m.time()}", style = body(12, color = Muted))
                     Text(NotifStore.safe(m.text), style = body(14), maxLines = 3)
                 }
@@ -578,7 +578,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
             // Пилот: память, характер, вид — отдельные экраны
             if (nav.page == null) SetGroup {
                 listOf(Triple("Что Пилот помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
-                    Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules), Triple("Оформление", "Рассвет днём, Ночной рейс вечером", Scr.Look)).forEachIndexed { i, (t, sub, sc2) ->
+                    Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules), Triple("Оформление", if (Th.auto) "авто: днём и вечером — свои темы" else Th.c.title, Scr.Look)).forEachIndexed { i, (t, sub, sc2) ->
                     SetRow(t, sub, first = i == 0) { open(sc2) }
                 }
             }
@@ -755,23 +755,23 @@ private val permWhy = mapOf("Микрофон" to "голосовые коман
 private fun PermsPage(rows: List<Pair<String, Boolean>>, ask: () -> Unit, notif: () -> Unit) {
     val ok = rows.count { it.second }
     val all = ok == rows.size
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (all) AccentSoft else Amber.copy(alpha = 0.14f)).padding(18.dp),
+    Column(Modifier.fillMaxWidth().clip(shp(18.dp)).background(if (all) AccentSoft else Amber.copy(alpha = 0.14f)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text("$ok", style = TextStyle(fontFamily = Fonts.display, fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = Ink))
             Text(" из ${rows.size}", style = body(16, FontWeight.SemiBold, Muted), modifier = Modifier.padding(bottom = 6.dp))
         }
         Text(if (all) "Всё выдано — Пилоту доступно всё, что нужно" else "Без недостающих Пилот не сможет часть дел", style = body(13, color = Muted))
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
-            Box(Modifier.fillMaxWidth(ok / rows.size.toFloat().coerceAtLeast(1f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(if (all) Teal else Amber))
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(shp(3.dp)).background(Line)) {
+            Box(Modifier.fillMaxWidth(ok / rows.size.toFloat().coerceAtLeast(1f)).height(6.dp).clip(shp(3.dp)).background(if (all) Teal else Amber))
         }
     }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)) {
+    Column(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card)) {
         rows.sortedBy { it.second }.forEachIndexed { i, (name, has) ->
             if (i > 0) Box(Modifier.padding(start = 62.dp).fillMaxWidth().height(1.dp).background(Line))
             Row(Modifier.fillMaxWidth().then(if (has) Modifier else Modifier.clickable { if (name == "Уведомления") notif() else ask() })
                 .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(34.dp).clip(CircleShape).background(if (has) AccentSoft else Amber.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(34.dp).clip(circ).background(if (has) AccentSoft else Amber.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
                     Text(if (has) "✓" else "!", style = body(15, FontWeight.Bold, if (has) Teal else Amber))
                 }
                 Spacer(Modifier.width(14.dp))
@@ -779,7 +779,7 @@ private fun PermsPage(rows: List<Pair<String, Boolean>>, ask: () -> Unit, notif:
                     Text(name, style = body(15, FontWeight.SemiBold))
                     Text(permWhy[name].orEmpty(), style = body(12, color = Muted))
                 }
-                if (!has) Text("Выдать", style = body(13, FontWeight.SemiBold, Bg), modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Amber).padding(horizontal = 12.dp, vertical = 6.dp))
+                if (!has) Text("Выдать", style = body(13, FontWeight.SemiBold, Bg), modifier = Modifier.clip(shp(12.dp)).background(Amber).padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
     }
@@ -801,7 +801,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
             list.forEach { m ->
                 val on = model.equals(m, true)
                 val k = AnyPrice.coef(m)
-                Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Line else Bg)
+                Box(Modifier.height(40.dp).clip(shp(12.dp)).background(if (on) Line else Bg)
                     .clickable { onModel(m); onIn("0"); onOut("0") }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Text((names[m] ?: m) + if (k != null) " ×" + k.toString().removeSuffix(".0").replace('.', ',') else "", style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
                 }
@@ -818,7 +818,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
             Text("Глубина рассуждений", style = body(13, FontWeight.SemiBold))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("low" to "Быстро", "medium" to "Средне", "high" to "Глубоко").forEach { (v, label) ->
-                    Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (eff == v) Line else Bg)
+                    Box(Modifier.weight(1f).height(40.dp).clip(shp(12.dp)).background(if (eff == v) Line else Bg)
                         .clickable { eff = v; Prefs.effort = v }, contentAlignment = Alignment.Center) {
                         Text(label, style = body(13, FontWeight.SemiBold, if (eff == v) Ink else Muted))
                     }
@@ -834,6 +834,6 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
 @Composable
 fun Field(label: String, value: String, type: KeyboardType = KeyboardType.Text, onChange: (String) -> Unit) {
     OutlinedTextField(value, onChange, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = true,
-        textStyle = body(14), shape = RoundedCornerShape(14.dp), colors = fieldColors(),
+        textStyle = body(14), shape = shp(14.dp), colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = type))
 }

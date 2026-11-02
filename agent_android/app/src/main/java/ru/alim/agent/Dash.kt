@@ -86,9 +86,9 @@ fun DashScreen(go: (Scr) -> Unit) {
                 val t = tick   // перечитываем состояние поручений/слежек раз в несколько секунд
 
                 // задача в полёте — одна строка, по нажатию кабина
-                if (core.busy) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { go(Scr.Task) }.padding(14.dp),
+                if (core.busy) Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Th.c.card).clickable { go(Scr.Task) }.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(Teal)); Spacer(Modifier.width(10.dp))
+                    Box(Modifier.size(10.dp).clip(circ).background(Teal)); Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(core.task.ifBlank { "Пилот работает" }, style = body(14, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(core.steps.lastOrNull()?.text ?: "взлетаю…", style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -103,7 +103,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                     Text("› " + lastMe.text.ifBlank { "голосовое" }, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     ResultCard(reply, compact = true) { ChatJump.to(reply.id); go(Scr.Journal) }
                 } else if (reply != null && lastMe != null && reply.ts >= lastMe.ts && System.currentTimeMillis() - reply.ts < 3 * 3600_000L && t >= 0) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Th.c.card).clickable { ChatJump.to(reply.id); go(Scr.Journal) }.padding(14.dp),
+                    Column(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Th.c.card).clickable { ChatJump.to(reply.id); go(Scr.Journal) }.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("› " + lastMe.text.ifBlank { "голосовое" }, style = body(12, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(reply.text, style = body(15).copy(lineHeight = 21.sp), maxLines = 8, overflow = TextOverflow.Ellipsis)
@@ -127,7 +127,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                 if (watches.isNotEmpty() || delegs.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SecTitle("Идёт сейчас", Muted)
                     val tiles = watches.map { w ->
-                        Tile(if (w.mode == "feed") "ЛЕНТА" else "СЛЕЖКА", if (w.mode == "feed") Teal else Th.c.online, w.topic,
+                        Tile(if (w.mode == "feed") "ЛЕНТА" else "СЛЕЖКА", if (w.mode == "feed") Teal else Ink, w.topic,
                             (w.state.ifBlank { if (w.mode == "feed") "смотрю ленту" else "первая проверка" }) + " · до " + Deleg.whenText(w.until).substringAfter(" в "),
                             ChatJump.find(chat, w.topic))
                     } + delegs.map { d ->
@@ -157,10 +157,10 @@ fun DashScreen(go: (Scr) -> Unit) {
                     SecTitle("Готово", Muted)
                     done.forEach { m -> ResultCard(m, compact = true) { ChatJump.to(m.id); go(Scr.Journal) } }
                     doneDeleg.forEach { d ->
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Th.c.card).clickable { ChatJump.to(ChatJump.find(chat, d.who)); go(Scr.Journal) }.padding(16.dp),
+                        Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Th.c.card).clickable { ChatJump.to(ChatJump.find(chat, d.who)); go(Scr.Journal) }.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(8.dp).clip(CircleShape).background(Th.c.online)); Spacer(Modifier.width(10.dp))
+                                Box(Modifier.size(8.dp).clip(circ).background(Ink)); Spacer(Modifier.width(10.dp))
                                 Text(d.who + " · поручение", style = body(15, FontWeight.Bold), modifier = Modifier.weight(1f))
                                 ShareBtn { shareText(ctx, "${d.who}: ${d.report}") }
                             }
@@ -187,7 +187,7 @@ fun DashScreen(go: (Scr) -> Unit) {
                 .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(fade.copy(alpha = 0f), fade.copy(alpha = 0.7f), fade.copy(alpha = 0.92f)))))
             // шапка поверх градиента
             Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { headH = it.height }.statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp)) {
-                Row(Modifier.fillMaxWidth().height(60.dp).glassDash(haze, RoundedCornerShape(30.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
+                Row(Modifier.fillMaxWidth().height(60.dp).glassDash(haze, shp(30.dp)).clickable(onClickLabel = "Профиль") { go(Scr.Profile) }
                     .padding(start = 6.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Avatar(46.dp)
                     Spacer(Modifier.width(10.dp))
@@ -212,10 +212,10 @@ private class Tile(val tag: String, val color: Color, val title: String, val sub
 
 @Composable
 private fun TileBox(t: Tile, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.heightIn(min = 104.dp).clip(RoundedCornerShape(16.dp)).background(Th.c.card).clickable(onClick = onClick).padding(12.dp),
+    Column(modifier.heightIn(min = 104.dp).clip(shp(16.dp)).background(Th.c.card).clickable(onClick = onClick).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(t.color)); Spacer(Modifier.width(6.dp))
+            Box(Modifier.size(7.dp).clip(circ).background(t.color)); Spacer(Modifier.width(6.dp))
             Text(t.tag, style = body(11, FontWeight.Bold, t.color).copy(letterSpacing = 0.6.sp), maxLines = 1)
         }
         Text(t.title, style = body(14, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -232,7 +232,7 @@ private fun SecTitle(text: String, color: Color) =
 private fun AskCard(x: Deleg.Item, go: (Scr) -> Unit) {
     val ctx = LocalContext.current
     var sent by remember(x.id, x.question) { mutableStateOf<String?>(null) }
-    val shape = RoundedCornerShape(18.dp)
+    val shape = shp(18.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).border(1.dp, Amber.copy(alpha = 0.45f), shape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -255,7 +255,7 @@ private fun AskCard(x: Deleg.Item, go: (Scr) -> Unit) {
 
 @Composable
 private fun DashBtn(text: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = shp(14.dp)
     Box(modifier.height(46.dp).clip(shape).then(if (primary) Modifier.background(Teal) else Modifier.border(1.dp, Line, shape)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center) {
         Text(text, style = body(14, FontWeight.Bold, if (primary) OnAccent else Ink))
@@ -340,7 +340,7 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { bestFromTable(ctx, f.uri) }.getOrNull() }
         }.orEmpty()
     }
-    val shape = RoundedCornerShape(20.dp)
+    val shape = shp(20.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).then(if (lit) Modifier.border(1.dp, Teal, shape) else Modifier)
         .clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val xls = files.firstOrNull { it.mime == Docs.XLSX }
@@ -371,7 +371,7 @@ fun ResultCard(m: Msg, compact: Boolean, lit: Boolean = false, onClick: () -> Un
         if (rest.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             rest.forEach { f ->
                 val xl = f.mime == Docs.XLSX
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (xl) Color(0xFF1E7A4C) else Color(0xFF2B579A))
+                Box(Modifier.size(44.dp).clip(shp(12.dp)).background(if (xl) Color(0xFF1E7A4C) else Color(0xFF2B579A))
                     .clickable(onClickLabel = "Открыть ${f.name}") { open(f) }, contentAlignment = Alignment.Center) {
                     Text(if (xl) "XLS" else "DOC", style = body(11, FontWeight.Bold, Color.White))
                 }
@@ -389,24 +389,24 @@ fun BestBlock(json: String) {
     val alt = b.optJSONArray("alt")?.let { a -> (0 until minOf(2, a.length())).mapNotNull { a.optJSONObject(it) } }.orEmpty()
     var sheet by remember { mutableStateOf<org.json.JSONObject?>(null) }
     Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        val ok = Th.c.online
-        val shape = RoundedCornerShape(18.dp)
+        val ok = Ink
+        val shape = shp(18.dp)
         val wBuy = Buy.items(b)
         Column(Modifier.weight(3f).fillMaxSize().clip(shape).background(ok.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)).border(2.dp, ok, shape)
             .then(if (wBuy.isNotEmpty()) Modifier.clickable(onClickLabel = "Купить") { sheet = b } else Modifier).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically)) {
             Text("ЛУЧШИЙ ВЫБОР", style = body(10, FontWeight.Bold, if (Th.c.dark) Color(0xFF062018) else Color.White).copy(letterSpacing = 0.8.sp),
-                modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(ok).padding(horizontal = 7.dp, vertical = 3.dp))
+                modifier = Modifier.clip(shp(7.dp)).background(ok).padding(horizontal = 7.dp, vertical = 3.dp))
             Text(b.optString("name"), style = body(13, FontWeight.Bold, Ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(b.optString("value"), style = TextStyle(fontFamily = Fonts.display, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = Ink), maxLines = 1)
             if (b.optString("note").isNotBlank()) Text(b.optString("note"), style = body(12, color = Muted), maxLines = 2)
             if (wBuy.isNotEmpty()) Text("Купить · ${wBuy.size} ${steps(wBuy.size)} ›", style = body(12, FontWeight.Bold, ok),
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(ok.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 4.dp))
+                modifier = Modifier.clip(shp(8.dp)).background(ok.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 4.dp))
         }
         if (alt.isNotEmpty()) Column(Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             alt.forEach { a ->
                 val aBuy = Buy.items(a)
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.bg.copy(alpha = 0.7f))
+                Column(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Th.c.bg.copy(alpha = 0.7f))
                     .then(if (aBuy.isNotEmpty()) Modifier.clickable(onClickLabel = "Купить") { sheet = a } else Modifier).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(a.optString("name"), style = body(12, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -430,12 +430,12 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
     val items = remember(o) { Buy.items(o) }
     val opened = remember { mutableStateListOf<Int>() }
     androidx.compose.ui.window.Dialog(onDismissRequest = close) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Th.c.card).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().clip(shp(24.dp)).background(Th.c.card).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(o.optString("name"), style = TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ink))
             Text("${o.optString("value")} · ${items.size} ${steps(items.size)} покупки по порядку поездки", style = body(12, color = Muted))
             items.forEachIndexed { k, (kind, label, url) ->
                 val done = k in opened
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.bg).clickable { Buy.open(ctx, url); if (!done) opened += k }.padding(12.dp),
+                Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Th.c.bg).clickable { Buy.open(ctx, url); if (!done) opened += k }.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(when (kind) { "flight", "avia", "рейс" -> "✈"; "bus" -> "🚌"; "train" -> "🚆"; "hotel" -> "🏨"; else -> "🔗" }, style = body(18))
                     Column(Modifier.weight(1f)) {
@@ -443,10 +443,10 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
                         Text(when { url.contains("aviasales") -> "Авиасейлс"; url.contains("yandex.ru/search") -> "поиск — точной ссылки не нашёл"; else -> Uri.parse(url).host.orEmpty().removePrefix("www.") },
                             style = body(11, color = Muted), maxLines = 1)
                     }
-                    Text(if (done) "✓" else "›", style = body(16, FontWeight.Bold, if (done) Th.c.online else Th.c.accent))
+                    Text(if (done) "✓" else "›", style = body(16, FontWeight.Bold, if (done) Ink else Th.c.accent))
                 }
             }
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.accent).clickable {
+            Box(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Th.c.accent).clickable {
                 scope.launch { items.forEachIndexed { k, it -> Buy.open(ctx, it.third); if (k !in opened) opened += k; kotlinx.coroutines.delay(700) } }
             }.padding(14.dp), contentAlignment = Alignment.Center) {
                 Text("Открыть всё (${items.size})", style = body(14, FontWeight.Bold, Th.c.onAccent))
@@ -475,7 +475,7 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
 
 @Composable
 private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = shp(20.dp)
     Box(modifier.height(44.dp).then(if (on) Modifier.clip(shape).background(AccentSoft).border(1.dp, Teal, shape) else Modifier.glassDash(haze, shape))
         .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Ink, modifier = Modifier.size(19.dp))
@@ -500,14 +500,14 @@ private val icGear by lazy { ico("gear", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M19.4
 @Composable
 private fun ShareBtn(onClick: () -> Unit) {
     // стрелка вверх-направо без рамки
-    Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Поделиться", onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(44.dp).clip(circ).clickable(onClickLabel = "Поделиться", onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icShareUp), "Поделиться", tint = Teal, modifier = Modifier.size(22.dp))
     }
 }
 
 @Composable
 private fun MiniTable(rows: List<List<String>>) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = shp(12.dp)
     val cols = rows.maxOf { it.size }.coerceAtMost(4)
     Column(Modifier.fillMaxWidth().clip(shape).border(1.dp, Line, shape)) {
         rows.take(6).forEachIndexed { i, r ->

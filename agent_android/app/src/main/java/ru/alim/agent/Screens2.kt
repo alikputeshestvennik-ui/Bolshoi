@@ -78,7 +78,7 @@ fun MemoryScreen(back: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f).height(58.dp), singleLine = true,
                 placeholder = { Text("Например: Денис — мой брат", style = body(14, color = Muted)) },
-                textStyle = body(14), shape = RoundedCornerShape(16.dp), colors = fieldColors(),
+                textStyle = body(14), shape = shp(16.dp), colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { add() }))
             HGap(8)
             IconTile(Icons.Filled.Add, "Запомнить", add, 52.dp)
@@ -87,7 +87,7 @@ fun MemoryScreen(back: () -> Unit) {
         LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (facts.isEmpty()) item { Text("Пока пусто. Скажи агенту «запомни, что…» или добавь сам.", style = body(14, color = Muted)) }
             items(facts, key = { it.id }) { f ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
+                Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Card).padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(f.text, style = body(15))
@@ -165,7 +165,7 @@ fun VoiceSettings() {
     fun Pick(options: List<Pair<String, String>>, cur: String, set: (String) -> Unit) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEach { (id, label) ->
-                Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (cur == id) Line else Card)
+                Box(Modifier.height(40.dp).clip(shp(12.dp)).background(if (cur == id) Line else Card)
                     .clickable { set(id) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Text(label, style = body(13, FontWeight.SemiBold, if (cur == id) Ink else Muted))
                 }
@@ -227,7 +227,7 @@ fun MonitorSettings() {
     var battOk by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
     LaunchedEffect(Unit) { while (true) { delay(2000); battOk = pm.isIgnoringBatteryOptimizations(ctx.packageName) } }
 
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Следить за уведомлениями, SMS и почтой", style = body(15, FontWeight.SemiBold))
             Text("Важное — сразу уведомлением, вечером итог дня", style = body(12, color = Muted))
@@ -236,7 +236,7 @@ fun MonitorSettings() {
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(15, 30, 60).forEach { m ->
-            Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (interval == m) Line else Card)
+            Box(Modifier.weight(1f).height(40.dp).clip(shp(12.dp)).background(if (interval == m) Line else Card)
                 .clickable { interval = m; Prefs.interval = m; Monitor.schedule(ctx, replace = true) }, contentAlignment = Alignment.Center) {
                 Text("раз в $m мин", style = body(13, FontWeight.SemiBold, if (interval == m) Ink else Muted))
             }
@@ -281,7 +281,7 @@ private fun MailAccount(n: Int) {
     var res by remember { mutableStateOf<String?>(null) }
     var edit by remember { mutableStateOf(!(has && email.isNotBlank())) }
     if (!edit) {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(email, style = body(14, FontWeight.SemiBold), maxLines = 1)
                 Text("подключён", style = body(12, color = Teal))
@@ -293,10 +293,10 @@ private fun MailAccount(n: Int) {
     CardBox {
         Text("Ящик $n", style = body(14, FontWeight.SemiBold))
         OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("адрес @gmail.com") }, singleLine = true,
-            textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors(),
+            textStyle = body(14), shape = shp(12.dp), colors = fieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
         OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text(if (has) "пароль приложения (сохранён)" else "пароль приложения") },
-            singleLine = true, textStyle = body(14), shape = RoundedCornerShape(12.dp), colors = fieldColors(),
+            singleLine = true, textStyle = body(14), shape = shp(12.dp), colors = fieldColors(),
             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BigButton("Сохранить и проверить", {

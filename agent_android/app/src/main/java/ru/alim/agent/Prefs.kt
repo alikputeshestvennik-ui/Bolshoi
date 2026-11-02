@@ -47,6 +47,9 @@ object Prefs {
     var smartModel: String get() = pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())
     /** Глубина рассуждений у моделей AnyModel для «рук»: low / medium / high. high думает минутами на каждом шаге. */
     var effort: String get() = s("eff", "medium"); set(v) = put("eff", v)
+    /** Авто-тема: какая днём и какая вечером. */
+    var autoDay: String get() = s("aday", ""); set(v) = put("aday", v)
+    var autoNight: String get() = s("anight", ""); set(v) = put("anight", v)
     var fastIn: String get() = s("fi", "0.03"); set(v) = put("fi", v.trim())
     var fastOut: String get() = s("fo", "0.15"); set(v) = put("fo", v.trim())
     var smartIn: String get() = s("si", "0.4"); set(v) = put("si", v.trim())

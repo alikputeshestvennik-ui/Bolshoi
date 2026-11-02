@@ -280,6 +280,23 @@ object Tools {
                 "Средняя цена задачи за месяц по моделям:\n" + byModel.ifBlank { "пока нет задач" }
         },
 
+        Tool("history_search", "{\"query\": \"Тула\", \"days\": 14} — найти прошлые задачи Пилота (что Алим просил и что ты ответил): «помнишь…», «та задача», «что ты вчера нашёл», «повтори для …». query пустой — последние задачи") { ctx, a ->
+            val q = a.optString("query").trim().lowercase()
+            val days = a.optInt("days", 30).coerceIn(1, 365)
+            val from = System.currentTimeMillis() - days * 86_400_000L
+            val words = q.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.map { it.take(5) }   // «Туле», «Тулу» → «тул»
+            val recs = Journal.all(ctx).filter { it.ts >= from && !it.background }.reversed()
+            val hits = (if (words.isEmpty()) recs else recs.filter { r ->
+                val hay = (r.title + " " + r.result).lowercase()
+                words.all { w -> hay.contains(w.take(if (w.length > 4) 4 else w.length)) }
+            }).take(5)
+            if (hits.isEmpty()) "В истории за $days дн. не нашёл задач по «$q». Не выдумывай: спроси Алима, что он имеет в виду."
+            else "Нашёл в истории задач (новые сверху):\n" + hits.joinToString("\n\n") { r ->
+                val d = SimpleDateFormat("d MMM HH:mm", ru).format(java.util.Date(r.ts))
+                "• $d — просьба: «${r.title.take(400)}»${if (!r.ok) " (не закончена)" else ""}\n  ответ: ${r.result.replace(Regex("\\s+"), " ").take(1500).ifBlank { "—" }}"
+            } + "\nЕсли Алим просит продолжить или повторить — бери условия ИЗ ЭТОЙ просьбы (откуда, даты, сколько человек), ничего не додумывай."
+        },
+
         Tool("photos_last", "{\"count\": 1, \"kind\": \"any|screenshot|camera\"} — самые свежие фото, первое — последнее. «Последний скриншот» — kind screenshot, «последнее фото с камеры» — camera") t@{ ctx, a ->
             val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
             if (!has(ctx, perm)) return@t "нет разрешения на фото"

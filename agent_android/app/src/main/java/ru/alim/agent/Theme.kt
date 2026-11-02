@@ -14,6 +14,8 @@ class Pal(
     val wall: List<Color>, val dots: List<Color>,
     val inBubble: Color, val outBubble: Color, val outInk: Color, val outMeta: Color, val meta: Color,
     val glass: Color, val glassLine: Color, val online: Color,
+    /** Без закруглений (монохром). */
+    val square: Boolean = false,
 )
 
 object Th {
@@ -67,12 +69,35 @@ object Th {
             dots = listOf(Color(0x213DD9C1), Color(0x1A8B7CFF), Color(0x14F5B83D)),
             inBubble = Color(0xFF1A2028), outBubble = Color(0xFF1F6F65), outInk = Color(0xFFF2FFFC), outMeta = Color(0xFFBFEDE5), meta = Color(0xFF8A939E),
             glass = Color(0x85161C24), glassLine = Color(0x12FFFFFF), online = Color(0xFF3DD9C1)),
+        // Монохром: только чёрный, серые и белый, без закруглений
+        Pal("mono", "Монохром", false,
+            bg = Color(0xFFF6F6F4), card = Color(0xFFFFFFFF), line = Color(0xFFD6D6D2), ink = Color(0xFF111111), muted = Color(0xFF5E5E5E),
+            accent = Color(0xFF111111), onAccent = Color.White, violet = Color(0xFF3E3E3E), amber = Color(0xFF3E3E3E), danger = Color(0xFF111111),
+            wall = listOf(Color(0xFFF6F6F4), Color(0xFFF6F6F4), Color(0xFFF6F6F4)),
+            dots = listOf(Color(0x00000000), Color(0x00000000), Color(0x00000000)),
+            inBubble = Color.White, outBubble = Color(0xFFE4E4E0), outInk = Color(0xFF111111), outMeta = Color(0xFF5E5E5E), meta = Color(0xFF6B6B6B),
+            glass = Color(0xB3FFFFFF), glassLine = Color(0xFFD6D6D2), online = Color(0xFF111111), square = true),
+        Pal("mono_night", "Монохром ночь", true,
+            bg = Color(0xFF0E0E0E), card = Color(0xFF171717), line = Color(0xFF2E2E2E), ink = Color(0xFFF2F2F0), muted = Color(0xFFA3A39F),
+            accent = Color(0xFFF2F2F0), onAccent = Color(0xFF111111), violet = Color(0xFFC8C8C4), amber = Color(0xFFC8C8C4), danger = Color(0xFFF2F2F0),
+            wall = listOf(Color(0xFF0E0E0E), Color(0xFF0E0E0E), Color(0xFF0E0E0E)),
+            dots = listOf(Color(0x00000000), Color(0x00000000), Color(0x00000000)),
+            inBubble = Color(0xFF171717), outBubble = Color(0xFF2A2A2A), outInk = Color(0xFFF2F2F0), outMeta = Color(0xFFA3A39F), meta = Color(0xFF8E8E8A),
+            glass = Color(0x99121212), glassLine = Color(0xFF2E2E2E), online = Color(0xFFF2F2F0), square = true),
     )
 
     private var base by mutableStateOf(all[0])
     /** В кабине задачи (полёт) — всегда тёмная «Кабина», какая бы тема ни стояла. */
     var forceCockpit by mutableStateOf(false)
     val c: Pal get() = if (forceCockpit) all[0] else base
+
+    /** Тема для авто-режима: днём и вечером — свои (Алим выбирает в «Оформлении»). */
+    private fun dayId() = Prefs.autoDay.ifBlank { "dawn" }
+    private fun nightId() = Prefs.autoNight.ifBlank { "flight" }
+    fun autoTitle(): String = "С 7:00 до 19:00 — «${all.firstOrNull { it.id == dayId() }?.title}», вечером и ночью — «${all.firstOrNull { it.id == nightId() }?.title}»."
+    /** В авто-режиме: светлая тема — на день, тёмная — на вечер. */
+    fun setAutoPart(p: Pal) { if (p.dark) Prefs.autoNight = p.id else Prefs.autoDay = p.id; Prefs.theme = "auto"; load() }
+    fun isAutoPart(id: String) = id == dayId() || id == nightId()
 
     fun load() {
         // переход на «Кабину» один раз — дальше Алим может выбрать любую тему сам
@@ -84,7 +109,8 @@ object Th {
     /** Авто: с 7:00 до 19:00 «Рассвет», иначе «Ночной рейс». */
     private fun autoPal(): Pal {
         val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        return all.first { it.id == if (h in 7..18) "dawn" else "flight" }
+        val want = if (h in 7..18) dayId() else nightId()
+        return all.firstOrNull { it.id == want } ?: all.first { it.id == if (h in 7..18) "dawn" else "flight" }
     }
     /** Пересчитать авто-тему (при возвращении в приложение и раз в минуту). */
     fun tick() { if (Prefs.theme == "auto") autoPal().let { if (it.id != base.id) base = it } }
@@ -93,14 +119,25 @@ object Th {
     fun set(id: String) { Prefs.theme = id; load() }
 }
 
+/** Без цвета для статусов: ошибки, предупреждения и «в сети» — тёмным/серым, не зелёным, красным или жёлтым (Алим так решил). */
+private fun neutral(dark: Boolean, strong: Boolean) = if (dark) (if (strong) Color(0xFFF2F2F0) else Color(0xFFC8C8C4)) else (if (strong) Color(0xFF111111) else Color(0xFF3E3E3E))
+
+/** Форма без закруглений в монохроме. */
+val circ: androidx.compose.ui.graphics.Shape get() = if (Th.c.square) androidx.compose.ui.graphics.RectangleShape else androidx.compose.foundation.shape.CircleShape
+fun shp(all: androidx.compose.ui.unit.Dp): androidx.compose.ui.graphics.Shape =
+    if (Th.c.square) androidx.compose.ui.graphics.RectangleShape else androidx.compose.foundation.shape.RoundedCornerShape(all)
+fun shp(topStart: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f), topEnd: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f),
+        bottomEnd: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f), bottomStart: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f)): androidx.compose.ui.graphics.Shape =
+    if (Th.c.square) androidx.compose.ui.graphics.RectangleShape else androidx.compose.foundation.shape.RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart)
+
 // Оттенки, которые раньше были «зашиты» под тёмную тему
 val AccentSoft: Color get() = Teal.copy(alpha = if (Th.c.dark) 0.18f else 0.12f)
 val AccentSoftInk: Color get() = if (Th.c.dark) Color(0xFFA8DCD3) else Th.c.accent
-val WarnBg: Color get() = if (Th.c.dark) Color(0xFF1A160C) else Color(0xFFFFF4E0)
-val WarnLine: Color get() = if (Th.c.dark) Color(0xFF4A3A16) else Color(0xFFF2D49A)
-val WarnInk: Color get() = if (Th.c.dark) Color(0xFFE3D3B0) else Color(0xFF6B4A10)
-val DangerBg: Color get() = if (Th.c.dark) Color(0xFF251516) else Color(0xFFFDECEC)
-val DangerLine: Color get() = if (Th.c.dark) Color(0xFF5A2A2A) else Color(0xFFF2B8B8)
+val WarnBg: Color get() = Th.c.card
+val WarnLine: Color get() = Th.c.ink.copy(alpha = 0.5f)
+val WarnInk: Color get() = Th.c.ink
+val DangerBg: Color get() = Th.c.card
+val DangerLine: Color get() = Th.c.ink.copy(alpha = 0.5f)
 val Track: Color get() = if (Th.c.dark) Color(0xFF1B2129) else Color(0xFFE6EBE9)
 val ChipInk: Color get() = if (Th.c.dark) Color(0xFFC7CDD4) else Th.c.ink
 val OnAccent: Color get() = Th.c.onAccent

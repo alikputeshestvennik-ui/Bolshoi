@@ -172,7 +172,7 @@ fun AttachChips() {
     if (Attach.pending.isEmpty()) return
     Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Attach.pending.toList().forEach { a ->
-            Row(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Card).padding(start = 12.dp),
+            Row(Modifier.height(36.dp).clip(shp(18.dp)).background(Card).padding(start = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(a.name, style = body(13, FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
                 Box(Modifier.size(36.dp).clickable(onClickLabel = "Убрать") { Attach.pending.remove(a) }, contentAlignment = Alignment.Center) {

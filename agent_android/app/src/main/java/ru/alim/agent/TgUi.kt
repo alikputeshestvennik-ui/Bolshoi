@@ -66,7 +66,7 @@ fun TgScreen(back: () -> Unit) {
                             style = body(13, color = Muted))
                         OutlinedTextField(pwd, { pwd = it }, Modifier.fillMaxWidth(), label = { Text("Пароль") },
                             singleLine = true, visualTransformation = PasswordVisualTransformation(), textStyle = body(14),
-                            shape = RoundedCornerShape(14.dp), colors = fieldColors(),
+                            shape = shp(14.dp), colors = fieldColors(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done))
                         BigButton("Войти", { if (pwd.isNotBlank()) Tg.sendPassword(pwd) })
                     }

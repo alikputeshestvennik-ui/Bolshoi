@@ -47,7 +47,7 @@ fun PhotoGrid(ids: List<Long>) {
         ids.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { id ->
-                    Thumb(id, Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(Card)
+                    Thumb(id, Modifier.weight(1f).aspectRatio(1f).clip(shp(10.dp)).background(Card)
                         .clickable(onClickLabel = "Открыть фото") {
                             runCatching {
                                 ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(photoUri(id), "image/*")
@@ -153,13 +153,13 @@ fun TgPhotoGrid(entries: List<String>) {
                     val path = entry.substringBefore("\t")
                     val vid = Regex("vid=(\\d+)").find(entry)?.groupValues?.get(1)?.toIntOrNull()
                     val bmp = androidx.compose.runtime.remember(path) { loadBitmap(path, 480) }
-                    Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(Card)
+                    Box(Modifier.weight(1f).aspectRatio(1f).clip(shp(10.dp)).background(Card)
                         .clickable {
                             if (vid == null) openImg = path
                             else { loading = entry; scope.launch { val f = Tg.fetchFile(vid); loading = null; if (f != null) openVid = f } }
                         }, contentAlignment = androidx.compose.ui.Alignment.Center) {
                         if (bmp != null) Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        if (vid != null) Box(Modifier.size(42.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                        if (vid != null) Box(Modifier.size(42.dp).clip(androidx.compose.foundation.shape.circ)
                             .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             androidx.compose.material3.Text(if (loading == entry) "…" else "\u25B6", style = body(20, color = androidx.compose.ui.graphics.Color.White))
                         }

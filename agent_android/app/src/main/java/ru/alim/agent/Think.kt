@@ -99,14 +99,14 @@ fun ThinkPanel(core: Agent.Core) {
             ThinkDots()
             Spacer(Modifier.width(10.dp))
             Text("думаю · шаг ${core.steps.size.coerceAtLeast(1)} · %d:%02d".format(secs / 60, secs % 60), style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.weight(1f))
-            Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(RoundedCornerShape(14.dp))
-                .border(1.dp, Line, RoundedCornerShape(14.dp)).clickable(onClickLabel = "Остановить") { core.stop() }.padding(horizontal = 14.dp, vertical = 8.dp))
+            Text("стоп", style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.clip(shp(14.dp))
+                .border(1.dp, Line, shp(14.dp)).clickable(onClickLabel = "Остановить") { core.stop() }.padding(horizontal = 14.dp, vertical = 8.dp))
         }
         // старое уходит вверх и тает — прозрачностью, а не плашкой цвета фона (фон у нас с узором)
         Box(Modifier.fillMaxWidth().height(h)
             .graphicsLayer { val v = born.value; scaleX = 0.55f + 0.45f * v; scaleY = 0.25f + 0.75f * v; alpha = v.coerceIn(0f, 1f) }
-            .clip(RoundedCornerShape(22.dp)).background(Th.c.card.copy(alpha = if (Th.c.dark) 0.30f else 0.42f))
-            .border(1.dp, Th.c.line.copy(alpha = 0.7f), RoundedCornerShape(22.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
+            .clip(shp(22.dp)).background(Th.c.card.copy(alpha = if (Th.c.dark) 0.30f else 0.42f))
+            .border(1.dp, Th.c.line.copy(alpha = 0.7f), shp(22.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
         Box(Modifier.fillMaxSize().clipToBounds()
             .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
             .drawWithContent {
@@ -126,9 +126,9 @@ fun ThinkPanel(core: Agent.Core) {
                             if (last && !s.done) withStyle(SpanStyle(color = Teal.copy(alpha = caret), fontWeight = FontWeight.Bold)) { append(" ▍") }
                         }, style = body(11, color = if (last) Ink.copy(alpha = 0.86f) else Muted), lineHeight = 16.sp)
                     }
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Card.copy(alpha = 0.75f)).border(1.dp, Line, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 7.dp),
+                    Row(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.75f)).border(1.dp, Line, shp(12.dp)).padding(horizontal = 10.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(24.dp).clip(CircleShape).background(AccentSoft), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(24.dp).clip(circ).background(AccentSoft), contentAlignment = Alignment.Center) {
                             Icon(rememberVectorPainter(stepIcon(s)), null, tint = Teal, modifier = Modifier.size(12.dp))
                         }
                         Spacer(Modifier.width(10.dp))
@@ -137,8 +137,8 @@ fun ThinkPanel(core: Agent.Core) {
                             val sub = s.detail.lines().firstOrNull { it.isNotBlank() }.orEmpty()
                             if (sub.isNotBlank()) Text(sub, style = body(11, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        if (s.done) Icon(rememberVectorPainter(icCheck), null, tint = Th.c.online, modifier = Modifier.size(16.dp))
-                        else Box(Modifier.size(8.dp).alpha(caret).clip(CircleShape).background(Teal))
+                        if (s.done) Icon(rememberVectorPainter(icCheck), null, tint = Ink, modifier = Modifier.size(16.dp))
+                        else Box(Modifier.size(8.dp).alpha(caret).clip(circ).background(Teal))
                     }
                 }
                 if (list.isEmpty()) Text("Разбираюсь, с чего начать…", style = body(11, color = Muted))
@@ -155,7 +155,7 @@ fun ThinkDots(color: Color = Teal) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(3) { i ->
             val a by inf.animateFloat(0.3f, 1f, infiniteRepeatable(tween(600, delayMillis = i * 200), RepeatMode.Reverse), label = "d$i")
-            Box(Modifier.size(6.dp).alpha(a).clip(CircleShape).background(color))
+            Box(Modifier.size(6.dp).alpha(a).clip(circ).background(color))
         }
     }
 }

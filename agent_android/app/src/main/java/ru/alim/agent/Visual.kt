@@ -43,8 +43,8 @@ val Ink: Color get() = Th.c.ink
 val Muted: Color get() = Th.c.muted
 val Teal: Color get() = Th.c.accent
 val Violet: Color get() = Th.c.violet
-val Amber: Color get() = Th.c.amber
-val Danger: Color get() = Th.c.danger
+val Amber: Color get() = neutralAmber()
+val Danger: Color get() = Th.c.ink
 
 /** Четыре слоя стопки снизу вверх и цвет сканера — одна палитра на состояние. */
 class Palette(val layers: List<Color>, val accent: Color)
@@ -159,3 +159,6 @@ fun MicIcon(color: Color, size: Dp, modifier: Modifier = Modifier) {
         drawLine(color, Offset(s / 2, s * 0.72f), Offset(s / 2, s * 0.9f), sw, StrokeCap.Round)
     }
 }
+
+/** Предупреждения — не жёлтым, а приглушённым тоном текста (без цветных статусов). */
+fun neutralAmber(): Color = if (Th.c.dark) Color(0xFFC8C8C4) else Color(0xFF3E3E3E)

@@ -236,13 +236,13 @@ fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "", haze
             exit = androidx.compose.animation.shrinkHorizontally(androidx.compose.animation.core.tween(280), shrinkTowards = Alignment.Start) +
                 androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { it } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))) {
             Row {
-                Box(Modifier.size(56.dp).gl(CircleShape).clickable(onClickLabel = "Назад") { back?.invoke() }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(56.dp).gl(circ).clickable(onClickLabel = "Назад") { back?.invoke() }, contentAlignment = Alignment.Center) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Ink, modifier = Modifier.size(22.dp))
                 }
                 Spacer(Modifier.width(8.dp))
             }
         }
-        Row(Modifier.weight(1f).height(56.dp).gl(RoundedCornerShape(28.dp)).padding(start = 6.dp, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).height(56.dp).gl(shp(28.dp)).padding(start = 6.dp, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(44.dp)
             Spacer(Modifier.width(10.dp))
             Text(title, style = body(17, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -283,7 +283,7 @@ fun SetGroup(label: String = "", content: @Composable ColumnScope.() -> Unit) {
     if (nav?.page != null) { Column(Modifier.fillMaxWidth(), content = content); return }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (label.isNotBlank()) Text(label.uppercase(), style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.2.sp), modifier = Modifier.padding(start = 6.dp, top = 6.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card), content = content)
+        Column(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card), content = content)
     }
 }
 
@@ -312,7 +312,7 @@ fun Section(title: String, status: String, color: Color = Teal, statusColor: Col
         return
     }
     var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(16.dp)
+    val shape = shp(16.dp)
     Column(Modifier.fillMaxWidth().clip(shape).background(Card)) {
         Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -328,7 +328,7 @@ fun Section(title: String, status: String, color: Color = Teal, statusColor: Col
 
 @Composable
 fun IconTile(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 44.dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(14.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(14.dp))
+    Box(Modifier.size(size).clip(shp(14.dp)).background(Card).border(1.dp, Line, shp(14.dp))
         .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(icon, label, tint = Muted, modifier = Modifier.size(20.dp))
     }
@@ -336,7 +336,7 @@ fun IconTile(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 4
 
 @Composable
 fun CardBox(modifier: Modifier = Modifier, border: Color? = null, bg: Color = Card, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = shp(16.dp)
     Column(modifier.fillMaxWidth().clip(shape).background(bg)
         .let { if (border != null) it.border(BorderStroke(1.dp, border), shape) else it }
         .padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
@@ -344,7 +344,7 @@ fun CardBox(modifier: Modifier = Modifier, border: Color? = null, bg: Color = Ca
 
 @Composable
 fun BigButton(text: String, onClick: () -> Unit, bg: Color = Teal, fg: Color = Bg, border: Color? = null, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = shp(16.dp)
     Box(modifier.fillMaxWidth().height(52.dp).clip(shape).background(bg)
         .let { if (border != null) it.border(1.dp, border, shape) else it }
         .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
@@ -359,14 +359,14 @@ fun Toggle(checked: Boolean, onChange: (Boolean) -> Unit) =
 
 @Composable
 fun Chip(text: String, onClick: () -> Unit) {
-    Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(18.dp))
+    Box(Modifier.height(36.dp).clip(shp(18.dp)).background(Card).border(1.dp, Line, shp(18.dp))
         .clickable(onClick = onClick).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
         Text(text, style = body(13, FontWeight.Medium, ChipInk))
     }
 }
 
 @Composable
-fun Dot(color: Color) = Box(Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(color))
+fun Dot(color: Color) = Box(Modifier.size(10.dp).clip(shp(5.dp)).background(color))
 
 @Composable
 fun Gap(h: Int) = Spacer(Modifier.height(h.dp))

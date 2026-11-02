@@ -142,7 +142,7 @@ private fun QuickSheet(kind: String, source: String, files: Int, close: () -> Un
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))
         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { close() }) {
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(Th.c.bg)
+            .clip(shp(topStart = 28.dp, topEnd = 28.dp)).background(Th.c.bg)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
             .navigationBarsPadding().imePadding().padding(16.dp)) {
 
@@ -154,13 +154,13 @@ private fun QuickSheet(kind: String, source: String, files: Int, close: () -> Un
                     Text(if (core.busy) (core.steps.lastOrNull()?.text ?: "думаю…") else "Пилот", style = body(12, color = if (core.busy) Teal else Muted),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text("Открыть чат", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { expand() }.padding(8.dp))
+                Text("Открыть чат", style = body(13, FontWeight.SemiBold, Teal), modifier = Modifier.clip(shp(12.dp)).clickable { expand() }.padding(8.dp))
             }
 
             // что Алим выделил или чем поделился
             if (!asked && (source.isNotBlank() || files > 0)) {
                 Spacer(Modifier.size(10.dp))
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.card).padding(12.dp)) {
+                Column(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Th.c.card).padding(12.dp)) {
                     if (files > 0) Text("📎 Вложение: $files", style = body(13, FontWeight.SemiBold))
                     if (source.isNotBlank()) Text(source, style = body(14, color = Muted), maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
@@ -175,8 +175,8 @@ private fun QuickSheet(kind: String, source: String, files: Int, close: () -> Un
                     mine.takeLast(6).forEach { m ->
                         if (m.me) Text(m.text.substringBefore("\n\n«").take(200), style = body(13, color = Muted),
                             modifier = Modifier.align(Alignment.End).padding(start = 40.dp))
-                        else if (!m.note) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Th.c.inBubble)
-                            .border(1.dp, Line, RoundedCornerShape(16.dp)).padding(12.dp)) {
+                        else if (!m.note) Column(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Th.c.inBubble)
+                            .border(1.dp, Line, shp(16.dp)).padding(12.dp)) {
                             Text(m.text.replace("**", ""), style = body(15), lineHeight = 21.sp)
                             val extra = listOfNotNull(
                                 if (m.items.isNotBlank()) "карточки товаров" else null,
@@ -193,14 +193,14 @@ private fun QuickSheet(kind: String, source: String, files: Int, close: () -> Un
                 Spacer(Modifier.size(10.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     chips.forEach { c ->
-                        Text(c, style = body(13, FontWeight.SemiBold), modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                        Text(c, style = body(13, FontWeight.SemiBold), modifier = Modifier.clip(shp(16.dp))
                             .background(AccentSoft).clickable { send(c) }.padding(horizontal = 14.dp, vertical = 9.dp))
                     }
                 }
             }
 
             Spacer(Modifier.size(10.dp))
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Th.c.card).border(1.dp, Line, RoundedCornerShape(24.dp))
+            Row(Modifier.fillMaxWidth().clip(shp(24.dp)).background(Th.c.card).border(1.dp, Line, shp(24.dp))
                 .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
                     if (text.isEmpty()) Text(if (asked) "Ещё вопрос…" else "Спроси ${f.name}…", style = body(16, color = Muted))
@@ -208,7 +208,7 @@ private fun QuickSheet(kind: String, source: String, files: Int, close: () -> Un
                         cursorBrush = SolidColor(Teal), maxLines = 5,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { send(text) }))
                 }
-                Box(Modifier.size(42.dp).clip(CircleShape).background(if (text.isNotBlank() || files > 0) Teal else Line)
+                Box(Modifier.size(42.dp).clip(circ).background(if (text.isNotBlank() || files > 0) Teal else Line)
                     .clickable { send(text) }, contentAlignment = Alignment.Center) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(20.dp))
                 }

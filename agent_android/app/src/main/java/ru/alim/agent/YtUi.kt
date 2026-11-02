@@ -69,11 +69,11 @@ fun YtGrid(entries: List<String>) {
             val title = p.getOrNull(1).orEmpty()
             val chan = p.getOrNull(2).orEmpty()
             if (id.isBlank()) return@forEach
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Card).clickable { openYtVideo(ctx, id) }
+            Row(Modifier.fillMaxWidth().clip(shp(10.dp)).background(Card).clickable { openYtVideo(ctx, id) }
                 .padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(width = 112.dp, height = 63.dp).clip(RoundedCornerShape(8.dp)).background(Bg), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(width = 112.dp, height = 63.dp).clip(shp(8.dp)).background(Bg), contentAlignment = Alignment.Center) {
                     netThumb(id)?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                    Box(Modifier.size(32.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(32.dp).clip(circ).background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
                         Text("▶", style = body(15, color = Color.White))
                     }
                 }
@@ -128,7 +128,7 @@ private fun FavPicker(close: () -> Unit) {
     val subs = produceState<List<YtMe.Chan>?>(null) { value = withContext(Dispatchers.IO) { runCatching { YtMe.subscriptions() }.getOrNull() } }
     val chosen = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(YtMe.favs.map { it.id }) } }
     Dialog(onDismissRequest = close) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Любимые каналы", style = body(16, FontWeight.SemiBold))
             val list = subs.value
             when {
@@ -137,10 +137,10 @@ private fun FavPicker(close: () -> Unit) {
                 else -> Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     list.forEach { ch ->
                         val on = chosen.contains(ch.id)
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
+                        Row(Modifier.fillMaxWidth().clip(shp(8.dp)).clickable {
                             if (on) chosen.remove(ch.id) else chosen.add(ch.id)
                         }.padding(vertical = 8.dp, horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Box(Modifier.size(20.dp).clip(RoundedCornerShape(5.dp)).background(if (on) Teal else Bg), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(20.dp).clip(shp(5.dp)).background(if (on) Teal else Bg), contentAlignment = Alignment.Center) {
                                 if (on) Text("✓", style = body(13, color = Bg))
                             }
                             Text(ch.title, style = body(13), maxLines = 1, modifier = Modifier.weight(1f))

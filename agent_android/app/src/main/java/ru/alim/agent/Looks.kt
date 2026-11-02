@@ -53,9 +53,9 @@ fun copyImage(ctx: Context, uri: Uri, name: String): String? = runCatching {
 
 @Composable
 fun Seg(options: List<Pair<String, String>>, cur: String, set: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Track).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Track).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         options.forEach { (id, label) ->
-            Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp)).background(if (cur == id) Th.c.card else Th.c.card.copy(alpha = 0f))
+            Box(Modifier.weight(1f).height(40.dp).clip(shp(11.dp)).background(if (cur == id) Th.c.card else Th.c.card.copy(alpha = 0f))
                 .clickable { set(id) }, contentAlignment = Alignment.Center) {
                 Text(label, style = body(14, FontWeight.SemiBold, if (cur == id) Ink else Muted))
             }
@@ -81,26 +81,26 @@ fun LookScreen(back: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Label("Цвет")
             var auto by remember { mutableStateOf(Th.auto) }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Th.c.card).padding(horizontal = 14.dp, vertical = 10.dp),
+            Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Th.c.card).padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Авто: день и ночь", style = body(15, FontWeight.SemiBold))
-                    Text("С 7:00 до 19:00 — «Рассвет», вечером и ночью — «Ночной рейс».", style = body(12, color = Muted))
+                    Text(Th.autoTitle() + if (auto) " Нажми светлую тему — она станет дневной, тёмную — вечерней." else "", style = body(12, color = Muted))
                 }
                 Toggle(auto) { on -> auto = on; if (on) Th.set("auto") else Th.set(Th.c.id) }
             }
             Th.all.chunked(4).forEach { rowPals -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 rowPals.forEach { p ->
-                    val on = !auto && Th.c.id == p.id
-                    Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Th.c.card)
-                        .border(if (on) 2.dp else 1.dp, if (on) Teal else Line, RoundedCornerShape(16.dp)).clickable { auto = false; Th.set(p.id) }.padding(6.dp),
+                    val on = if (auto) Th.isAutoPart(p.id) else Th.c.id == p.id
+                    Column(Modifier.weight(1f).clip(shp(16.dp)).background(Th.c.card)
+                        .border(if (on) 2.dp else 1.dp, if (on) Teal else Line, shp(16.dp)).clickable { if (auto) Th.setAutoPart(p) else Th.set(p.id) }.padding(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Column(Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(11.dp))
+                        Column(Modifier.fillMaxWidth().height(96.dp).clip(shp(11.dp))
                             .background(androidx.compose.ui.graphics.Brush.linearGradient(p.wall)).padding(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.Bottom)) {
-                            Box(Modifier.size(46.dp, 12.dp).clip(RoundedCornerShape(6.dp)).background(p.inBubble))
-                            Box(Modifier.align(Alignment.End).size(38.dp, 12.dp).clip(RoundedCornerShape(6.dp)).background(p.outBubble))
-                            Box(Modifier.size(30.dp, 12.dp).clip(RoundedCornerShape(6.dp)).background(p.inBubble))
+                            Box(Modifier.size(46.dp, 12.dp).clip(shp(6.dp)).background(p.inBubble))
+                            Box(Modifier.align(Alignment.End).size(38.dp, 12.dp).clip(shp(6.dp)).background(p.outBubble))
+                            Box(Modifier.size(30.dp, 12.dp).clip(shp(6.dp)).background(p.inBubble))
                         }
                         Text(p.title, style = body(12, FontWeight.SemiBold), modifier = Modifier.align(Alignment.CenterHorizontally), maxLines = 1)
                     }
@@ -111,8 +111,8 @@ fun LookScreen(back: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("pattern" to "Узор", "gallery" to "Из галереи", "gen" to "Нарисовать").forEach { (id, t) ->
                     val on = (id == "pattern" && wall == "pattern") || (id != "pattern" && wall == "photo" && id == "gallery")
-                    Box(Modifier.weight(1f).height(64.dp).clip(RoundedCornerShape(16.dp)).background(Th.c.card)
-                        .border(if (on) 2.dp else 1.dp, if (on) Teal else Line, RoundedCornerShape(16.dp))
+                    Box(Modifier.weight(1f).height(64.dp).clip(shp(16.dp)).background(Th.c.card)
+                        .border(if (on) 2.dp else 1.dp, if (on) Teal else Line, shp(16.dp))
                         .clickable {
                             when (id) {
                                 "pattern" -> { Prefs.wallpaper = "pattern"; wall = "pattern"; WallState.version++ }

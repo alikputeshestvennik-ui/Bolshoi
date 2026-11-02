@@ -69,7 +69,7 @@ fun ChatListScreen(open: (String) -> Unit, add: () -> Unit, profile: (String) ->
                 items(rows, key = { it.first.id }) { (f, c) ->
                     val last = c.msgs.lastOrNull()
                     val busy = c.core.busy
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    Row(Modifier.fillMaxWidth().clip(shp(16.dp))
                         .combinedClickable(onClick = { open(f.id) }, onLongClick = { profile(f.id) }).padding(horizontal = 6.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Avatar(56.dp, online = Online.online && tick >= 0, f = f)
@@ -78,7 +78,7 @@ fun ChatListScreen(open: (String) -> Unit, add: () -> Unit, profile: (String) ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(f.name, style = body(16, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                 if (f.main) { HGap(6); Text("главный", style = body(11, FontWeight.SemiBold, Teal),
-                                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(AccentSoft).padding(horizontal = 6.dp, vertical = 1.dp)) }
+                                    modifier = Modifier.clip(shp(8.dp)).background(AccentSoft).padding(horizontal = 6.dp, vertical = 1.dp)) }
                                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                                 last?.let { Text(timeLabel(it.ts), style = body(12, color = if (c.unread > 0) Teal else Muted)) }
                             }
@@ -91,7 +91,7 @@ fun ChatListScreen(open: (String) -> Unit, add: () -> Unit, profile: (String) ->
                                 }
                                 Text(preview, style = body(14, color = if (busy) Th.c.violet else Muted), maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f))
-                                if (c.unread > 0) { HGap(8); Box(Modifier.size(22.dp).clip(CircleShape).background(Teal), contentAlignment = Alignment.Center) {
+                                if (c.unread > 0) { HGap(8); Box(Modifier.size(22.dp).clip(circ).background(Teal), contentAlignment = Alignment.Center) {
                                     Text(if (c.unread > 99) "99" else "${c.unread}", style = body(11, FontWeight.Bold, OnAccent)) } }
                             }
                         }
@@ -101,7 +101,7 @@ fun ChatListScreen(open: (String) -> Unit, add: () -> Unit, profile: (String) ->
                     style = body(12, color = Muted), modifier = Modifier.padding(top = 10.dp, start = 6.dp, end = 6.dp)) }
             }
         }
-        Row(Modifier.align(Alignment.BottomEnd).padding(18.dp).height(56.dp).clip(RoundedCornerShape(28.dp)).background(Teal)
+        Row(Modifier.align(Alignment.BottomEnd).padding(18.dp).height(56.dp).clip(shp(28.dp)).background(Teal)
             .clickable(onClickLabel = "Добавить друга", onClick = add).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("+  Друг", style = body(16, FontWeight.Bold, OnAccent))
         }
@@ -174,7 +174,7 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                 Text("Манера общения", style = body(12, color = Muted))
                 Seg(listOf("buddy" to "Кореш", "secretary" to "Секретарь", "short" to "Коротко"), f.style) { upd(f.copy(style = it)) }
                 Text(Persona.styleSample(f.style, f.male), style = body(15), lineHeight = 21.sp, modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp)).background(Th.c.inBubble).border(1.dp, Line, RoundedCornerShape(16.dp, 16.dp, 16.dp, 6.dp)).padding(12.dp))
+                    .clip(shp(16.dp, 16.dp, 16.dp, 6.dp)).background(Th.c.inBubble).border(1.dp, Line, shp(16.dp, 16.dp, 16.dp, 6.dp)).padding(12.dp))
                 Text("так ${f.name.ifBlank { "он" }} будет писать", style = body(12, color = Muted))
             }
             CardBox {
@@ -184,8 +184,8 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (if (f.male) Call.MALE_V else Call.FEMALE_V).forEach { (id, label) ->
                         val on = cur == id
-                        Column(Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) AccentSoft else Th.c.bg)
-                            .border(1.dp, if (on) Teal else Line, RoundedCornerShape(12.dp)).clickable { upd(f.copy(voice = id)) }
+                        Column(Modifier.clip(shp(12.dp)).background(if (on) AccentSoft else Th.c.bg)
+                            .border(1.dp, if (on) Teal else Line, shp(12.dp)).clickable { upd(f.copy(voice = id)) }
                             .padding(horizontal = 12.dp, vertical = 6.dp)) {
                             Text(id, style = body(13, FontWeight.SemiBold, if (on) Teal else Ink))
                             Text(label, style = body(11, color = Muted))
@@ -193,7 +193,7 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                     }
                 }
                 androidx.compose.material3.OutlinedTextField(f.speech, { upd(f.copy(speech = it)) }, Modifier.fillMaxWidth(),
-                    label = { Text("Как говорит") }, minLines = 2, maxLines = 6, textStyle = body(14), shape = RoundedCornerShape(14.dp), colors = fieldColors())
+                    label = { Text("Как говорит") }, minLines = 2, maxLines = 6, textStyle = body(14), shape = shp(14.dp), colors = fieldColors())
                 Text("Акцент, темп, интонация, словечки. Например: «кавказский акцент, неспешно, вставляет ‹слушай, брат›».", style = body(12, color = Muted))
                 BigButton("Послушать", {
                     vmsg = "Записываю…"
@@ -219,8 +219,8 @@ fun ProfileScreen(fid: String, back: () -> Unit) {
                         "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT", "yc:deepseek-v4.1-flash" to "DeepSeek")
                         .forEach { (id, label) ->
                             val on = f.model == id
-                            Box(Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(if (on) AccentSoft else Th.c.bg)
-                                .border(1.dp, if (on) Teal else Line, RoundedCornerShape(12.dp)).clickable { upd(f.copy(model = id)) }.padding(horizontal = 14.dp),
+                            Box(Modifier.height(40.dp).clip(shp(12.dp)).background(if (on) AccentSoft else Th.c.bg)
+                                .border(1.dp, if (on) Teal else Line, shp(12.dp)).clickable { upd(f.copy(model = id)) }.padding(horizontal = 14.dp),
                                 contentAlignment = Alignment.Center) { Text(label, style = body(13, FontWeight.SemiBold, if (on) Teal else Muted)) }
                         }
                 }

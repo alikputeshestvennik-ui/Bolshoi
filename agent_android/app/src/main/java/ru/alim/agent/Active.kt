@@ -69,7 +69,7 @@ fun ActiveButton(go: (Scr) -> Unit) {
                 drawRoundRect(soft, topLeft = androidx.compose.ui.geometry.Offset(-g, -g),
                     size = androidx.compose.ui.geometry.Size(size.width + 2 * g, size.height + 2 * g), cornerRadius = CornerRadius(size.height / 2 + g))
             }
-            .height(40.dp).clip(RoundedCornerShape(20.dp)).background(Card).border(1.5.dp, acc, RoundedCornerShape(20.dp))
+            .height(40.dp).clip(shp(20.dp)).background(Card).border(1.5.dp, acc, shp(20.dp))
             .clickable(onClickLabel = "Активные") { go(Scr.Active) }.padding(start = 12.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically) {
             ThinkDots(acc)
@@ -94,7 +94,7 @@ fun ActiveScreen(go: (Scr) -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (core.busy || core.pending != null) Block("Тяжёлая задача", 1) {
                 core.pending?.let { ConfirmCard(it, core) }
-                if (core.busy) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Card).border(1.5.dp, Teal, RoundedCornerShape(20.dp)).padding(14.dp),
+                if (core.busy) Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).border(1.5.dp, Teal, shp(20.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ThinkDots(); Spacer(Modifier.width(10.dp))
@@ -112,10 +112,10 @@ fun ActiveScreen(go: (Scr) -> Unit) {
             }
             if (delegs.isNotEmpty()) Block("Поручения", delegs.size) {
                 delegs.forEach { d ->
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).border(1.dp, if (d.status == "ask") Amber.copy(alpha = 0.6f) else Line, RoundedCornerShape(18.dp))
+                    Column(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).border(1.dp, if (d.status == "ask") Amber.copy(alpha = 0.6f) else Line, shp(18.dp))
                         .clickable { ChatJump.to(ChatJump.find(Chat.main, d.who)); go(Scr.Home) }.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(34.dp).clip(CircleShape).background(Th.c.bg).border(1.dp, Line, CircleShape), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(34.dp).clip(circ).background(Th.c.bg).border(1.dp, Line, circ), contentAlignment = Alignment.Center) {
                                 Text(d.who.take(1).uppercase(), style = body(14, FontWeight.Bold, Ink.copy(alpha = 0.8f)))
                             }
                             Spacer(Modifier.width(10.dp))
@@ -127,7 +127,7 @@ fun ActiveScreen(go: (Scr) -> Unit) {
                         if (d.status == "ask") {
                             Text("Нужен твой ответ", style = body(12, FontWeight.SemiBold, Amber))
                             Text(d.question, style = body(13, color = Ink.copy(alpha = 0.86f)), lineHeight = 19.sp, maxLines = 4, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Th.c.bg).padding(horizontal = 10.dp, vertical = 8.dp))
+                                modifier = Modifier.fillMaxWidth().clip(shp(12.dp)).background(Th.c.bg).padding(horizontal = 10.dp, vertical = 8.dp))
                             var sent by remember(d.id, d.question) { mutableStateOf<String?>(null) }
                             if (sent != null) Text(sent!!, style = body(13, color = Muted))
                             else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -145,10 +145,10 @@ fun ActiveScreen(go: (Scr) -> Unit) {
             }
             if (watches.isNotEmpty()) Block("Слежка", watches.size) {
                 watches.forEach { w ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(18.dp))
+                    Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).border(1.dp, Line, shp(18.dp))
                         .clickable { ChatJump.to(ChatJump.find(Chat.main, w.topic)); go(Scr.Home) }.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(34.dp).clip(CircleShape).background(AccentSoft), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(34.dp).clip(circ).background(AccentSoft), contentAlignment = Alignment.Center) {
                             androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icEye), null, tint = Teal, modifier = Modifier.size(17.dp))
                         }
                         Spacer(Modifier.width(12.dp))
@@ -177,7 +177,7 @@ private fun Block(title: String, n: Int, content: @Composable () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title.uppercase(), style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.4.sp))
             Spacer(Modifier.width(8.dp))
-            Text("$n", style = body(11, FontWeight.Bold, Teal), modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(AccentSoft).padding(horizontal = 6.dp, vertical = 1.dp))
+            Text("$n", style = body(11, FontWeight.Bold, Teal), modifier = Modifier.clip(shp(6.dp)).background(AccentSoft).padding(horizontal = 6.dp, vertical = 1.dp))
         }
         content()
     }
@@ -185,7 +185,7 @@ private fun Block(title: String, n: Int, content: @Composable () -> Unit) {
 
 @Composable
 fun PillBtn(text: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = shp(12.dp)
     Box(modifier.height(44.dp).clip(shape).then(if (primary) Modifier.background(Teal) else Modifier.border(1.dp, Line, shape)).clickable(onClick = onClick)
         .padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
         Text(text, style = body(13, FontWeight.Bold, if (primary) OnAccent else Ink))

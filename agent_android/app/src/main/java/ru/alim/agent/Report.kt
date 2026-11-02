@@ -104,7 +104,7 @@ private fun plural(n: Int, one: String, few: String, many: String) =
 
 private fun dur(secs: Long) = if (secs < 60) "$secs сек" else "${(secs + 30) / 60} мин"
 
-private val green: Color get() = Th.c.online
+private val green: Color get() = Ink
 private fun soft(c: Color) = c.copy(alpha = if (Th.c.dark) 0.16f else 0.10f)
 
 @Composable
@@ -123,9 +123,9 @@ fun ThinkChip(p: JSONObject, fresh: Boolean = false) {
     Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)
         .animateContentSize(androidx.compose.animation.core.tween(460, easing = androidx.compose.animation.core.FastOutSlowInEasing)),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (big) { Box(Modifier.fillMaxWidth().height(bubbleH).clip(RoundedCornerShape(22.dp))
-            .background(Th.c.card.copy(alpha = if (Th.c.dark) 0.30f else 0.42f)).border(1.dp, Th.c.line.copy(alpha = 0.7f), RoundedCornerShape(22.dp))); return@Column }
-        Row(Modifier.clip(RoundedCornerShape(16.dp)).background(Th.c.card.copy(alpha = 0.85f)).border(1.dp, Th.c.line, RoundedCornerShape(16.dp))
+        if (big) { Box(Modifier.fillMaxWidth().height(bubbleH).clip(shp(22.dp))
+            .background(Th.c.card.copy(alpha = if (Th.c.dark) 0.30f else 0.42f)).border(1.dp, Th.c.line.copy(alpha = 0.7f), shp(22.dp))); return@Column }
+        Row(Modifier.clip(shp(16.dp)).background(Th.c.card.copy(alpha = 0.85f)).border(1.dp, Th.c.line, shp(16.dp))
             .clickable(onClickLabel = if (open) "Свернуть" else "Как думал") { open = !open }.padding(horizontal = 12.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Icon(rememberVectorPainter(icClock2), null, tint = Muted, modifier = Modifier.size(14.dp))
@@ -142,7 +142,7 @@ fun ThinkChip(p: JSONObject, fresh: Boolean = false) {
                     Spacer(Modifier.width(8.dp))
                     Text(th, style = body(13, color = Muted), lineHeight = 19.sp)
                 }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Th.c.card).border(1.dp, Th.c.line, RoundedCornerShape(12.dp))
+                Row(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Th.c.card).border(1.dp, Th.c.line, shp(12.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("✓", style = body(12, FontWeight.Bold, green))
                     Spacer(Modifier.width(8.dp))
@@ -166,7 +166,7 @@ private fun Ladder(steps: List<JSONObject>) {
             val warn = s.optString("warn").isNotBlank()
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Column(Modifier.width(32.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(32.dp).clip(CircleShape).background(if (warn) soft(Amber) else AccentSoft), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(32.dp).clip(circ).background(if (warn) soft(Amber) else AccentSoft), contentAlignment = Alignment.Center) {
                         Icon(rememberVectorPainter(kindIcon(s)), null, tint = if (warn) Amber else Teal, modifier = Modifier.size(16.dp))
                     }
                     if (!last) Box(Modifier.width(2.dp).weight(1f).background(Th.c.line))
@@ -179,7 +179,7 @@ private fun Ladder(steps: List<JSONObject>) {
                     if (warn) Text(s.optString("warn"), style = body(12, FontWeight.SemiBold, Amber))
                 }
                 if (s.optString("src").isNotBlank()) Text(s.optString("src"), style = body(10, FontWeight.SemiBold, Muted),
-                    modifier = Modifier.padding(start = 6.dp, top = 4.dp).clip(RoundedCornerShape(8.dp)).background(Th.c.bg).padding(horizontal = 6.dp, vertical = 3.dp))
+                    modifier = Modifier.padding(start = 6.dp, top = 4.dp).clip(shp(8.dp)).background(Th.c.bg).padding(horizontal = 6.dp, vertical = 3.dp))
             }
         }
     }
@@ -217,7 +217,7 @@ private suspend fun wikiThumb(q: String): ImageBitmap? = withContext(Dispatchers
 @Composable
 private fun WikiPhoto(q: String, modifier: Modifier) {
     val bmp by produceState<ImageBitmap?>(null, q) { value = wikiThumb(q) }
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(AccentSoft), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(shp(14.dp)).background(AccentSoft), contentAlignment = Alignment.Center) {
         val b = bmp
         if (b != null) Image(b, q, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Icon(rememberVectorPainter(icPin), null, tint = Teal, modifier = Modifier.size(22.dp))
@@ -232,7 +232,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
     val ctx = LocalContext.current
     var alt by remember { mutableStateOf<JSONObject?>(null) }
     var full by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(22.dp)
+    val shape = shp(22.dp)
     val hhmm = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru")) }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.fillMaxWidth().clip(shape).background(Th.c.card).border(1.dp, if (lit) Teal else Th.c.line, shape)
@@ -243,7 +243,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val k = r.optString("kicker").ifBlank { "ОТЧЁТ" }
                     Text(k.uppercase(), style = body(10, FontWeight.Bold, green).copy(letterSpacing = 1.sp),
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(soft(green)).padding(horizontal = 8.dp, vertical = 4.dp))
+                        modifier = Modifier.clip(shp(8.dp)).background(soft(green)).padding(horizontal = 8.dp, vertical = 4.dp))
                     Spacer(Modifier.weight(1f))
                     Text(hhmm.format(java.util.Date(m.ts)), style = body(12, color = Th.c.meta))
                 }
@@ -265,7 +265,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     totals.forEach { t ->
                         val w = t.optString("warn").isNotBlank()
-                        Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(if (w) soft(Amber) else Th.c.bg).padding(12.dp)) {
+                        Column(Modifier.weight(1f).clip(shp(14.dp)).background(if (w) soft(Amber) else Th.c.bg).padding(12.dp)) {
                             Text(t.optString("label"), style = body(11, color = Muted), maxLines = 2, lineHeight = 14.sp)
                             // значение не обрезаем: длинное («30 мин») мельче, а не «30»
                             val v = t.optString("value")
@@ -274,7 +274,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                     }
                 }
                 totals.filter { it.optString("warn").isNotBlank() }.forEach { t ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(soft(Amber)).padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(soft(Amber)).padding(12.dp)) {
                         Icon(rememberVectorPainter(icWarn), null, tint = Amber, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(t.optString("warn"), style = body(13, color = Ink), lineHeight = 18.sp)
@@ -298,11 +298,11 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 SecLabel("Сравнение")
                 cmp.forEach { c ->
                     val ok = c.optBoolean("ok", false)
-                    val rs = RoundedCornerShape(14.dp)
+                    val rs = shp(14.dp)
                     Row(Modifier.fillMaxWidth().clip(rs).background(if (ok) soft(green) else Th.c.bg).then(if (ok) Modifier.border(1.5.dp, green, rs) else Modifier)
                         .then(if (!ok) Modifier.clickable(onClickLabel = "Почему нет") { alt = c } else Modifier).padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(22.dp).clip(CircleShape).background(if (ok) green else Th.c.line), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(22.dp).clip(circ).background(if (ok) green else Th.c.line), contentAlignment = Alignment.Center) {
                             Text(if (ok) "✓" else "✕", style = body(11, FontWeight.Bold, if (ok) Th.c.card else Muted))
                         }
                         Spacer(Modifier.width(10.dp))
@@ -323,9 +323,9 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 stay.forEach { h ->
                     val prices = Rich.list(h.optJSONArray("prices")).filter { it.optString("price").isNotBlank() }
                     val cheapest = prices.minByOrNull { Shop.rub(it.optString("price")).takeIf { v -> v > 0 } ?: Int.MAX_VALUE }
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Th.c.bg).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Th.c.bg).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(36.dp).clip(CircleShape).background(AccentSoft), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(36.dp).clip(circ).background(AccentSoft), contentAlignment = Alignment.Center) {
                                 Icon(rememberVectorPainter(icBed), null, tint = Teal, modifier = Modifier.size(18.dp))
                             }
                             Spacer(Modifier.width(10.dp))
@@ -338,7 +338,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                             prices.forEach { pr ->
                                 val best = pr === cheapest && prices.size > 1
                                 val u = pr.optString("url")
-                                val cs = RoundedCornerShape(12.dp)
+                                val cs = shp(12.dp)
                                 Column(Modifier.clip(cs).background(if (best) soft(green) else Th.c.card).border(1.dp, if (best) green else Th.c.line, cs)
                                     .then(if (u.startsWith("http")) Modifier.clickable(onClickLabel = "Открыть") { Buy.open(ctx, u) } else Modifier)
                                     .padding(horizontal = 10.dp, vertical = 6.dp)) {
@@ -377,7 +377,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                         // длинный текст («Пермь −5…0°, Уфа −7…0°») не режем по слогам: плитка шире, шрифт мельче
                         val tt = d.optString("t"); val dd = d.optString("day")
                         val longT = tt.length > 7 || dd.length > 10
-                        Column(Modifier.then(if (longT) Modifier.widthIn(min = 68.dp, max = 170.dp) else Modifier.width(68.dp)).clip(RoundedCornerShape(14.dp)).background(Th.c.bg)
+                        Column(Modifier.then(if (longT) Modifier.widthIn(min = 68.dp, max = 170.dp) else Modifier.width(68.dp)).clip(shp(14.dp)).background(Th.c.bg)
                             .padding(vertical = 10.dp, horizontal = if (longT) 10.dp else 0.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(dd, style = body(11, color = Muted), textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
                             Text(tt, style = TextStyle(fontFamily = Fonts.display, fontSize = (if (tt.length <= 7) 17 else if (tt.length <= 14) 14 else 12).sp, fontWeight = FontWeight.SemiBold, color = Ink),
@@ -399,7 +399,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
 
             // ——— полный текст по запросу ———
             Text(if (full) "Свернуть текст ⌃" else "Полный текст ответа ›", style = body(13, FontWeight.SemiBold, Teal),
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { full = !full }.padding(vertical = 4.dp))
+                modifier = Modifier.clip(shp(10.dp)).clickable { full = !full }.padding(vertical = 4.dp))
             if (full) Text(md(m.text), style = body(14, color = Ink.copy(alpha = 0.86f)), lineHeight = 20.sp)
 
             // ——— источники ———
@@ -409,7 +409,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                 if (src.isNotEmpty()) Text("Источники", style = body(11, FontWeight.SemiBold, Muted))
                 src.take(4).forEach { s ->
                     Text(s, style = body(11, FontWeight.SemiBold, Ink.copy(alpha = 0.8f)),
-                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Th.c.bg).padding(horizontal = 8.dp, vertical = 4.dp))
+                        modifier = Modifier.clip(shp(10.dp)).background(Th.c.bg).padding(horizontal = 8.dp, vertical = 4.dp))
                 }
                 if (src.size > 4) Text("+${src.size - 4}", style = body(11, FontWeight.SemiBold, Muted))
             }
@@ -418,8 +418,8 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
         val asks = (Rich.strs(r.optJSONArray("ask")) + m.buttons).distinct().filter { it.length <= 40 }.take(4)
         if (showButtons && asks.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             asks.forEach { b ->
-                Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Th.c.inBubble.copy(alpha = 0.85f))
-                    .border(1.dp, Teal.copy(alpha = 0.5f), RoundedCornerShape(18.dp)).clickable { chat.send(b) }.padding(horizontal = 14.dp),
+                Box(Modifier.height(36.dp).clip(shp(18.dp)).background(Th.c.inBubble.copy(alpha = 0.85f))
+                    .border(1.dp, Teal.copy(alpha = 0.5f), shp(18.dp)).clickable { chat.send(b) }.padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center) { Text(b, style = body(14, FontWeight.SemiBold, Teal)) }
             }
         }
@@ -440,16 +440,16 @@ private fun AltSheet(a: JSONObject, p: JSONObject, close: () -> Unit) {
         }?.takeIf { Buy.items(it).isNotEmpty() } ?: Buy.guess(a)
     }
     androidx.compose.ui.window.Dialog(onDismissRequest = close) {
-        Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).clip(RoundedCornerShape(24.dp)).background(Th.c.card).verticalScroll(rememberScrollState()).padding(18.dp),
+        Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).clip(shp(24.dp)).background(Th.c.card).verticalScroll(rememberScrollState()).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("✕  " + a.optString("verdict").ifBlank { "НЕ ПОДХОДИТ" }.uppercase(), style = body(11, FontWeight.Bold, Th.c.danger).copy(letterSpacing = 0.8.sp),
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(soft(Th.c.danger)).padding(horizontal = 8.dp, vertical = 4.dp))
+                modifier = Modifier.clip(shp(8.dp)).background(soft(Th.c.danger)).padding(horizontal = 8.dp, vertical = 4.dp))
             Text(a.optString("name"), style = TextStyle(fontFamily = Fonts.display, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Ink))
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(a.optString("price"), style = TextStyle(fontFamily = Fonts.display, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Ink))
                 if (a.optString("time").isNotBlank()) Text(a.optString("time"), style = body(13, color = Muted), modifier = Modifier.padding(bottom = 3.dp))
             }
-            if (a.optString("why").isNotBlank()) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(soft(Amber)).padding(12.dp)) {
+            if (a.optString("why").isNotBlank()) Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(soft(Amber)).padding(12.dp)) {
                 Icon(rememberVectorPainter(icWarn), null, tint = Amber, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(a.optString("why"), style = body(13, color = Ink), lineHeight = 19.sp)
@@ -458,11 +458,11 @@ private fun AltSheet(a: JSONObject, p: JSONObject, close: () -> Unit) {
             if (route.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { SecLabel("Маршрут"); Ladder(route) }
             if (withBuy != null) {
                 val n = Buy.items(withBuy).size
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Th.c.accent).clickable { buy = withBuy }.padding(14.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Th.c.accent).clickable { buy = withBuy }.padding(14.dp), contentAlignment = Alignment.Center) {
                     Text("Всё равно купить · $n ${plural(n, "шаг", "шага", "шагов")}", style = body(14, FontWeight.Bold, Th.c.onAccent))
                 }
             }
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, Th.c.line, RoundedCornerShape(14.dp)).clickable(onClick = close).padding(14.dp),
+            Box(Modifier.fillMaxWidth().clip(shp(14.dp)).border(1.dp, Th.c.line, shp(14.dp)).clickable(onClick = close).padding(14.dp),
                 contentAlignment = Alignment.Center) { Text("Вернуться к лучшему варианту", style = body(14, FontWeight.SemiBold, Ink)) }
         }
     }
