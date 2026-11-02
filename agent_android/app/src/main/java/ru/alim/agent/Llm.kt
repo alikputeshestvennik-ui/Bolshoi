@@ -121,7 +121,10 @@ object Llm {
      * AnyModel (формат OpenAI). Для «рук» просим reasoning_effort=high (по духу — максимум тщательности);
      * не все модели принимают json-режим и reasoning_effort — тогда повторяем голым запросом.
      */
-    private fun anyChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+    /** AnyModel не принял поток (stream) — дальше в этом запуске шлём обычным запросом. */
+    @Volatile private var anyNoStream = false
+
+    private fun anyChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, onPart: ((String, String) -> Unit)? = null): Reply {
         if (anyKey.isBlank()) error("В сборке нет ключа ANYMODEL_KEY — проверь секрет на GitHub и пересобери")
         val id = model.removePrefix("any:")
         val think = model == Prefs.smartModel
@@ -130,8 +133,43 @@ object Llm {
             .put("max_tokens", maxTokens + if (reason) (if (effort == "high") 8000 else 4000) else 1500)   // рассуждения тоже считаются в лимит
             .also { if (js) it.put("response_format", JSONObject().put("type", "json_object")) }
             .also { if (reason) it.put("reasoning_effort", effort) }
-        fun send(b: JSONObject) = anyHttp.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
+        fun plain(b: JSONObject) = anyHttp.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
             .post(b.toString().toRequestBody(JSON)).build()).execute().use { it.code to (it.body?.string() ?: "") }
+        // поток: ответ приходит кусочками — мысль видна сразу; в конце собираем обычный JSON-ответ, дальше всё как раньше
+        fun streamed(b: JSONObject, cb: (String, String) -> Unit): Pair<Int, String> {
+            val sb = JSONObject(b.toString()).put("stream", true).put("stream_options", JSONObject().put("include_usage", true))
+            anyHttp.newCall(Request.Builder().url(ANY_URL).header("Authorization", "Bearer $anyKey")
+                .post(sb.toString().toRequestBody(JSON)).build()).execute().use { resp ->
+                if (!resp.isSuccessful) return resp.code to (resp.body?.string() ?: "")
+                val src = resp.body?.source() ?: return resp.code to ""
+                if (!resp.header("Content-Type").orEmpty().contains("event-stream", true)) return resp.code to src.readUtf8()
+                val content = StringBuilder(); val reason = StringBuilder(); var usage: JSONObject? = null
+                while (!src.exhausted()) {
+                    val line = src.readUtf8Line() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val data = line.substring(5).trim()
+                    if (data.isEmpty()) continue
+                    if (data == "[DONE]") break
+                    val j = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    j.optJSONObject("usage")?.let { usage = it }
+                    val d = j.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
+                    fun str(k: String) = if (d.isNull(k)) "" else d.optString(k, "")
+                    val c = str("content"); val r = str("reasoning_content").ifEmpty { str("reasoning") }
+                    if (c.isNotEmpty()) content.append(c)
+                    if (r.isNotEmpty()) reason.append(r)
+                    if (c.isNotEmpty() || r.isNotEmpty()) runCatching { cb(content.toString(), reason.toString()) }
+                }
+                if (content.isEmpty()) return 599 to "пустой поток"
+                return 200 to JSONObject().put("choices", JSONArray().put(JSONObject().put("message",
+                    JSONObject().put("role", "assistant").put("content", content.toString())))).put("usage", usage ?: JSONObject()).toString()
+            }
+        }
+        fun send(b: JSONObject): Pair<Int, String> {
+            if (onPart == null || anyNoStream) return plain(b)
+            val r = streamed(b, onPart)
+            if (r.first == 599 || r.first == 400) { if (r.first == 599) anyNoStream = true; return plain(b) }
+            return r
+        }
         var sent = body(json, think)
         var r = send(sent)
         if (r.first == 400) { sent = JSONObject().put("model", id).put("messages", messages); r = send(sent) }
@@ -205,18 +243,19 @@ object Llm {
     }
 
     /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
-    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true, patient: Boolean = false): Reply {
+    fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true, patient: Boolean = false,
+             onPart: ((content: String, reasoning: String) -> Unit)? = null): Reply {
         if (isGoogle(model)) {
             // фон может подождать окно до 20 с, переписка — не больше 3 с, задача агента — до минуты на своей модели
             val wait = if (patient) 65_000L else if (model == Prefs.bg && model != Prefs.fastModel) 20_000L else 3_000L
             return googleRouted(model, messages, maxTokens, json, wait, patient).also { Online.ok() }
         }
-        return try { chatRaw(model, messages, maxTokens, json).also { Online.ok() } }
+        return try { chatRaw(model, messages, maxTokens, json, onPart).also { Online.ok() } }
         catch (e: java.io.IOException) { Online.fail(); throw e }
     }
 
-    private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply =
-        if (isAny(model)) anyChat(model, messages, maxTokens, json)
+    private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, onPart: ((String, String) -> Unit)? = null): Reply =
+        if (isAny(model)) anyChat(model, messages, maxTokens, json, onPart)
         else if (isYandex(model)) yandexChat(model, messages, maxTokens, json)
         else error("Модель «$model» больше не поддерживается (GPTunnel убран) — выбери модель в настройках")
 

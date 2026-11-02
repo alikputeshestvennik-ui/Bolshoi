@@ -362,7 +362,7 @@ object Agent {
         /** Сложная задача — сразу «Руки» (умная модель), не дожидаясь, что лёгкая сама попросит escalate. */
         private fun looksHard(t: String): Boolean = smart() != fast() && hardText(t)
         /** Задача по тексту большая (подбор, сравнение, таблица) — ей нужно больше шагов, какая бы модель ни стояла. */
-        private fun hardText(t: String): Boolean {
+        fun hardText(t: String): Boolean {
             val x = t.lowercase()
             val many = Regex("[,;]").findAll(x).count() >= 3
             val kw = Regex("таблиц|xlsx|excel|сравни|собери|составь|подборк|отчёт|отчет|проанализ|план |маршрут|несколько|для каждого|по каждому|в конце").containsMatchIn(x)
@@ -430,11 +430,22 @@ object Agent {
                     i++
                     var m = noMoneyAlt ?: if (smart) smart() else fast()
                     model = m
+                    // пока модель думает — живой шаг: мысль печатается по ходу ответа (поток), а не после всего хода
+                    val live = Step("Думаю…").also { it.think = if (steps.isEmpty()) "Читаю задачу и составляю план" else "" }
+                    steps.add(live)
+                    val onPart: (String, String) -> Unit = { content, reasoning ->
+                        val th = liveThink(content)
+                        live.think = when {
+                            th.isNotBlank() -> th
+                            reasoning.isNotBlank() -> "думает: …" + reasoning.replace(Regex("\\s+"), " ").takeLast(220)
+                            else -> live.think
+                        }
+                    }
                     var r = try { withContext(Dispatchers.IO) {
                         // обрыв или таймаут посреди задачи — не бросаем собранное: две повторные попытки с паузой
                         var tries = 0
                         while (true) {
-                            try { return@withContext Llm.chat(m, msgs, maxTok, patient = true) }
+                            try { return@withContext Llm.chat(m, msgs, maxTok, patient = true, onPart = onPart) }
                             catch (e: java.io.IOException) { if (++tries > 2) throw e; Thread.sleep(4000L * tries) }
                         }
                         @Suppress("UNREACHABLE_CODE") error("")
@@ -449,6 +460,7 @@ object Agent {
                         m = alt; model = alt
                         withContext(Dispatchers.IO) { Llm.chat(alt, msgs, maxTok) }
                     }
+                    steps.remove(live)
                     // кто ответил на самом деле: у Gemini дневной лимит, тогда отвечает соседняя или запасная модель — говорим это прямо
                     Llm.lastUsed.takeIf { it.isNotBlank() }?.let { used ->
                         if (Agent.short(used) != Agent.short(m) && used != announced) {
@@ -815,6 +827,12 @@ object Agent {
             if (noData.isNotEmpty() && searches < 2 * legs.count { it.optString("kind") in setOf("bus", "train", "flight", "car", "taxi", "ship") })
                 out += "нет данных по участкам: ${noData.joinToString(", ") { it.optString("what").take(40) }} — а поисков транспорта всего $searches (поезда и автобусы — Туту, Яндекс Расписания через web_page)"
             return out
+        }
+
+        /** Поле «think» из ещё недописанного JSON-ответа — чтобы показывать мысль, пока модель пишет. */
+        private fun liveThink(partial: String): String {
+            val m = Regex("\"think\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)").find(partial) ?: return ""
+            return m.groupValues[1].replace("\\n", " ").replace("\\\"", "\"").replace("\\\\", "\\").trim()
         }
 
         /** Цифры отчёта, которых нет в результатах инструментов этой задачи: из памяти, из прошлых задач или выдуманные. Пусто — всё подтверждено. */

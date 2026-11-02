@@ -395,7 +395,7 @@ class ChatStore(val fid: String) {
         // «обновись / установи» — без модели, сразу качаем и ставим (модель могла сочинить «я уже обновлён»)
         if (m.att.isBlank() && Updater.isCommand(m.text)) { Updater.run(Agent.app); drainQueue(); return }
         // Быстрая полоса: простую болтовню отвечаем сразу лёгкой моделью с потоковым выводом, минуя агента.
-        if (Prefs.fastLane && !queued && !prompt.contains("Собрать итог из найденного") && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
+        if (Prefs.fastLane && !queued && !prompt.contains("Собрать итог из найденного") && !c.hardText(m.text) && m.att.isBlank() && m.voice.isBlank() && !c.delegated) tryFastLane(c, prompt)
         else c.followUp(prompt)
     }
 
@@ -431,6 +431,8 @@ class ChatStore(val fid: String) {
         drainQueue()
     }
 
+    private class StopLane : RuntimeException()
+
     /** Стримим простой ответ лёгкой моделью; #task/ошибка — запускаем полноценного агента. */
     private fun tryFastLane(c: Agent.Core, prompt: String) {
         c.fastBusy = true
@@ -448,7 +450,7 @@ class ChatStore(val fid: String) {
                     if (mode == 0) {
                         val st = sb.toString().trimStart()
                         if (st.isEmpty()) return@stream
-                        if (st.startsWith("#task", true)) { mode = 2; return@stream }
+                        if (st.startsWith("#task", true)) { mode = 2; throw StopLane() }   // решение есть — поток рвём сразу, не дослушиваем
                         if (st.length < 5 && "#task".startsWith(st, true)) return@stream // ещё не ясно, ждём
                         mode = 1
                         add(Msg(bubbleId, false, st, System.currentTimeMillis(), status = "read"))
