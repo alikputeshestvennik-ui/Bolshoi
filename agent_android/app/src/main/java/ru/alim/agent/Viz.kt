@@ -102,7 +102,7 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
     fun read(ref: Docs.FileRef): String = runCatching { File(ref.uri.path!!).readText() }.getOrDefault("<p>рисунок не найден</p>")
 
     @SuppressLint("SetJavaScriptEnabled")
-    fun setup(wv: WebView, onConsole: ((String) -> Unit)? = null) {
+    fun setup(wv: WebView, onGone: (() -> Unit)? = null, onConsole: ((String) -> Unit)? = null) {
         wv.settings.javaScriptEnabled = true
         wv.settings.allowFileAccess = false
         wv.settings.allowContentAccess = false
@@ -112,7 +112,12 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
         wv.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                if (request.url.scheme == "data") null else WebResourceResponse("text/plain", "utf-8", null)
+                if (request.url.scheme == "data" || request.url.toString() == "about:blank") null else WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                // движок страницы упал — не роняем приложение, просто гасим этот WebView
+                runCatching { (view.parent as? android.view.ViewGroup)?.removeView(view); view.destroy() }
+                onGone?.invoke(); return true
+            }
         }
         wv.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
@@ -129,34 +134,40 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
         suspendCancellableCoroutine { cont ->
             val wv = WebView(ctx.applicationContext)
             val errs = ArrayList<String>()
-            setup(wv) { errs += it }
-            wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            var finishRef: ((Shot) -> Unit)? = null
+            setup(wv, onGone = { finishRef?.invoke(Shot(null, errs + "страница рисунка упала (слишком тяжёлая?)", 0)) }) { errs += it }
+            if (needBitmap) wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
             fun lay(h: Int) {
                 wv.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
                 wv.layout(0, 0, widthPx, h)
             }
             lay(1600)
             var done = false
-            fun finish(s: Shot) { if (done) return; done = true; runCatching { wv.destroy() }; if (cont.isActive) cont.resume(s) }
+            fun finish(s: Shot) { if (done) return; done = true; main.post { runCatching { wv.stopLoading(); wv.destroy() } }; if (cont.isActive) cont.resume(s) }
+            finishRef = { finish(it) }
             val dens = ctx.resources.displayMetrics.density.coerceAtLeast(1f)
             wv.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                    if (request.url.scheme == "data") null else WebResourceResponse("text/plain", "utf-8", null)
+                    if (request.url.scheme == "data" || request.url.toString() == "about:blank") null else WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                    finish(Shot(null, errs + "страница рисунка упала (слишком тяжёлая?)", 0)); return true
+                }
                 override fun onPageFinished(view: WebView, url: String?) {
                     // даём скриптам дорисовать (анимации, canvas)
-                    main.postDelayed({
+                    main.postDelayed({ if (!done) runCatching {
                         wv.evaluateJavascript("Math.ceil(document.documentElement.scrollHeight)") { r ->
                             val hCss = r?.trim('"')?.toDoubleOrNull()?.toInt()?.coerceIn(100, 4000) ?: 500
                             if (!needBitmap) { finish(Shot(null, errs, hCss)); return@evaluateJavascript }
                             val hPx = (hCss * dens).toInt().coerceIn(200, 6000)
                             lay(hPx)
                             main.postDelayed({
+                                if (done) return@postDelayed
                                 val bmp = runCatching { Bitmap.createBitmap(widthPx, hPx, Bitmap.Config.ARGB_8888).also { b -> wv.draw(Canvas(b)) } }.getOrNull()
                                 finish(Shot(bmp, errs, hCss))
                             }, 500)
                         }
-                    }, 1200)
+                    }.onFailure { finish(Shot(null, errs + "не отрисовалось: ${it.message?.take(60)}", 0)) } }, 1200)
                 }
             }
             main.postDelayed({ finish(Shot(null, errs + "не дорисовалось за 12 с", 0)) }, 12_000)
@@ -174,8 +185,16 @@ window.onerror=function(m,u,l){console.error('JS: '+m+' (строка '+l+')')};
 
 @Composable
 private fun VizWeb(html: String, modifier: Modifier, onReady: (WebView) -> Unit = {}) {
-    AndroidView(factory = { c -> WebView(c).also { wv -> Viz.setup(wv); wv.loadDataWithBaseURL("about:blank", html, "text/html", "utf-8", null); onReady(wv) } },
-        update = { }, modifier = modifier)
+    var gone by remember(html) { mutableStateOf(false) }
+    if (gone) {
+        Box(modifier, contentAlignment = Alignment.Center) { Text("Рисунок не отрисовался", style = body(13, color = Th.c.muted)) }
+        return
+    }
+    AndroidView(factory = { c -> WebView(c).also { wv ->
+            Viz.setup(wv, onGone = { gone = true })
+            runCatching { wv.loadDataWithBaseURL("about:blank", html, "text/html", "utf-8", null) }.onFailure { gone = true }
+            onReady(wv) } },
+        update = { }, onRelease = { wv -> runCatching { wv.stopLoading(); wv.destroy() } }, modifier = modifier)
 }
 
 /** Живой рисунок в ленте: заголовок, сама страница, «Развернуть» на весь экран, «В PDF». */

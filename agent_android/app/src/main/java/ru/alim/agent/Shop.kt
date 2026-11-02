@@ -57,7 +57,10 @@ object WebReader {
                         }
                     }
                 }
-                wv.webViewClient = object : WebViewClient() {}
+                wv.webViewClient = object : WebViewClient() {
+                    // упал движок страницы — отдаём что есть, приложение не роняем
+                    override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail?): Boolean { main.post { finish(last) }; return true }
+                }
                 main.postDelayed(tick, 3500)
                 main.postDelayed({ finish(last) }, maxMs)
                 cont.invokeOnCancellation { main.post { finish(last) } }
