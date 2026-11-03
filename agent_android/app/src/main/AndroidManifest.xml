@@ -61,6 +61,9 @@
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="market" /></intent>
     </queries>
 
+    <!-- Лаунчер «Тень · Дом» (та же подпись) читает отсюда последнее сообщение и траты -->
+    <permission android:name="ru.alim.agent.permission.HOME" android:protectionLevel="signature" />
+
     <application
         android:label="Тень"
         android:icon="@mipmap/ic_launcher"
@@ -115,6 +118,8 @@
         <receiver android:name=".BootIn" android:exported="true">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
+        <provider android:name=".HomeProvider" android:authorities="ru.alim.agent.home" android:exported="true"
+            android:readPermission="ru.alim.agent.permission.HOME" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />

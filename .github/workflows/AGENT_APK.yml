@@ -29,6 +29,9 @@ jobs:
           curl -fsSL --retry 3 -o agent_android/app/src/main/assets/fonts/unbounded.ttf \
             "https://github.com/google/fonts/raw/main/ofl/unbounded/Unbounded%5Bwght%5D.ttf" || rm -f agent_android/app/src/main/assets/fonts/unbounded.ttf
           ls -la agent_android/app/src/main/assets/fonts || true
+          # те же шрифты — лаунчеру «Тень · Дом»
+          mkdir -p agent_android/home/src/main/assets/fonts
+          cp agent_android/app/src/main/assets/fonts/*.ttf agent_android/home/src/main/assets/fonts/ 2>/dev/null || true
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -114,7 +117,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apk=$(ls agent_android/app/build/outputs/apk/**/*.apk agent_android/app/build/outputs/apk/*/*.apk 2>/dev/null | head -1)
+          apk=$(ls agent_android/app/build/outputs/apk/*/*.apk 2>/dev/null | head -1)
           cp "$apk" "$RUNNER_TEMP/Ten.apk"
+          home=$(ls agent_android/home/build/outputs/apk/*/*.apk 2>/dev/null | head -1)
+          if [ -n "$home" ]; then cp "$home" "$RUNNER_TEMP/TenHome.apk"; fi
           gh release view ten-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create ten-latest -R "$GITHUB_REPOSITORY" --title "Тень — последняя сборка" --notes "Прямая ссылка на последнюю сборку Тени" --target "$GITHUB_SHA"
           gh release upload ten-latest "$RUNNER_TEMP/Ten.apk" -R "$GITHUB_REPOSITORY" --clobber
+          if [ -f "$RUNNER_TEMP/TenHome.apk" ]; then gh release upload ten-latest "$RUNNER_TEMP/TenHome.apk" -R "$GITHUB_REPOSITORY" --clobber; fi

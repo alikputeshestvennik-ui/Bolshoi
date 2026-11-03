@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- открыть шторку уведомлений свайпом вниз -->
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <!-- данные Тени (та же подпись) -->
+    <uses-permission android:name="ru.alim.agent.permission.HOME" />
+
+    <queries>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
+        <intent><action android:name="android.intent.action.DIAL" /></intent>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
+        <intent><action android:name="android.media.action.STILL_IMAGE_CAMERA" /></intent>
+        <package android:name="ru.alim.agent" />
+        <provider android:authorities="ru.alim.agent.home" />
+    </queries>
+
+    <application
+        android:label="Тень · Дом"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:theme="@style/HomeTheme">
+        <activity android:name=".HomeActivity" android:exported="true"
+            android:launchMode="singleTask" android:stateNotNeeded="true" android:clearTaskOnLaunch="true"
+            android:excludeFromRecents="true" android:resumeWhilePausing="true"
+            android:screenOrientation="portrait"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|density|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «Тень»: квадрат и его сдвинутая серая тень (в безопасной зоне 66dp) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FF9A9A96" android:pathData="M43,43h36v36h-36z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M30,30h40v40h-40z" />
+    <path android:fillColor="#FF111111" android:pathData="M33,33h34v34h-34z" />
+</vector>

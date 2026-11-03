@@ -78,6 +78,8 @@ object Agent {
                val tgPhotos: List<String> = emptyList(), val ytVideos: List<String> = emptyList(), val best: String = "")
 
     lateinit var app: Context
+    /** Агент уже поднят в этом процессе (для лаунчера: без запуска всего агента). */
+    fun ready() = ::app.isInitialized
     var onSpeak: ((String) -> Unit)? = null
 
     private val cores = HashMap<String, Core>()
