@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <!-- данные Тени (та же подпись) -->
     <uses-permission android:name="ru.alim.agent.permission.HOME" />
+    <!-- «недавние» над часами: что открывалось последним (Алим даёт доступ в настройках) -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
     <queries>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>

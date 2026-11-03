@@ -175,3 +175,110 @@ object Apps {
         }
     }.getOrNull() ?: TenState(false, "", 0, "", 0.0, false, "", 0, 0)
 }
+
+/** Что лежит на рабочих столах: приложение или папка. */
+sealed class Item { abstract val id: String }
+data class AppItem(val app: App) : Item() { override val id get() = app.key }
+data class FolderItem(val fid: String, val name: String, val apps: List<App>) : Item() { override val id get() = "folder:$fid" }
+
+object Desk {
+    /** Первый стол — под карточками Тени, 3 ряда; следующие — во весь экран, 6 рядов. */
+    const val FIRST = 12
+    const val NEXT = 24
+    const val MAX = FIRST + NEXT * 6
+
+    private fun sp(c: Context) = c.getSharedPreferences("home", Context.MODE_PRIVATE)
+
+    fun load(c: Context, all: List<App>): List<Item> {
+        val byKey = all.associateBy { it.key }
+        val raw = sp(c).getString("home", null) ?: return Apps.home(c, all).map { AppItem(it) }
+        val a = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        val out = ArrayList<Item>()
+        for (i in 0 until a.length()) {
+            val o = a.opt(i)
+            if (o is String) byKey[o]?.let { out += AppItem(it) }
+            else if (o is JSONObject) {
+                val ks = o.optJSONArray("a") ?: JSONArray()
+                val apps = (0 until ks.length()).mapNotNull { byKey[ks.optString(it)] }
+                when {
+                    apps.size >= 2 -> out += FolderItem(o.optString("f"), o.optString("n").ifBlank { "Папка" }, apps)
+                    apps.size == 1 -> out += AppItem(apps[0])
+                }
+            }
+        }
+        return out
+    }
+
+    fun save(c: Context, items: List<Item>) {
+        val a = JSONArray()
+        items.take(MAX).forEach { when (it) {
+            is AppItem -> a.put(it.app.key)
+            is FolderItem -> a.put(JSONObject().put("f", it.fid).put("n", it.name).put("a", JSONArray().also { j -> it.apps.forEach { x -> j.put(x.key) } }))
+        } }
+        sp(c).edit().putString("home", a.toString()).apply()
+    }
+
+    /** Разбить на столы: новые создаются сами, когда текущий заполнен. */
+    fun pages(items: List<Item>): List<List<Item>> {
+        val first = items.take(FIRST)
+        val rest = items.drop(FIRST).chunked(NEXT)
+        return listOf(first) + rest
+    }
+    fun base(page: Int) = if (page == 0) 0 else FIRST + (page - 1) * NEXT
+
+    fun appsIn(items: List<Item>): List<App> = items.flatMap { when (it) { is AppItem -> listOf(it.app); is FolderItem -> it.apps } }
+    fun contains(items: List<Item>, key: String) = appsIn(items).any { it.key == key }
+
+    /** Убрать приложение откуда угодно (стол или папка); папка из одного — снова приложение. */
+    fun remove(items: List<Item>, key: String): List<Item> = items.mapNotNull { when (it) {
+        is AppItem -> if (it.app.key == key) null else it
+        is FolderItem -> { val rest = it.apps.filter { a -> a.key != key }; when { rest.size >= 2 -> it.copy(apps = rest); rest.size == 1 -> AppItem(rest[0]); else -> null } }
+    } }
+
+    fun move(items: List<Item>, id: String, to: Int): List<Item> {
+        val it = items.firstOrNull { x -> x.id == id } ?: return items
+        val l = items.filter { x -> x.id != id }.toMutableList(); l.add(to.coerceIn(0, l.size), it); return l
+    }
+
+    /** Бросил приложение на другое — папка; на папку — внутрь. */
+    fun merge(items: List<Item>, dragId: String, targetId: String): List<Item> {
+        val drag = items.firstOrNull { it.id == dragId } as? AppItem ?: return items
+        return items.mapNotNull { x -> when {
+            x.id == dragId -> null
+            x.id == targetId && x is AppItem -> FolderItem(System.currentTimeMillis().toString(36), "Папка", listOf(x.app, drag.app))
+            x.id == targetId && x is FolderItem -> x.copy(apps = x.apps + drag.app)
+            else -> x
+        } }
+    }
+}
+
+/** Недавние приложения: из статистики Android (если дан доступ), иначе — что открывали из лаунчера. */
+object Recent {
+    private fun sp(c: Context) = c.getSharedPreferences("home", Context.MODE_PRIVATE)
+
+    fun granted(c: Context): Boolean = runCatching {
+        val ops = c.getSystemService(android.app.AppOpsManager::class.java)
+        val mode = if (android.os.Build.VERSION.SDK_INT >= 29) ops.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), c.packageName)
+            else @Suppress("DEPRECATION") ops.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), c.packageName)
+        mode == android.app.AppOpsManager.MODE_ALLOWED
+    }.getOrDefault(false)
+
+    fun note(c: Context, a: App) {
+        val l = (listOf(a.pkg) + (sp(c).getString("recent", "") ?: "").split(',').filter { it.isNotBlank() && it != a.pkg }).take(20)
+        sp(c).edit().putString("recent", l.joinToString(",")).apply()
+    }
+
+    fun list(c: Context, all: List<App>, n: Int = 10): List<App> {
+        val byPkg = all.groupBy { it.pkg }
+        val pkgs: List<String> = if (granted(c)) runCatching {
+            val um = c.getSystemService(android.app.usage.UsageStatsManager::class.java)
+            val now = System.currentTimeMillis()
+            um.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST, now - 3 * 86_400_000L, now)
+                .filter { it.lastTimeUsed > 0 && it.totalTimeInForeground > 0 }
+                .sortedByDescending { it.lastTimeUsed }.map { it.packageName }.distinct()
+        }.getOrDefault(emptyList()) else (sp(c).getString("recent", "") ?: "").split(',')
+        return pkgs.filter { it != c.packageName }.mapNotNull { byPkg[it]?.firstOrNull() }.take(n)
+    }
+
+    fun ask(c: Context) = Apps.start(c, android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
+}
