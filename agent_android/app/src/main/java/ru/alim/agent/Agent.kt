@@ -443,7 +443,7 @@ object Agent {
             if (isMain && hard0 && !follow && !assemble && extra.isBlank() && Prefs.split) {
                 val st = Step("Смотрю, можно ли разделить на части"); steps.add(st)
                 val plan = runCatching { Split.plan(text, smart(), this@Core) }.getOrNull()
-                st.done = true; st.detail = plan?.let { p -> "делю на ${p.parts.size}: " + p.parts.joinToString(", ") { it.title } + if (p.shared.isNotBlank()) " + общий участок" else "" } ?: "одна задача — делаю целиком"
+                st.done = true; st.detail = plan?.let { p -> "делю на ${p.parts.size}: " + p.parts.joinToString(", ") { it.title } + if (p.shared.isNotBlank()) " + общий участок" else "" } ?: ("одна задача — делаю целиком" + Split.why.takeIf { it.isNotBlank() }?.let { " (${it.take(120)})" }.orEmpty())
                 if (plan != null) {
                     val got = runCatching { Split.run(this@Core, plan) }.getOrNull()
                     if (got != null && !stopped) {

@@ -21,24 +21,37 @@ object Split {
 
     private fun json(t: String): JSONObject? = runCatching { val a = t.indexOf('{'); val b = t.lastIndexOf('}'); JSONObject(t.substring(a, b + 1)) }.getOrNull()
 
+    /** Почему не разделили — видно под шагом (чтобы понять, что пошло не так). */
+    var why = ""
+
     /** Делится ли просьба на независимые части. null — нет (делаем как обычно). */
     suspend fun plan(text: String, model: String, core: Agent.Core): Plan? {
+        why = ""
         val sys = "Ты решаешь, можно ли большую просьбу разделить на НЕЗАВИСИМЫЕ части, чтобы их сделали одновременно разные исполнители. Ответ — только JSON:\n" +
-            "{\"split\": true|false, \"shared\": \"…\", \"parts\": [{\"title\": \"Москва\", \"task\": \"…\"}]}\n" +
-            "split=true — ТОЛЬКО если просьба сравнивает или подбирает 2–5 вариантов (города, направления, даты, магазины, модели), и каждый можно найти отдельно, не зная про остальные. " +
-            "Одна поездка с пересадками, договориться с человеком, исправить документ, «найди лучший вариант» без перечня — split=false.\n" +
+            "{\"split\": true|false, \"why\": \"коротко почему\", \"shared\": \"…\", \"parts\": [{\"title\": \"Москва\", \"task\": \"…\"}]}\n" +
+            "split=true, если просьба сравнивает или подбирает 2–5 перечисленных вариантов (города, направления, страны, даты, магазины, модели товара) и по каждому нужно найти данные. " +
+            "Общая дорога в начале (от дома до аэропорта) делению НЕ мешает — её выносят в shared.\n" +
+            "Пример: «Сравни поездку из Ялты в Москву, Минск и Самару 2–8 января, отель 3 ночи, бюджет 55 000, вернуться до 09:00 8-го» → split=true, " +
+            "parts: Москва, Минск, Самара (в task каждой — вся просьба, но только про свой город), shared: «автобус/дорога Ялта → аэропорт Сочи 2 января после 14:00 и обратно с прибытием в Ялту до 09:00 8 января».\n" +
+            "split=false: один маршрут (даже с пересадками), договориться с человеком, исправить документ, «найди лучший» без перечня вариантов.\n" +
             "task каждой части — полная просьба Алима, но ТОЛЬКО про этот вариант: все условия (даты, время, сроки, бюджет, сколько человек, ночей, что найти, рейтинг) перепиши дословно; другие варианты не упоминай; таблицу и файл не проси.\n" +
-            "shared — участок, ОДИНАКОВЫЙ для всех частей (например дорога от дома до общего аэропорта/вокзала и обратно), с датами и сроками: что именно найти. Нет такого — \"\". " +
-            "Не выноси в shared то, что у частей разное."
-        val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", sys)).put(JSONObject().put("role", "user").put("content", text))
-        val r = runCatching { Llm.chat(model, msgs, 2500, json = true) }.getOrNull() ?: return null
-        core.addCost(r.cost(model), r.inTok, r.outTok)
-        val j = json(r.text) ?: return null
-        if (!j.optBoolean("split")) return null
-        val a = j.optJSONArray("parts") ?: return null
+            "shared — участок, ОДИНАКОВЫЙ для всех частей, с датами и сроками; нет такого — \"\". Не выноси в shared то, что у частей разное."
+        val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", sys)).put(JSONObject().put("role", "user").put("content", "ПРОСЬБА АЛИМА:\n$text"))
+        var j: JSONObject? = null
+        for (attempt in 0..1) {
+            val r = runCatching { Llm.chat(model, msgs, 2500, json = true) }.getOrElse { e -> why = "планировщик не ответил: ${e.message?.take(60)}"; null } ?: continue
+            core.addCost(r.cost(model), r.inTok, r.outTok)
+            j = json(r.text)
+            if (j != null) break
+            why = "ответ не JSON"
+            msgs.put(JSONObject().put("role", "assistant").put("content", r.text.take(1500))).put(JSONObject().put("role", "user").put("content", "Повтори строго одним JSON-объектом по схеме."))
+        }
+        val jj = j ?: return null
+        if (!jj.optBoolean("split")) { why = jj.optString("why").ifBlank { "модель решила не делить" }; return null }
+        val a = jj.optJSONArray("parts") ?: run { why = "нет списка частей"; return null }
         val parts = (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Part(it.optString("title").ifBlank { "Часть" }, it.optString("task")) }.filter { it.task.length > 20 }
-        if (parts.size !in 2..5) return null
-        return Plan(j.optString("shared").trim(), parts)
+        if (parts.size !in 2..5) { why = "частей ${parts.size}"; return null }
+        return Plan(jj.optString("shared").trim(), parts)
     }
 
     /** Одна часть — отдельная Тень; шаги её видно строкой у главной. Возвращает (ответ, отчёт JSON). */
