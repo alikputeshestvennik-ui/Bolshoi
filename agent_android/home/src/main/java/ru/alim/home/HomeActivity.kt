@@ -84,6 +84,47 @@ object Fonts {
     }
 }
 
+/** Если лаунчер упал — запоминаем причину и показываем при следующем запуске (чтобы прислать Claude). */
+object Crash {
+    private var done = false
+    var text by mutableStateOf("")
+    fun install(c: android.content.Context) {
+        val f = java.io.File(c.filesDir, "crash.txt")
+        text = runCatching { if (f.exists()) f.readText() else "" }.getOrDefault("")
+        if (done) return; done = true
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching {
+                val sw = java.io.StringWriter(); e.printStackTrace(java.io.PrintWriter(sw))
+                f.writeText(java.text.SimpleDateFormat("d.MM HH:mm", java.util.Locale("ru")).format(java.util.Date()) + "\n" + sw.toString().take(6000))
+            }
+            prev?.uncaughtException(t, e)
+        }
+    }
+    fun clear(c: android.content.Context) { runCatching { java.io.File(c.filesDir, "crash.txt").delete() }; text = "" }
+}
+
+@Composable
+fun CrashNote(p: Pal) {
+    val ctx = LocalContext.current
+    if (Crash.text.isBlank()) return
+    Dialog(onDismissRequest = { Crash.clear(ctx) }) {
+        Column(Modifier.fillMaxWidth().background(p.card).border(1.dp, p.ink).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Тень · Дом падал", style = body(16, FontWeight.Bold, p.ink))
+            Text("Скопируй и пришли Claude — по этому видно, где ошибка.", style = body(13, c = p.muted))
+            Text(Crash.text.lines().take(8).joinToString("\n"), style = body(11, c = p.ink), maxLines = 8)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Скопировать", style = body(14, FontWeight.SemiBold, p.bg), modifier = Modifier.background(p.ink).clickable {
+                    runCatching { (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                        .setPrimaryClip(android.content.ClipData.newPlainText("crash", Crash.text)) }
+                    Crash.clear(ctx)
+                }.padding(horizontal = 14.dp, vertical = 12.dp))
+                Text("Закрыть", style = body(14, FontWeight.SemiBold, p.ink), modifier = Modifier.border(1.dp, p.line).clickable { Crash.clear(ctx) }.padding(horizontal = 14.dp, vertical = 12.dp))
+            }
+        }
+    }
+}
+
 /** Какой экран открыт поверх главного: home · phone · sms · thread. */
 object Nav {
     var screen by mutableStateOf("home")
@@ -101,6 +142,7 @@ class HomeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         Fonts.load(assets)
+        Crash.install(this)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { if (drawer) drawer = false }
         })
@@ -112,6 +154,7 @@ class HomeActivity : ComponentActivity() {
                 }
             }
             Root(p, drawer, tick, openDrawer = { drawer = it })
+            CrashNote(p)
         }
     }
 

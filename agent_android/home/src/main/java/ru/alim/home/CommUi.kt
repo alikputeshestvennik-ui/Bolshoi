@@ -209,7 +209,12 @@ private fun Dialer(p: Pal, contacts: List<Comm.Contact>) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Box(Modifier.size(64.dp).border(1.dp, p.line).clickable(onClickLabel = "Спросить Тень, чей номер") {
                 if (digits.length >= 5) { val n = num; Thread { Apps.ask(ctx, "Чей это номер: $n? Поищи в переписке, памяти и интернете.") }.start(); Toast.makeText(ctx, "Спросил Тень — ответ в её чате", Toast.LENGTH_SHORT).show() }
-            }, contentAlignment = Alignment.Center) { TenMark(p, 32.dp, p.ink, p.bg) }
+            }, contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TenMark(p, 26.dp, p.ink, p.bg)
+                    Text("чей номер", style = body(9, FontWeight.Bold, p.muted))
+                }
+            }
             Row(Modifier.width(140.dp).height(64.dp).background(p.ink).clickable(onClickLabel = "Позвонить") { if (digits.isNotEmpty()) Comm.call(ctx, num) },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Text("Вызов", style = body(17, FontWeight.Bold, p.bg))
@@ -242,11 +247,11 @@ private fun CallList(p: Pal, calls: List<Comm.Call>, names: Map<String, String>,
             var lastDay = ""
             list.forEach { c ->
                 val d = dayLabel(c.date)
-                if (d != lastDay) { lastDay = d; item(key = "d$d${c.date}") {
+                if (d != lastDay) { lastDay = d; item {
                     Text(d, style = body(11, FontWeight.Bold, p.muted).copy(letterSpacing = 1.2.sp), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))
                 } }
-                item(key = "c${c.date}${c.number}") {
+                item {
                     Row(Modifier.fillMaxWidth().height(64.dp).combinedClickable(onClickLabel = "Позвонить", onLongClick = { openThread(c.number, nm(c)) }) { Comm.call(ctx, c.number) },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Letter(p, first(nm(c)), 44)
@@ -275,7 +280,7 @@ private fun ContactList(p: Pal, contacts: List<Comm.Contact>, openThread: (Strin
                 decorationBox = { inner -> Box { if (q.isEmpty()) Text("Найти контакт", style = body(15, c = p.muted)); inner() } })
         }
         LazyColumn(Modifier.weight(1f)) {
-            items(list, key = { it.name + it.number }) { c ->
+            items(list) { c ->
                 Row(Modifier.fillMaxWidth().height(60.dp).combinedClickable(onClickLabel = "Позвонить", onLongClick = { openThread(c.number, c.name) }) { Comm.call(ctx, c.number) },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Letter(p, first(c.name), 40)
