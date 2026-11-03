@@ -152,6 +152,8 @@ object Agent {
         val isMain: Boolean get() = fid == Friends.MAIN
         /** Копия Тени для части большой задачи: не пишет в чат и историю, расход — в задачу главной. */
         val isPart: Boolean get() = fid.startsWith("part:")
+        private val PART_TOOLS = setOf("now", "calc", "time_calc", "weather", "web_search", "web_read", "web_page", "flights", "hotels",
+            "shop_search", "shop_check", "maps_route", "maps_search", "youtube_search", "tg_channel", "history_search", "memory_search", "file_read", "escalate")
         fun stopRequested() = stopped
         /** Сейчас выполняется просьба, переданная другим другом. */
         @Volatile var delegated = false
@@ -627,7 +629,8 @@ object Agent {
                         splitLeft--
                     }
                     // копия для части: только поиск и расчёт
-                    if (isPart && (t.confirm != null || tool in setOf("file_create", "draw", "pdf_edit", "image_generate", "memory_save", "memory_forget", "delegate", "watch_start", "attachment_send", "file_send", "note_add", "event_create"))) {
+                    // разрешённое — списком (раньше был запретный список, и часть через ask_main запускала новые задачи у главной)
+                    if (isPart && tool !in PART_TOOLS) {
                         msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: в части большой задачи это недоступно — только поиск и расчёт. Итог дай текстом с report.")); continue
                     }
                     val used = (calls[tool] ?: 0) + 1; calls[tool] = used
