@@ -134,6 +134,8 @@ object Agent {
         /** Токены задачи (вход/выход) — у моделей AnyModel баланс считается в токенах, рубли по ним не видны. */
         var tokIn = 0L; private set
         var tokOut = 0L; private set
+        /** Расход помощников — в ту же задачу (видно в «Расходах»). */
+        @Synchronized fun addCost(c: Double, ti: Int, to: Int) { cost += c; tokIn += ti; tokOut += to }
         var model by mutableStateOf(""); private set
         var startedAt by mutableLongStateOf(0L); private set
         var endedAt by mutableLongStateOf(0L); private set
@@ -291,6 +293,7 @@ object Agent {
             append("- Брендовые вещи за 20-40% реальной цены с кричащими скидками −90% — подделки: не советуй их, скажи прямо.\n")
             append("- Итог по товарам оформи списком: «- **Название** — цена, магазин — размер есть/нет/уточнить». Карточки с фото приложение покажет само.\n")
             append("- СПРАВКА / ОТЧЁТ / PDF «о компании и конкурентах», «сравни X с Y»: у каждого сравниваемого найди те же показатели, что у главного (выручка, прибыль, доля рынка, год — с источником), минимум у 3–4 конкурентов. Голый список имён без цифр — не сравнение, не сдавай его. Чего не нашёл — «нет данных» у конкретного.\n")
+            append("- ПОМОЩНИКИ (helpers): если задача делится на независимые части (несколько городов, магазинов, дат, вариантов) — отдай их одним вызовом helpers (2-4 задания, в каждом всё нужное: даты, бюджет, откуда, что найти и с какими цифрами). Они ищут одновременно — так в разы быстрее. Потом сам сложи отчёты, досчитай calc, сделай таблицу и ответ. Мелкие задачи (одно действие) — без помощников.\n")
             append("- ДЕЛАЙ ЗАДАЧУ ЦЕЛИКОМ за один заход: просят список/таблицу — давай ВСЕ элементы (например, все регионы РФ, все города из просьбы), не урезай и не добавляй по одному. Таблицу собирай целиком и создавай одним вызовом file_create. Нужно данные по нескольким городам — поищи по каждому, потом дай итог сразу по всем.\n")
             append("- НИКОГДА не открывай Алиму сайт или браузер вместо работы: web_open и open_app — только если он прямо сказал «открой». Сайты читай сам: web_read, а если страница на JavaScript (Авиасейлс, Туту и т.п.) — web_page. Сказать «зайди сам и посмотри» — нельзя.\n")
             append("- Авиабилеты — ТОЛЬКО инструмент flights (API Авиасейлса), сайт не читай и не открывай. Дату бери из просьбы (сегодня ${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())}); даты нет совсем — спроси одну дату. Покажи 3-5 вариантов: время, авиакомпания, прямой/пересадки, в пути, цена — и скажи, что цены из недавних поисков, точная — в Авиасейлсе. «Открой (второй) рейс / открой в приложении» — flights_open с номером. На выбранную дату пусто — сам проверь весь месяц (date=ГГГГ-ММ) и предложи ближайшие даты. Диапазон («на этой неделе», «в выходные», «в начале декабря») — ОДИН вызов flights на месяц (date=ГГГГ-ММ), из ответа выбери даты диапазона и дай ОДИН общий список; не ищи по одному дню и не разбивай ответ.\n")
@@ -421,6 +424,9 @@ object Agent {
             var reportStale = false     // после доработки по проверке прежняя карточка могла устареть — просим свежую
             var tableRetry = 0
             var sizeRetry = 0
+            var checked = false         // независимая проверка уже была
+            var checkFixed = ""         // что она нашла (исправлено)
+            var checkClean = false      // проверила — ошибок нет
             var reviewRetry = 0
             val reviewAsk = extra.contains("ВЛОЖЕНИЯ") && Regex("верн|сход|провер|глян|посмотри|нормальн|ошибк|оцени|что не так|правильн", RegexOption.IGNORE_CASE).containsMatchIn(text)
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
@@ -735,6 +741,18 @@ object Agent {
                         final = null; continue
                     }
                 }
+                // важная задача: независимый проверяющий (видит только просьбу, ответ и отчёт) — до показа Алиму
+                if (final != null && !checked && !assemble && i < cap - 3 && calls.values.sum() >= 2 && Helpers.important(if (follow) rootTask + "\n" + text else text)) {
+                    checked = true
+                    val issues = runCatching { Helpers.check(Agent.app, if (follow) "$rootTask\nУточнение: $text" else text, final!!, lastBest) }.getOrNull()
+                    if (issues != null) {
+                        checkFixed = issues
+                        reportStale = true; reportRetry = 0
+                        msgs.put(msg("user", "НЕЗАВИСИМАЯ ПРОВЕРКА нашла ошибки:\n$issues\n\nИсправь каждую (если нужно — проверь инструментами), обнови таблицу/файл (тот же name), " +
+                            "потом дай исправленный финальный ответ (tool null, report, best). Что исправил — в ответе одной строкой в конце."))
+                        final = null; continue
+                    } else checkClean = true
+                }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
                 if (fin == null || wrap || audits >= (if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)) break
@@ -814,6 +832,8 @@ object Agent {
                 if (final != null && hard0) unbacked(lastBest, seenAll.toString(), calls, assemble || follow).takeIf { it.isNotEmpty() }?.let { bad ->
                     out += "\n⚠ Не подтверждено поиском в этой задаче: ${bad.take(5).joinToString(", ")} — проверь перед покупкой."
                 }
+                if (final != null && checkClean) out += "\nПроверено независимо — ошибок не нашёл."
+                else if (final != null && checkFixed.isNotBlank() && !out.contains("Проверено", true)) out += "\nПроверено независимо — нашёл и исправил: ${checkFixed.lines().filter { it.isNotBlank() }.size} замеч."
                 finish(true, out)
             } catch (e: CancellationException) {
                 throw e
@@ -1003,7 +1023,7 @@ object Agent {
 
         /** Служебные теги, которые модели иногда пишут вместо текста (<invoke_placeholder/>, <function_calls> …). */
         private val toolWord = mapOf("web_search" to "поиск", "web_read" to "чтение сайта", "web_page" to "чтение сайта", "flights" to "поиск рейсов",
-            "time_calc" to "расчёт времени", "file_create" to "таблицу", "pdf_edit" to "правку PDF", "draw" to "рисунок", "shop_search" to "поиск в магазинах")
+            "time_calc" to "расчёт времени", "file_create" to "таблицу", "pdf_edit" to "правку PDF", "draw" to "рисунок", "helpers" to "помощников", "shop_search" to "поиск в магазинах")
         /** + названия инструментов в тексте для Алима заменяем человеческими словами («проверь через web_search» → «проверь поиском»). */
         private fun stripJunk(t0: String): String {
             var t = t0.replace(Regex("</?(invoke_placeholder|invoke|function_calls|function_results|parameter|tool_call|tool_use)[^>]*>", RegexOption.IGNORE_CASE), "")

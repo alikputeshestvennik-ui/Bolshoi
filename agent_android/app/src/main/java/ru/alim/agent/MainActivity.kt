@@ -18,12 +18,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // во весь экран: приложение рисует и под шторкой, и под нижней полосой
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        CrashLog.install(this)
         Prefs.init(this)
         SkyWeather.load()
         Flight3D.checkCrash()
         Th.load()
         Agent.app = applicationContext
         Chat.init(this)
+        CrashLog.report(this)
         Deleg.init(this); Watch.init(this)
         Online.init(this)
         YaMusic.init(this)

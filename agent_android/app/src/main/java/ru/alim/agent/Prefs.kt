@@ -44,6 +44,10 @@ object Prefs {
     var alertWake: Boolean get() = b("al_wake", true); set(v) = putB("al_wake", v)
     /** Страховка: ставится перед запуском 3D и снимается, когда сцена готова. Осталась после падения — 3D отключается. */
     var flight3dStarting: Boolean get() = b("f3d_start", false); set(v) = sp.edit().putBoolean("f3d_start", v).commit().let {}
+    /** Модель независимой проверки важных задач ("" — как «Руки»). Лучше другой «породы», чем главная. */
+    var checkModel: String get() = s("chk", ""); set(v) = put("chk", v.trim())
+    /** Проверять каждую большую задачу, а не только важные. */
+    var checkAll: Boolean get() = b("chkAll", false); set(v) = putB("chkAll", v)
     var smartModel: String get() = pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())
     /** Глубина рассуждений у моделей AnyModel для «рук»: low / medium / high. high думает минутами на каждом шаге. */
     var effort: String get() = s("eff", "medium"); set(v) = put("eff", v)

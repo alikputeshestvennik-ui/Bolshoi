@@ -50,7 +50,7 @@ object Tools {
     /** Что доступно второстепенным друзьям; остальное они просят у главного через ask_main. */
     val FRIEND_TOOLS = setOf("now", "weather", "web_search", "web_read", "web_page", "tg_channel", "memory_save", "memory_search",
         "youtube_search", "youtube_open", "shop_search", "shop_check", "shop_open", "maps_route", "maps_search",
-        "file_create", "file_read", "pdf_edit", "draw", "image_generate", "escalate", "ask_main")
+        "file_create", "file_read", "pdf_edit", "draw", "helpers", "image_generate", "escalate", "ask_main")
 
     /** Фото из последнего поиска — их можно отправить, не перечисляя. */
     val lastPhotos = ArrayList<Long>()
@@ -1069,6 +1069,20 @@ object Tools {
             val t = Docs.read(ctx, uri, name)
             "Файл «$name»:\n${t.take(14000)}\n\n" + if (name.endsWith(".pdf", true)) "Чтобы изменить PDF — pdf_edit (замена текста на месте, вписать, поля формы, страницы); переписать целиком — file_create type pdf. Оригинал не тронется."
                 else "Чтобы изменить — file_create с тем же type и исправленным содержимым целиком (новый файл рядом, оригинал не тронется)."
+        },
+
+        Tool("helpers", "{\"tasks\": [{\"title\": \"Минск\", \"task\": \"Найди дорогу Ялта → Минск 2-3 января после 14:00 и обратно до 8 января 09:00: рейсы/поезда/автобусы с временем и ценой, источник у каждой цифры\"}, …]} — " +
+            "отдать 2-4 независимых части задачи помощникам: они ищут ОДНОВРЕМЕННО (в разы быстрее) и возвращают отчёты с цифрами и источниками. Помощники только ищут и считают — писать людям и платить не могут") t@{ ctx, a ->
+            val arr = a.optJSONArray("tasks") ?: (a.opt("tasks") as? String)?.let { runCatching { org.json.JSONArray(it) }.getOrNull() } ?: return@t "нужен tasks — список заданий"
+            val tasks = (0 until arr.length()).mapNotNull { k ->
+                when (val o = arr.opt(k)) {
+                    is org.json.JSONObject -> (o.optString("title").ifBlank { "Задание ${k + 1}" } to o.optString("task")).takeIf { it.second.isNotBlank() }
+                    is String -> ("Задание ${k + 1}" to o).takeIf { o.isNotBlank() }
+                    else -> null
+                }
+            }
+            if (tasks.size < 2) return@t "помощники нужны для 2-4 независимых частей; одну часть сделай сам"
+            Helpers.parallel(ctx, tasks)
         },
 
         Tool("draw", "{\"title\": \"Выручка пивоваров 2025\", \"html\": \"<svg …>…</svg><script>…</script>\"} — нарисовать живую картинку в чате: график, диаграмму, схему, шкалу времени, " +

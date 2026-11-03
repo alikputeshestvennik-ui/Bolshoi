@@ -718,6 +718,17 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 ModelEditor("Руки — сложные дела (много шагов, подборки)", "smart", smart, smartIn, smartOut,
                     { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
                 ModelEditor("Фон — уведомления, сводки, сам пишет", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
+                var chk by remember { mutableStateOf(Prefs.checkModel.ifBlank { Prefs.smartModel }) }
+                var chkAll by remember { mutableStateOf(Prefs.checkAll) }
+                ModelEditor("Проверка — независимый взгляд на важные задачи (лучше другая модель, чем у «Рук»)", "check", chk, "0", "0", { chk = it; Prefs.checkModel = it }, {}, {}) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Проверять все большие задачи", style = body(14, FontWeight.SemiBold))
+                            Text("Иначе — только важные: покупки, билеты, оплата, договоры, «проверь».  Около +30–50% к цене задачи.", style = body(12, color = Muted), lineHeight = 16.sp)
+                        }
+                        Toggle(chkAll) { chkAll = it; Prefs.checkAll = it }
+                    }
+                }
                 BigButton("Проверить связь", {
                     check = "Проверяю…"
                     scope.launch {
