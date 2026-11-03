@@ -41,7 +41,8 @@ object Helpers {
         while (n < maxSteps) {
             n++
             if (n == maxSteps) msgs.put(JSONObject().put("role", "user").put("content", "Шаги кончились. Сейчас — только итог (tool null) из того, что уже узнал."))
-            val r = runCatching { Llm.chat(model, msgs, 3000, json = true) }.getOrElse { e -> return ("помощник не смог: ${e.message?.take(120)}" to n) }
+            // сеть — только в фоне (проверку зовут из главного потока задачи)
+            val r = runCatching { withContext(Dispatchers.IO) { Llm.chat(model, msgs, 3000, json = true) } }.getOrElse { e -> return ("помощник не смог: ${e.javaClass.simpleName} ${e.message?.take(120).orEmpty()}" to n) }
             core.addCost(r.cost(model), r.inTok, r.outTok)
             val j = json(r.text) ?: run {
                 msgs.put(JSONObject().put("role", "assistant").put("content", r.text.take(1500)))
@@ -102,7 +103,11 @@ object Helpers {
      * Независимая проверка готового ответа. null — замечаний нет (или проверить не вышло);
      * иначе — список ошибок, что исправить.
      */
+    /** Последняя проверка не состоялась (сбой) — нельзя писать «проверено». */
+    @Volatile var lastFailed = false
+
     suspend fun check(ctx: Context, ask: String, answer: String, report: String, evidence: String = ""): String? {
+        lastFailed = false
         val core = Agent.cur()
         val step = Agent.Step("Независимая проверка")
         withContext(Dispatchers.Main) { core.steps.add(step) }
@@ -118,10 +123,16 @@ object Helpers {
         val task = "ПРОСЬБА АЛИМА:\n$ask\n\nОТВЕТ АГЕНТА:\n${answer.take(5000)}\n\nОТЧЁТ/ТАБЛИЦА АГЕНТА (JSON):\n${report.take(8000)}" +
             (if (evidence.isNotBlank()) "\n\nЧТО НАХОДИЛОСЬ ПО ХОДУ РАБОТЫ (результаты инструментов, кратко):\n${evidence.take(6000)}" else "")
         val got = runCatching { loop(ctx, core, system, task, CHECK, checkModel(), 8, step, mustVerify = true) }.getOrNull()
-        if (got == null) { withContext(Dispatchers.Main) { step.done = true; step.detail = "проверить не вышло" }; return null }
+        if (got == null) { lastFailed = true; withContext(Dispatchers.Main) { step.done = true; step.detail = "проверить не вышло" }; return null }
         val (rep, n) = got
         val clean = rep.trim()
-        val ok = clean.isBlank() || Regex("^(ок|ok|ошибок нет|замечаний нет|всё верно|все верно)\\W*$", RegexOption.IGNORE_CASE).containsMatchIn(clean) || clean.startsWith("не успел") || clean.startsWith("помощник не смог")
+        // проверка не состоялась — так и говорим, а не «ошибок нет»
+        if (clean.startsWith("помощник не смог") || clean.startsWith("не успел")) {
+            lastFailed = true
+            withContext(Dispatchers.Main) { step.done = true; step.detail = "проверить не вышло: ${clean.take(160)}" }
+            return null
+        }
+        val ok = clean.isBlank() || Regex("^(ок|ok|ошибок нет|замечаний нет|всё верно|все верно)\\W*$", RegexOption.IGNORE_CASE).containsMatchIn(clean)
         withContext(Dispatchers.Main) { step.done = true; step.detail = if (ok) "ошибок не нашёл ($n шагов)" else clean.take(400) }
         return if (ok) null else clean
     }

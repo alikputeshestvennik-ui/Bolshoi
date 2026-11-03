@@ -785,7 +785,7 @@ object Agent {
                         msgs.put(msg("user", "НЕЗАВИСИМАЯ ПРОВЕРКА нашла ошибки:\n$issues\n\nИсправь каждую (если нужно — проверь инструментами), обнови таблицу/файл (тот же name), " +
                             "потом дай исправленный финальный ответ (tool null, report, best). Что исправил — в ответе одной строкой в конце."))
                         final = null; continue
-                    } else checkClean = true
+                    } else checkClean = !Helpers.lastFailed
                 }
                 if (ending) break
                 audits++
