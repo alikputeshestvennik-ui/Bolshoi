@@ -63,6 +63,9 @@ object Split {
     @Volatile private var doneCost = 0.0
     /** Сколько частей не дали ничего — главной на них даём больше поисков. */
     @Volatile var failedParts = 0
+    /** Сырые результаты инструментов всех частей. */
+    @Volatile var evidence = ""
+    private val ev = StringBuffer()
 
     /** Одна часть — отдельная Тень; шаги её видно строкой у главной. Возвращает (ответ, отчёт JSON, справилась ли). */
     private suspend fun child(main: Agent.Core, fid: String, task: String, step: Agent.Step): Triple<String, String, Boolean> {
@@ -89,6 +92,7 @@ object Split {
             throw e
         } finally {
             running.remove(c); doneCost += c.cost
+            c.seen?.let { sb -> if (ev.length < 500_000) ev.append('\n').append(sb.toString().take(200_000)) }
             main.addCost(c.cost, c.tokIn.toInt(), c.tokOut.toInt())
         }
         val secs = (System.currentTimeMillis() - t0) / 1000
@@ -101,7 +105,7 @@ object Split {
     /** Сделать части. Возвращает текст для главной Тени: ответы и отчёты частей. */
     suspend fun run(main: Agent.Core, plan: Plan): String? {
         val t0 = System.currentTimeMillis()
-        overLimit = false; doneCost = 0.0; failedParts = 0
+        overLimit = false; doneCost = 0.0; failedParts = 0; ev.setLength(0); evidence = ""
         // старые чаты частей (из прошлой версии) — удалить: их переписка попадала частям в голову
         runCatching { Agent.app.filesDir.listFiles()?.filter { it.name.startsWith("chat_part:") }?.forEach { it.delete() } }
         var shared = ""
@@ -124,6 +128,7 @@ object Split {
                 }
             }.awaitAll()
         }
+        evidence = ev.toString()
         failedParts = res.count { !it.third && it.first.isBlank() }
         if (res.all { it.first.isBlank() }) return null
         val note = if (overLimit) " Части остановлены на лимите ${LIMIT_RUB.toInt()} ₽ — что не успели, по тем «нет данных» (или до 3 поисков)." else ""

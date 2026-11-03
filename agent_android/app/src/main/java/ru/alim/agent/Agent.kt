@@ -158,6 +158,8 @@ object Agent {
         fun stopRequested() = stopped
         /** Часть ответила, ничего не поискав (отказ). */
         @Volatile var refused = false
+        /** Что реально вернули инструменты в этой задаче — части отдают это главной для сверки цифр. */
+        @Volatile var seen: StringBuilder? = null
         /** Сейчас выполняется просьба, переданная другим другом. */
         @Volatile var delegated = false
         /** Модель друга — только из поддерживаемых (GPTunnel и Google убраны), иначе как в настройках. */
@@ -443,9 +445,11 @@ object Agent {
             val reviewAsk = extra.contains("ВЛОЖЕНИЯ") && Regex("верн|сход|провер|глян|посмотри|нормальн|ошибк|оцени|что не так|правильн", RegexOption.IGNORE_CASE).containsMatchIn(text)
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
+            var partNudge = 0
             SrcTime.reset(); Tools.taskVideos.clear(); Viz.task.clear()
             Tools.parseDeadline(if (follow) rootTask else text)
             val seenAll = StringBuilder(if (assemble || follow) rootTask + "\n" + text else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
+            seen = seenAll
             // несколько независимых вариантов (города, магазины) — части делают копии Тени одновременно, главная только собирает
             var splitLeft = -1
             if (isMain && hard0 && !follow && !assemble && extra.isBlank() && Prefs.split) {
@@ -456,6 +460,8 @@ object Agent {
                     val got = runCatching { Split.run(this@Core, plan) }.getOrNull()
                     if (got != null && !stopped) {
                         seenAll.append('\n').append(got)
+                        // сырые результаты поисков частей — чтобы сверка источников не считала их цифры «выдуманными»
+                        seenAll.append('\n').append(Split.evidence)
                         // ответы частей — к той же просьбе (одно сообщение пользователя подряд)
                         val last = msgs.optJSONObject(msgs.length() - 1)
                         last?.put("content", last.optString("content") + "\n\n" + got)
@@ -686,7 +692,10 @@ object Agent {
                 // добросовестность: перед ответом сверяем каждый пункт просьбы; не доделано — доделываем (один заход)
                 // честность: «отправил/создал/поставил» — только если инструмент реально отработал
                 // часть ответила, ничего не поискав (отказ, «не моя задача») — не гоняем её повторами: сразу сдаём как «не справилась»
-                if (isPart && final != null && calls.values.sum() == 0) { refused = true; break }
+                if (isPart && final != null && calls.values.sum() == 0) {
+                    if (partNudge++ < 1) { msgs.put(msg("user", "Ты ничего не поискал. Это настоящая часть задачи Алима — найди инструментами (web_page на Туту/Автовокзалах, flights, hotels) и дай report с маршрутом и источниками.")); final = null; continue }
+                    refused = true; break
+                }
                 final?.let { f -> if (honesty < 1 && i < cap) unbacked(f, doneOk)?.let { why ->
                     honesty++
                     msgs.put(msg("user", "ПРОВЕРКА ЧЕСТНОСТИ: в ответе сказано «${why.substringBefore(" →")}», но в этой задаче это действие не выполнено (инструмент не вызывался или вернул ошибку). Либо сделай его сейчас инструментом, либо перепиши ответ честно: что сделано, а что нет и почему. Никогда не пиши «сделал», если не сделал."))
