@@ -223,7 +223,7 @@ fun Drawer(p: Pal, all: List<App>, hidden: Set<String>, letters: Map<String, Str
 @Composable
 fun AppMenu(p: Pal, a: App, onHome: Boolean, isHidden: Boolean, dismiss: () -> Unit, toggleHome: () -> Unit, moveFirst: (() -> Unit)?, letter: () -> Unit,
             toggleHidden: () -> Unit, info: () -> Unit, uninstall: () -> Unit, extra: List<Pair<String, () -> Unit>> = emptyList()) {
-    Dialog(onDismissRequest = dismiss) {
+    Dialog(onDismissRequest = dismiss) { Pop {
         Column(Modifier.width(280.dp).background(p.card).border(1.dp, p.ink)) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                 Text(a.label, style = body(16, FontWeight.Bold, p.ink), maxLines = 2)
@@ -241,13 +241,13 @@ fun AppMenu(p: Pal, a: App, onHome: Boolean, isHidden: Boolean, dismiss: () -> U
             row("О приложении", info)()
             row("Удалить", uninstall)()
         }
-    }
+    } }
 }
 
 @Composable
 fun LetterDialog(p: Pal, a: App, current: String, dismiss: () -> Unit, save: (String?) -> Unit) {
     var v by remember { mutableStateOf(current) }
-    Dialog(onDismissRequest = dismiss) {
+    Dialog(onDismissRequest = dismiss) { Pop {
         Column(Modifier.width(280.dp).background(p.card).border(1.dp, p.ink).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Буква для «${a.label}»", style = body(16, FontWeight.Bold, p.ink))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -262,5 +262,5 @@ fun LetterDialog(p: Pal, a: App, current: String, dismiss: () -> Unit, save: (St
                 Text("Сохранить", style = body(14, FontWeight.SemiBold, p.bg), modifier = Modifier.background(p.ink).clickable { save(v.trim().ifBlank { null }) }.padding(horizontal = 14.dp, vertical = 12.dp))
             }
         }
-    }
+    } }
 }

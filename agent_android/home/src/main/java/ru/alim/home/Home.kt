@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +51,22 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -88,14 +106,26 @@ fun Root(p: Pal, drawer: Boolean, tick: Int, openDrawer: (Boolean) -> Unit) {
     }
     val open: (App) -> Unit = { a -> Recent.note(ctx, a); Apps.launch(ctx, a) }
 
+    // главный экран под списком: при открытии списка он чуть отъезжает вглубь и гаснет, список выплывает снизу
+    val homeScale by animateFloatAsState(if (drawer) 0.94f else 1f, tween(340, easing = FastOutSlowInEasing), label = "homeScale")
+    val homeAlpha by animateFloatAsState(if (drawer) 0f else 1f, tween(280, easing = FastOutSlowInEasing), label = "homeAlpha")
     Box(Modifier.fillMaxSize().background(p.bg)) {
-        if (!drawer) HomeScreen(p, items, letters, ten, recents, usageOk,
-            onOpenApp = open, onOpenFolder = { openFolder = it.fid },
-            onMenu = { when (it) { is AppItem -> menu = it.app; is FolderItem -> folderMenu = it } },
-            onMove = { id, to -> update(Desk.move(items, id, to)) },
-            onMerge = { d, t -> update(Desk.merge(items, d, t)) },
-            openDrawer = { openDrawer(true) })
-        else Drawer(p, all, hidden, letters, onOpen = { open(it); openDrawer(false) }, onMenu = { menu = it }, close = { openDrawer(false) })
+        Box(Modifier.fillMaxSize().graphicsLayer { scaleX = homeScale; scaleY = homeScale; alpha = homeAlpha }
+            .then(if (drawer) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } } else Modifier)) {
+            HomeScreen(p, items, letters, ten, recents, usageOk,
+                onOpenApp = open, onOpenFolder = { openFolder = it.fid },
+                onMenu = { when (it) { is AppItem -> menu = it.app; is FolderItem -> folderMenu = it } },
+                onMove = { id, to -> update(Desk.move(items, id, to)) },
+                onMerge = { d, t -> update(Desk.merge(items, d, t)) },
+                openDrawer = { openDrawer(true) })
+        }
+        AnimatedVisibility(drawer,
+            enter = slideInVertically(tween(360, easing = FastOutSlowInEasing)) { it / 4 } + fadeIn(tween(240)),
+            exit = slideOutVertically(tween(260, easing = FastOutSlowInEasing)) { it / 5 } + fadeOut(tween(200))) {
+            Box(Modifier.fillMaxSize().background(p.bg).pointerInput(Unit) { detectTapGestures { } }) {
+                Drawer(p, all, hidden, letters, onOpen = { open(it); openDrawer(false) }, onMenu = { menu = it }, close = { openDrawer(false) })
+            }
+        }
     }
 
     menu?.let { a ->
@@ -227,7 +257,8 @@ fun HomeScreen(p: Pal, items: List<Item>, letters: Map<String, String>, ten: App
         }
         if (pages.size > 1) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
             repeat(pages.size) { i ->
-                Box(Modifier.padding(horizontal = 4.dp).size(if (i == pager.currentPage) 8.dp else 6.dp).background(if (i == pager.currentPage) p.ink else p.line))
+                val sz by animateDpAsState(if (i == pager.currentPage) 8.dp else 6.dp, label = "dot")
+                Box(Modifier.padding(horizontal = 4.dp).size(sz).background(if (i == pager.currentPage) p.ink else p.line))
             }
         }
         Column(Modifier.padding(horizontal = 20.dp).padding(top = 10.dp)) {
@@ -279,7 +310,7 @@ private fun AskField(p: Pal, q: String, set: (String) -> Unit, send: () -> Unit)
 @Composable
 private fun ReplyPanel(p: Pal, r: Apps.Reply, asked: String, close: () -> Unit) {
     val ctx = LocalContext.current
-    Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).background(p.card).border(1.dp, p.line).verticalScroll(rememberScrollState()).padding(14.dp),
+    Column(Modifier.fillMaxWidth().animateContentSize(tween(260, easing = FastOutSlowInEasing)).heightIn(max = 360.dp).background(p.card).border(1.dp, p.line).verticalScroll(rememberScrollState()).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (r.working) "ТЕНЬ · ДУМАЕТ" else "ТЕНЬ · ОТВЕТ", style = body(11, FontWeight.Bold, p.muted).copy(letterSpacing = 1.2.sp), modifier = Modifier.weight(1f))
@@ -308,20 +339,44 @@ private fun TenCards(p: Pal, ten: Apps.TenState) {
 }
 
 /**
- * Сетка стола 4 в ряд. Долгое нажатие и тянуть — переставить; держать над серединой другой плитки — папка;
- * отпустить, не двигая, — меню.
+ * Сетка стола 4 в ряд.
+ * Долгое нажатие и тянуть — плитки раздвигаются, отпустил — встала на место.
+ * Подержать над серединой другой плитки ~полсекунды — рамка, отпустил — папка. Отпустить, не двигая, — меню.
  */
 @Composable
 fun DeskGrid(p: Pal, items: List<Item>, base: Int, letters: Map<String, String>, tile: Dp, onOpenApp: (App) -> Unit, onOpenFolder: (FolderItem) -> Unit,
              onMenu: (Item) -> Unit, onMove: (String, Int) -> Unit, onMerge: (String, String) -> Unit) {
     val haptic = LocalHapticFeedback.current
-    val bounds = remember { HashMap<String, Rect>() }
+    val slots = remember { HashMap<Int, Rect>() }          // где стоит каждая позиция сетки (до начала перетаскивания)
     var dragId by remember { mutableStateOf<String?>(null) }
+    var dragFrom by remember { mutableIntStateOf(-1) }
     var dragOff by remember { mutableStateOf(Offset.Zero) }
-    var target by remember { mutableIntStateOf(-1) }
+    var hoverSlot by remember { mutableIntStateOf(-1) }
+    var hoverInner by remember { mutableStateOf(false) }
+    var preview by remember { mutableIntStateOf(-1) }      // куда сейчас раздвинуты плитки
     var merge by remember { mutableStateOf(false) }
     var suppress by remember { mutableStateOf(false) }
     val big = (tile.value * 0.34f).sp
+
+    // порядок, который видит Алим, пока тянет
+    val order: List<String> = remember(items, dragId, preview, merge) {
+        val ids = items.map { it.id }
+        val d = dragId
+        if (d == null || preview < 0) ids else ids.filter { it != d }.toMutableList().also { it.add(preview.coerceIn(0, it.size), d) }
+    }
+    // задержки: над серединой — папка, над краем — раздвинуть
+    LaunchedEffect(hoverSlot, hoverInner, dragId) {
+        merge = false
+        if (dragId == null || hoverSlot < 0) return@LaunchedEffect
+        val occupant = order.getOrNull(hoverSlot)
+        val dragIsApp = items.firstOrNull { it.id == dragId } is AppItem
+        if (hoverInner && occupant != null && occupant != dragId && dragIsApp) {
+            delay(450); merge = true; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        } else if (!hoverInner || occupant == dragId) {
+            delay(180); preview = hoverSlot
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items.chunked(4).forEachIndexed { ri, row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -329,49 +384,61 @@ fun DeskGrid(p: Pal, items: List<Item>, base: Int, letters: Map<String, String>,
                     val idx = ri * 4 + ci
                     val dragging = dragId == item.id
                     val label = when (item) { is AppItem -> item.app.label; is FolderItem -> item.name }
+                    // смещение к позиции в «раздвинутом» порядке — плавно
+                    val shownAt = order.indexOf(item.id)
+                    val shift = if (!dragging && dragId != null && shownAt >= 0 && shownAt != idx) {
+                        val from = slots[idx]; val to = slots[shownAt]
+                        if (from != null && to != null) to.topLeft - from.topLeft else Offset.Zero
+                    } else Offset.Zero
+                    val anim by animateOffsetAsState(shift, spring(dampingRatio = 0.8f, stiffness = 500f), label = "shift")
+                    val press = remember { MutableInteractionSource() }
+                    val pressed by press.collectIsPressedAsState()
+                    val scale by animateFloatAsState(if (dragging) 1.1f else if (pressed) 0.94f else 1f, spring(stiffness = 700f), label = "scale")
                     Column(Modifier.weight(1f)
-                        .onGloballyPositioned { c -> if (dragId != item.id) bounds[item.id] = c.boundsInRoot() }
+                        .onGloballyPositioned { c -> if (dragId == null) slots[idx] = c.boundsInRoot() }
                         .zIndex(if (dragging) 1f else 0f)
-                        .graphicsLayer { if (dragging) { translationX = dragOff.x; translationY = dragOff.y; scaleX = 1.08f; scaleY = 1.08f } }
-                        // нажатие — снаружи, перетаскивание — внутри: так тянущий жест первым забирает палец и не отменяется
-                        .clickable(onClickLabel = "Открыть $label") {
+                        .graphicsLayer {
+                            if (dragging) { translationX = dragOff.x; translationY = dragOff.y } else { translationX = anim.x; translationY = anim.y }
+                            scaleX = scale; scaleY = scale
+                        }
+                        // нажатие — снаружи, перетаскивание — внутри: тянущий жест первым забирает палец и не отменяется
+                        .clickable(interactionSource = press, indication = null, onClickLabel = "Открыть $label") {
                             if (suppress) suppress = false
                             else when (item) { is AppItem -> onOpenApp(item.app); is FolderItem -> onOpenFolder(item) }
                         }
                         .pointerInput(item.id, items) {
                             detectDragGesturesAfterLongPress(
-                                onDragStart = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); suppress = true; dragId = item.id; dragOff = Offset.Zero; target = idx; merge = false },
+                                onDragStart = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress); suppress = true
+                                    dragId = item.id; dragFrom = idx; dragOff = Offset.Zero; hoverSlot = -1; preview = -1; merge = false
+                                },
                                 onDrag = { ch, d ->
                                     ch.consume(); dragOff += d
-                                    val b = bounds[item.id] ?: return@detectDragGesturesAfterLongPress
+                                    val b = slots[idx] ?: return@detectDragGesturesAfterLongPress
                                     val center = b.center + dragOff
-                                    val t = items.indexOfFirst { x -> x.id != item.id && bounds[x.id]?.contains(center) == true }
-                                    if (t >= 0) {
-                                        val tb = bounds[items[t].id]!!
-                                        val inner = Rect(tb.left + tb.width * 0.22f, tb.top + tb.height * 0.18f, tb.right - tb.width * 0.22f, tb.bottom - tb.height * 0.3f)
-                                        merge = item is AppItem && inner.contains(center)
-                                        target = t
-                                    } else { target = idx; merge = false }
+                                    val s = slots.entries.firstOrNull { (k, r) -> k < items.size && r.contains(center) }?.key ?: -1
+                                    if (s != hoverSlot) hoverSlot = s
+                                    val inner = s >= 0 && slots[s]!!.let { r ->
+                                        Rect(r.left + r.width * 0.25f, r.top + r.height * 0.12f, r.right - r.width * 0.25f, r.top + r.height * 0.62f).contains(center) }
+                                    if (inner != hoverInner) hoverInner = inner
                                 },
                                 onDragEnd = {
                                     val moved = dragOff.getDistance() > 24f
-                                    val t = target; val m = merge
-                                    dragId = null; dragOff = Offset.Zero; target = -1; merge = false
+                                    val m = merge; val hs = hoverSlot; val pv = preview
+                                    val occupant = order.getOrNull(hs)
+                                    dragId = null; dragOff = Offset.Zero; hoverSlot = -1; hoverInner = false; preview = -1; merge = false
                                     when {
                                         !moved -> onMenu(item)
-                                        m && t >= 0 && t < items.size -> onMerge(item.id, items[t].id)
-                                        t >= 0 && t != idx -> onMove(item.id, base + t)
+                                        m && occupant != null && occupant != item.id -> onMerge(item.id, occupant)
+                                        else -> { val to = if (hs >= 0) hs else pv; if (to >= 0 && to != idx) onMove(item.id, base + to) }
                                     }
                                 },
-                                onDragCancel = { dragId = null; dragOff = Offset.Zero; target = -1; merge = false; suppress = false })
+                                onDragCancel = { dragId = null; dragOff = Offset.Zero; hoverSlot = -1; hoverInner = false; preview = -1; merge = false; suppress = false })
                         },
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val hl = dragId != null && !dragging && target == idx
-                        Box(Modifier.then(when {
-                            hl && merge -> Modifier.background(p.soft).border(3.dp, p.ink).padding(5.dp)
-                            hl -> Modifier.border(2.dp, p.ink).padding(3.dp)
-                            else -> Modifier
-                        })) {
+                        val isMergeTarget = merge && dragId != null && !dragging && order.getOrNull(hoverSlot) == item.id
+                        val ring by animateDpAsState(if (isMergeTarget) 3.dp else 0.dp, label = "ring")
+                        Box(Modifier.then(if (ring > 0.dp) Modifier.border(ring, p.ink).padding(ring + 2.dp) else Modifier)) {
                             when (item) {
                                 is AppItem -> Tile(p, letters[item.app.key].orEmpty(), tile, big)
                                 is FolderItem -> FolderTile(p, tile, item.apps.size)
@@ -406,7 +473,7 @@ fun FolderTile(p: Pal, size: Dp, count: Int) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderDialog(p: Pal, f: FolderItem, letters: Map<String, String>, onOpen: (App) -> Unit, onRename: () -> Unit, onTakeOut: (App) -> Unit, dismiss: () -> Unit) {
-    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) { Pop {
         Column(Modifier.padding(20.dp).fillMaxWidth().background(p.card).border(1.dp, p.ink).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(f.name, style = TextStyle(fontFamily = Fonts.display, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = p.ink),
@@ -427,12 +494,19 @@ fun FolderDialog(p: Pal, f: FolderItem, letters: Map<String, String>, onOpen: (A
             }
             Text("Долгое нажатие — вынуть на стол. Тап по названию — переименовать.", style = body(12, c = p.muted))
         }
-    }
+    } }
+}
+
+/** Мягкое появление окна: чуть увеличивается и проявляется. */
+@Composable
+fun Pop(content: @Composable () -> Unit) {
+    val st = remember { MutableTransitionState(false).apply { targetState = true } }
+    AnimatedVisibility(st, enter = scaleIn(tween(220, easing = FastOutSlowInEasing), initialScale = 0.92f) + fadeIn(tween(180))) { content() }
 }
 
 @Composable
 fun ListDialog(p: Pal, title: String, sub: String, rows: List<Pair<String, () -> Unit>>, dismiss: () -> Unit) {
-    Dialog(onDismissRequest = dismiss) {
+    Dialog(onDismissRequest = dismiss) { Pop {
         Column(Modifier.width(280.dp).background(p.card).border(1.dp, p.ink)) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                 Text(title, style = body(16, FontWeight.Bold, p.ink), maxLines = 2)
@@ -443,13 +517,13 @@ fun ListDialog(p: Pal, title: String, sub: String, rows: List<Pair<String, () ->
                 Text(t, style = body(15, c = p.ink), modifier = Modifier.fillMaxWidth().clickable { dismiss(); f() }.padding(horizontal = 14.dp, vertical = 14.dp))
             }
         }
-    }
+    } }
 }
 
 @Composable
 fun NameDialog(p: Pal, current: String, dismiss: () -> Unit, save: (String) -> Unit) {
     var v by remember { mutableStateOf(current) }
-    Dialog(onDismissRequest = dismiss) {
+    Dialog(onDismissRequest = dismiss) { Pop {
         Column(Modifier.width(300.dp).background(p.card).border(1.dp, p.ink).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Название папки", style = body(16, FontWeight.Bold, p.ink))
             Box(Modifier.fillMaxWidth().height(52.dp).border(1.dp, p.ink).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
@@ -457,5 +531,5 @@ fun NameDialog(p: Pal, current: String, dismiss: () -> Unit, save: (String) -> U
             }
             Text("Сохранить", style = body(14, FontWeight.SemiBold, p.bg), modifier = Modifier.background(p.ink).clickable { save(v.trim().ifBlank { "Папка" }) }.padding(horizontal = 14.dp, vertical = 12.dp))
         }
-    }
+    } }
 }
