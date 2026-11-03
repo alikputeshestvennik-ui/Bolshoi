@@ -35,6 +35,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -197,22 +204,70 @@ fun HomeScreen(p: Pal, home: List<App>, letters: Map<String, String>, ten: Apps.
                 style = body(13, c = p.muted))
         }
 
-        // «Спроси Тень»
-        Row(Modifier.fillMaxWidth().height(56.dp).background(p.card).border(1.dp, p.ink).clickable(onClickLabel = "Спросить Тень") { Apps.ask(ctx) }
-            .padding(start = 10.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // «Спроси Тень» — пишешь прямо здесь, ответ появляется под полем
+        var q by remember { mutableStateOf("") }
+        var since by remember { mutableLongStateOf(0L) }
+        var reply by remember { mutableStateOf<Apps.Reply?>(null) }
+        var asked by remember { mutableStateOf("") }
+        val kb = LocalSoftwareKeyboardController.current
+        val focus = LocalFocusManager.current
+        val scope = rememberCoroutineScope()
+        fun send() {
+            val t = q.trim(); if (t.isEmpty()) return
+            q = ""; asked = t; reply = Apps.Reply(true, "", emptyList()); kb?.hide(); focus.clearFocus()
+            scope.launch {
+                val ts = withContext(Dispatchers.IO) { Apps.ask(ctx, t) }
+                if (ts == null) { reply = Apps.Reply(false, "", emptyList(), error = "Тень не ответила — открой её один раз и обнови до последней версии"); return@launch }
+                since = ts
+            }
+        }
+        LaunchedEffect(since) {
+            if (since == 0L) return@LaunchedEffect
+            var quiet = 0
+            val stop = System.currentTimeMillis() + 5 * 60_000L
+            while (System.currentTimeMillis() < stop) {
+                delay(900)
+                val r = withContext(Dispatchers.IO) { Apps.reply(ctx, since) } ?: continue
+                reply = r
+                // закончила: не работает и ответ не меняется пару опросов подряд
+                if (!r.working && r.msgs.isNotEmpty()) { if (++quiet >= 2) break } else quiet = 0
+            }
+            if (reply?.msgs.isNullOrEmpty()) reply = Apps.Reply(false, "", emptyList(), error = "Ответа пока нет — загляни в чат Тени")
+        }
+        Row(Modifier.fillMaxWidth().height(56.dp).background(p.card).border(1.dp, p.ink).padding(start = 10.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             TenMark(p, 36.dp, p.ink, p.card)
-            Text("Спроси Тень", style = body(16, c = p.muted), modifier = Modifier.weight(1f))
+            BasicTextField(q, { q = it }, singleLine = true, textStyle = body(16, c = p.ink), cursorBrush = SolidColor(p.ink), modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { send() }),
+                decorationBox = { inner -> Box { if (q.isEmpty()) Text("Спроси Тень", style = body(16, c = p.muted)); inner() } })
+            if (q.isNotBlank()) Box(Modifier.size(48.dp).background(p.ink).clickable(onClickLabel = "Отправить") { send() }, contentAlignment = Alignment.Center) {
+                Text("→", style = body(22, FontWeight.Bold, p.bg))
+            }
         }
 
-        // последнее от Тени (или игра, которая ждёт)
-        val hm = SimpleDateFormat("HH:mm", Locale("ru"))
-        if (ten.gameTitle.isNotBlank() || ten.gameLimit > 0) Card(p, "ТЕНЬ · ИГРА", "", ten.gameTitle.ifBlank { "Игра ждёт тебя" }, "Ход ${ten.gameTurns} из ${ten.gameLimit}") { Apps.ten(ctx) }
-        else if (ten.lastText.isNotBlank()) Card(p, "ТЕНЬ" + (ten.lastMeta.substringBefore(" · ").takeIf { it.isNotBlank() && it.length < 24 }?.let { " · ${it.uppercase()}" } ?: ""),
-            if (ten.lastTs > 0) hm.format(Date(ten.lastTs)) else "", ten.lastText.replace("**", "").lines().first { it.isNotBlank() }.take(140), null) { Apps.ten(ctx) }
-
-        if (ten.ok) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Small(p, "АКТИВНО", if (ten.busy) "Идёт задача" else "Нет задач", Modifier.weight(1f))
-            Small(p, "ПОТРАЧЕНО СЕГОДНЯ", String.format(Locale("ru"), "%.2f ₽", ten.spent), Modifier.weight(1f))
+        val r = reply
+        if (r != null) Column(Modifier.fillMaxWidth().heightIn(max = 380.dp).background(p.card).border(1.dp, p.line).verticalScroll(rememberScrollState()).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (r.working) "ТЕНЬ · ДУМАЕТ" else "ТЕНЬ · ОТВЕТ", style = body(11, FontWeight.Bold, p.muted).copy(letterSpacing = 1.2.sp), modifier = Modifier.weight(1f))
+                Text("×", style = body(22, c = p.muted), modifier = Modifier.clickable(onClickLabel = "Закрыть ответ") { reply = null; since = 0L }.padding(horizontal = 6.dp))
+            }
+            Text("› $asked", style = body(13, c = p.muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (r.error.isNotBlank()) Text(r.error, style = body(15, c = p.ink))
+            if (r.msgs.isEmpty() && r.error.isBlank()) Text(r.step.ifBlank { "…" }, style = body(15, c = p.muted))
+            r.msgs.forEach { m -> Text(m.text.replace("**", ""), style = body(15, c = p.ink).copy(lineHeight = 21.sp)) }
+            if (r.working && r.msgs.isNotEmpty() && r.step.isNotBlank()) Text(r.step, style = body(12, c = p.muted))
+            if (r.msgs.any { it.rich }) Text("Карточки и файлы — в чате Тени ›", style = body(13, FontWeight.SemiBold, p.ink), modifier = Modifier.clickable { Apps.ten(ctx) }.padding(vertical = 4.dp))
+        } else {
+            // последнее от Тени (или игра, которая ждёт)
+            val hm = SimpleDateFormat("HH:mm", Locale("ru"))
+            if (ten.gameTitle.isNotBlank() || ten.gameLimit > 0) Card(p, "ТЕНЬ · ИГРА", "", ten.gameTitle.ifBlank { "Игра ждёт тебя" }, "Ход ${ten.gameTurns} из ${ten.gameLimit}") { Apps.ten(ctx) }
+            else if (ten.lastText.isNotBlank()) Card(p, "ТЕНЬ" + (ten.lastMeta.substringBefore(" · ").takeIf { it.isNotBlank() && it.length < 24 }?.let { " · ${it.uppercase()}" } ?: ""),
+                if (ten.lastTs > 0) hm.format(Date(ten.lastTs)) else "", ten.lastText.replace("**", "").lines().first { it.isNotBlank() }.take(140), null) { Apps.ten(ctx) }
+            if (ten.ok) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Small(p, "АКТИВНО", if (ten.busy) "Идёт задача" else "Нет задач", Modifier.weight(1f))
+                Small(p, "ПОТРАЧЕНО СЕГОДНЯ", String.format(Locale("ru"), "%.2f ₽", ten.spent), Modifier.weight(1f))
+            }
         }
 
         // сетка главного экрана: занимает всё, что осталось над нижним рядом; плитки ужимаются, если рядов много

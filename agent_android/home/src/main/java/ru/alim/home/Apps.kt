@@ -140,6 +140,26 @@ object Apps {
         }
     }
 
+    // ——— вопрос Тени прямо с главного ———
+
+    class Msg(val text: String, val rich: Boolean)
+    class Reply(val working: Boolean, val step: String, val msgs: List<Msg>, val error: String = "")
+
+    /** Отправить вопрос в чат Тени. Время отправки — с него ждём ответ. null — Тень недоступна. */
+    fun ask(c: Context, text: String): Long? = runCatching {
+        c.contentResolver.call(Uri.parse("content://ru.alim.agent.home"), "ask", text, null)?.getLong("ts")
+    }.getOrNull()
+
+    fun reply(c: Context, since: Long): Reply? = runCatching {
+        c.contentResolver.query(Uri.parse("content://ru.alim.agent.home/reply?since=$since"), null, null, null, null)?.use { cur ->
+            if (!cur.moveToFirst()) return@use null
+            val o = JSONObject(cur.getString(0))
+            val a = o.optJSONArray("msgs") ?: JSONArray()
+            Reply(o.optBoolean("working"), o.optString("step"),
+                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Msg(it.optString("text"), it.optBoolean("files") || it.optBoolean("items")) })
+        }
+    }.getOrNull()
+
     // ——— данные Тени ———
 
     class TenState(val ok: Boolean, val lastText: String, val lastTs: Long, val lastMeta: String, val spent: Double, val busy: Boolean,

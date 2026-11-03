@@ -5,6 +5,11 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -17,9 +22,47 @@ import java.io.File
 class HomeProvider : ContentProvider() {
     override fun onCreate() = true
 
+    private fun allowed() = context?.checkCallingOrSelfPermission("ru.alim.agent.permission.HOME") == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Поднять Тень в процессе так же, как при открытии окна (без экрана). */
+    private fun boot() {
+        val ctx = context ?: return
+        Prefs.init(ctx); runCatching { Th.load() }
+        if (!Agent.ready()) Agent.app = ctx.applicationContext
+        Chat.init(ctx); runCatching { Deleg.init(ctx) }; runCatching { Watch.init(ctx) }; Online.init(ctx)
+        runCatching { ArturService.start(ctx) }   // держит Тень живой, пока она отвечает
+    }
+
+    /** «ask» — вопрос с главного экрана лаунчера: уходит в чат Тени как обычное сообщение. Возвращает время отправки. */
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (!allowed()) throw SecurityException("нет доступа")
+        if (method != "ask" || arg.isNullOrBlank()) return null
+        val ts = System.currentTimeMillis()
+        val done = CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post { try { boot(); Chat.main.send(arg.trim()) } finally { done.countDown() } }
+        done.await(5, TimeUnit.SECONDS)
+        return Bundle().apply { putLong("ts", ts) }
+    }
+
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, args: Array<out String>?, sort: String?): Cursor {
         val c = MatrixCursor(arrayOf("json"))
         val ctx = context ?: return c
+        // ответ на вопрос с главного: всё, что Тень написала после since, и работает ли ещё
+        if (uri.lastPathSegment == "reply") {
+            val since = uri.getQueryParameter("since")?.toLongOrNull() ?: 0L
+            val o = JSONObject()
+            runCatching {
+                val core = Agent.of(Friends.MAIN)
+                o.put("working", core.busy || core.fastBusy)
+                o.put("step", runCatching { core.steps.lastOrNull { !it.done }?.text.orEmpty() }.getOrDefault(""))
+                val out = JSONArray()
+                Chat.main.msgs.toList().filter { !it.me && !it.note && it.ts >= since && it.text.isNotBlank() }.forEach { m ->
+                    out.put(JSONObject().put("text", m.text.take(4000)).put("ts", m.ts).put("files", m.files.isNotBlank()).put("items", m.items.isNotBlank()))
+                }
+                o.put("msgs", out)
+            }.onFailure { o.put("working", false).put("msgs", JSONArray()) }
+            c.addRow(arrayOf(o.toString())); return c
+        }
         val o = JSONObject()
         runCatching {
             val a = JSONArray(File(ctx.filesDir, "chat.json").readText())
