@@ -80,6 +80,8 @@ object Split {
     /** Сделать части. Возвращает текст для главной Тени: ответы и отчёты частей. */
     suspend fun run(main: Agent.Core, plan: Plan): String? {
         val t0 = System.currentTimeMillis()
+        // старые чаты частей (из прошлой версии) — удалить: их переписка попадала частям в голову
+        runCatching { Agent.app.filesDir.listFiles()?.filter { it.name.startsWith("chat_part:") }?.forEach { it.delete() } }
         var shared = ""
         if (plan.shared.isNotBlank()) {
             val st = Agent.Step("Общий участок · один раз для всех")
