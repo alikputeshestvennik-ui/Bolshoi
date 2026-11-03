@@ -315,13 +315,14 @@ fun HomeScreen(p: Pal, pages: List<List<Item>>, letters: Map<String, String>, te
                 val slice = pages.getOrElse(page) { emptyList() }
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (page == 0) {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // часы — сколько им нужно, «недавние» — в оставшееся место
+                        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Date(now)).uppercase(), style = body(13, FontWeight.SemiBold, p.muted).copy(letterSpacing = 0.4.sp), maxLines = 1)
                                 Text(SimpleDateFormat("HH:mm", Locale("ru")).format(Date(now)), style = TextStyle(fontFamily = Fonts.display, fontSize = 58.sp, lineHeight = 66.sp, fontWeight = FontWeight.SemiBold, color = p.ink), maxLines = 1)
                                 Text(when { !ten.ok -> "Тень не отвечает"; ten.busy -> "Тень работает над задачей"; else -> "Тень на связи" }, style = body(13, c = p.muted), maxLines = 1)
                             }
-                            Recents(p, recents, usageOk, letters, onOpenApp)
+                            Recents(p, recents, usageOk, letters, onOpenApp, Modifier.weight(1f))
                         }
                         AskField(p, q, { q = it }, ::send)
                         val r = reply
@@ -380,9 +381,9 @@ fun HomeScreen(p: Pal, pages: List<List<Item>>, letters: Map<String, String>, te
 
 /** Последние 10 приложений — лентой справа от часов. */
 @Composable
-fun Recents(p: Pal, recents: List<App>, usageOk: Boolean, letters: Map<String, String>, onOpen: (App) -> Unit) {
+fun Recents(p: Pal, recents: List<App>, usageOk: Boolean, letters: Map<String, String>, onOpen: (App) -> Unit, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
-    Column(Modifier.width(150.dp).padding(bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.padding(bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("НЕДАВНИЕ", style = body(10, FontWeight.Bold, p.muted).copy(letterSpacing = 1.2.sp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(recents, key = { it.key }) { a ->
