@@ -25,6 +25,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.zIndex
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -119,7 +129,9 @@ fun Root(p: Pal, drawer: Boolean, tick: Int, openDrawer: (Boolean) -> Unit) {
     val letters = remember(home, all, version) { Apps.letters(ctx, home) + Apps.letters(ctx, all).filterKeys { k -> home.none { it.key == k } }.mapValues { (k, v) -> Apps.customLetters(ctx)[k] ?: v.take(1) } }
 
     Box(Modifier.fillMaxSize().background(p.bg)) {
-        if (!drawer) HomeScreen(p, home, letters, ten, onOpen = { Apps.launch(ctx, it) }, onMenu = { menu = it }, openDrawer = { openDrawer(true) })
+        if (!drawer) HomeScreen(p, home, letters, ten, onOpen = { Apps.launch(ctx, it) }, onMenu = { menu = it },
+            onMove = { a, to -> val l = home.filter { it.key != a.key }.toMutableList(); l.add(to.coerceIn(0, l.size), a); home = l; Apps.setHome(ctx, l) },
+            openDrawer = { openDrawer(true) })
         else Drawer(p, all, hidden, letters, onOpen = { Apps.launch(ctx, it); openDrawer(false) }, onMenu = { menu = it }, close = { openDrawer(false) })
     }
 
@@ -164,7 +176,8 @@ fun TenMark(p: Pal, size: Dp, ink: Color, paper: Color) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun HomeScreen(p: Pal, home: List<App>, letters: Map<String, String>, ten: Apps.TenState, onOpen: (App) -> Unit, onMenu: (App) -> Unit, openDrawer: () -> Unit) {
+fun HomeScreen(p: Pal, home: List<App>, letters: Map<String, String>, ten: Apps.TenState, onOpen: (App) -> Unit, onMenu: (App) -> Unit,
+               onMove: (App, Int) -> Unit, openDrawer: () -> Unit) {
     val ctx = LocalContext.current
     val now by produceState(System.currentTimeMillis()) { while (true) { value = System.currentTimeMillis(); delay(1000L * (60 - (value / 1000) % 60)) } }
     var drag by remember { mutableFloatStateOf(0f) }
@@ -175,7 +188,7 @@ fun HomeScreen(p: Pal, home: List<App>, letters: Map<String, String>, ten: Apps.
                 drag = 0f
             }) { _, d -> drag += d }
         }
-        .padding(horizontal = 20.dp).padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        .padding(horizontal = 20.dp).padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Date(now)).uppercase(), style = body(13, FontWeight.SemiBold, p.muted).copy(letterSpacing = 0.4.sp))
@@ -202,33 +215,77 @@ fun HomeScreen(p: Pal, home: List<App>, letters: Map<String, String>, ten: Apps.
             Small(p, "ПОТРАЧЕНО СЕГОДНЯ", String.format(Locale("ru"), "%.2f ₽", ten.spent), Modifier.weight(1f))
         }
 
-        Spacer(Modifier.weight(1f))
-
-        // сетка главного экрана, 4 в ряд
-        home.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { a ->
-                    Column(Modifier.weight(1f).combinedClickable(onClickLabel = "Открыть ${a.label}", onLongClick = { onMenu(a) }) { onOpen(a) },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Tile(p, letters[a.key].orEmpty(), 64.dp, 22.sp)
-                        Text(a.label, style = body(12, FontWeight.SemiBold, p.ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+        // сетка главного экрана: занимает всё, что осталось над нижним рядом; плитки ужимаются, если рядов много
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val rows = ((home.size + 3) / 4).coerceAtLeast(1)
+            val hint = 34.dp; val label = 18.dp; val gap = 12.dp
+            val byH = (maxHeight - hint) / rows - gap - label - 6.dp
+            val byW = (maxWidth - 24.dp) / 4
+            val tile = minOf(64.dp, byH, byW).coerceAtLeast(36.dp)
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                HomeGrid(p, home, letters, tile, onOpen, onMenu, onMove)
+                Text("↑  все приложения", style = body(11, FontWeight.SemiBold, p.muted), modifier = Modifier.align(Alignment.CenterHorizontally)
+                    .clickable(onClickLabel = "Все приложения") { openDrawer() }.padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
 
-        Text("↑  все приложения", style = body(11, FontWeight.SemiBold, p.muted), modifier = Modifier.align(Alignment.CenterHorizontally)
-            .clickable(onClickLabel = "Все приложения") { openDrawer() }.padding(8.dp))
-
         // нижний ряд — значки, не буквы
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))
-        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Dock(p, "Телефон", { Apps.dial(ctx) }) { Glyph.Phone(it) }
             Dock(p, "Сообщения", { Apps.sms(ctx) }) { Glyph.Messages(it) }
             Dock(p, "Тень", { Apps.ten(ctx) }) { TenMark(p, 40.dp, if (p.dark) p.tile else p.onTile, if (p.dark) p.onTile else p.tile) }
             Dock(p, "Интернет", { Apps.browser(ctx) }) { Glyph.Internet(it) }
             Dock(p, "Камера", { Apps.camera(ctx) }) { Glyph.Camera(it) }
+        }
+    }
+}
+
+/** Сетка 4 в ряд. Долгое нажатие и тянуть — переставить; отпустить на месте — меню. */
+@Composable
+fun HomeGrid(p: Pal, home: List<App>, letters: Map<String, String>, tile: Dp, onOpen: (App) -> Unit, onMenu: (App) -> Unit, onMove: (App, Int) -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val bounds = remember { HashMap<String, Rect>() }
+    var dragKey by remember { mutableStateOf<String?>(null) }
+    var dragOff by remember { mutableStateOf(Offset.Zero) }
+    var target by remember { mutableIntStateOf(-1) }
+    // после долгого нажатия отпускание пальца не должно ещё и открывать приложение
+    var suppress by remember { mutableStateOf(false) }
+    val big = (tile.value * 0.34f).sp
+    fun targetOf(center: Offset): Int = home.indexOfFirst { a -> bounds[a.key]?.contains(center) == true }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        home.chunked(4).forEachIndexed { ri, row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEachIndexed { ci, a ->
+                    val idx = ri * 4 + ci
+                    val dragging = dragKey == a.key
+                    Column(Modifier.weight(1f)
+                        .onGloballyPositioned { if (!dragging) bounds[a.key] = it.boundsInRoot() }
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer { if (dragging) { translationX = dragOff.x; translationY = dragOff.y; scaleX = 1.08f; scaleY = 1.08f } }
+                        .pointerInput(a.key, home) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); suppress = true; dragKey = a.key; dragOff = Offset.Zero; target = idx },
+                                onDrag = { ch, d -> ch.consume(); dragOff += d
+                                    bounds[a.key]?.let { b -> val t = targetOf(b.center + dragOff); if (t >= 0) target = t } },
+                                onDragEnd = {
+                                    val moved = dragOff.getDistance() > 24f
+                                    val t = target
+                                    dragKey = null; dragOff = Offset.Zero; target = -1
+                                    if (!moved) onMenu(a) else if (t >= 0 && t != idx) onMove(a, t)
+                                },
+                                onDragCancel = { dragKey = null; dragOff = Offset.Zero; target = -1; suppress = false })
+                        }
+                        .clickable(onClickLabel = "Открыть ${a.label}") { if (suppress) suppress = false else onOpen(a) },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.then(if (target == idx && dragKey != null && !dragging) Modifier.border(2.dp, p.ink).padding(3.dp) else Modifier)) {
+                            Tile(p, letters[a.key].orEmpty(), tile, big)
+                        }
+                        Text(a.label, style = body(12, FontWeight.SemiBold, p.ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
     }
 }
@@ -273,8 +330,12 @@ fun Drawer(p: Pal, all: List<App>, hidden: Set<String>, letters: Map<String, Str
     val state = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
+    BackHandler { close() }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(top = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clickable(onClickLabel = "Назад") { close() }, contentAlignment = Alignment.Center) {
+                Text("←", style = body(26, FontWeight.SemiBold, p.ink))
+            }
             Text("Приложения", style = TextStyle(fontFamily = Fonts.display, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = p.ink), modifier = Modifier.weight(1f))
             Text("${all.size - hidden.size}" + if (hidden.isNotEmpty()) " · скрыто ${hidden.size}" else "", style = body(13, c = p.muted))
         }
