@@ -34,7 +34,8 @@ object Helpers {
 
     /** Один помощник: свой короткий цикл «подумал → инструмент → результат», до maxSteps шагов. */
     private suspend fun loop(ctx: Context, core: Agent.Core, system: String, task: String, allowed: Set<String>, model: String, maxSteps: Int,
-                             step: Agent.Step?): Pair<String, Int> {
+                             step: Agent.Step?, mustVerify: Boolean = false): Pair<String, Int> {
+        var used = 0
         val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", system)).put(JSONObject().put("role", "user").put("content", task))
         var n = 0
         while (n < maxSteps) {
@@ -49,7 +50,16 @@ object Helpers {
             } ?: continue
             msgs.put(JSONObject().put("role", "assistant").put("content", r.text.take(3000)))
             val tool = j.optString("tool").takeIf { it.isNotBlank() && it != "null" }
-            if (tool == null) return (j.optString("report").ifBlank { j.toString() } to n)
+            if (tool == null) {
+                val rep = j.optString("report").ifBlank { j.toString() }
+                // проверяющий сказал «ОК», ничего не проверив, — так не годится: один раз отправляем проверять
+                if (mustVerify && used < 2 && n < maxSteps - 1 && Regex("^\\s*(ок|ok)\\W*$", RegexOption.IGNORE_CASE).containsMatchIn(rep)) {
+                    msgs.put(JSONObject().put("role", "user").put("content", "Ты ещё ничего не проверил инструментами. Проверь сейчас 2 главных факта (решающий рейс/автобус/поезд и его цену), потом вердикт."))
+                    continue
+                }
+                return (rep to n)
+            }
+            used++
             val t = Tools.byName(tool)
             if (t == null || tool !in allowed) { msgs.put(JSONObject().put("role", "user").put("content", "РЕЗУЛЬТАТ: инструмент «$tool» тебе недоступен. Можно: ${allowed.joinToString()}.")); continue }
             val args = j.optJSONObject("args") ?: JSONObject()
@@ -92,20 +102,22 @@ object Helpers {
      * Независимая проверка готового ответа. null — замечаний нет (или проверить не вышло);
      * иначе — список ошибок, что исправить.
      */
-    suspend fun check(ctx: Context, ask: String, answer: String, report: String): String? {
+    suspend fun check(ctx: Context, ask: String, answer: String, report: String, evidence: String = ""): String? {
         val core = Agent.cur()
         val step = Agent.Step("Независимая проверка")
         withContext(Dispatchers.Main) { core.steps.add(step) }
         val system = "Ты — независимый проверяющий. Другой агент выполнил просьбу Алима; ты видишь только просьбу, его ответ и отчёт. Сейчас: ${now()}.\n" +
             "Найди ОШИБКИ, которые подведут Алима: неверная арифметика (пересчитай calc), не выполненные условия просьбы (бюджет, сроки, «успеть к…», без пересадок, количество людей), " +
             "даты и время (часовые пояса, ночь, прибытие после дедлайна), забытые части (обратная дорога, ночёвка, трансфер), цифры без источника или противоречащие друг другу. " +
-            "Если сомневаешься в главной цифре (цена, рейс, расписание) — проверь её сам инструментом (до 4 проверок).\n" +
+            "ОБЯЗАТЕЛЬНО до вердикта проверь сам инструментами 2-3 главных факта, от которых зависит решение (самый дорогой или решающий отрезок, расписание, цена) — без проверки «ОК» не принимается. " +
+            "Ищи противоречия между найденным в ходе работы (список ниже) и ответом: если раньше находилось другое расписание или цена — это ошибка, пока не доказано обратное.\n" +
             "Не придирайся к стилю и оформлению — только то, что меняет решение или деньги.\n" +
             "Отвечай ТОЛЬКО JSON: {\"step\": \"…\", \"tool\": \"имя\", \"args\": {}} — проверить инструментом; " +
             "или итог: {\"tool\": null, \"report\": \"ОК\"} если ошибок нет, иначе {\"tool\": null, \"report\": \"1) что не так — как должно быть; 2) …\"}.\n" +
             "Инструменты:\n" + toolsText(CHECK)
-        val task = "ПРОСЬБА АЛИМА:\n$ask\n\nОТВЕТ АГЕНТА:\n${answer.take(5000)}\n\nОТЧЁТ/ТАБЛИЦА АГЕНТА (JSON):\n${report.take(8000)}"
-        val got = runCatching { loop(ctx, core, system, task, CHECK, checkModel(), 7, step) }.getOrNull()
+        val task = "ПРОСЬБА АЛИМА:\n$ask\n\nОТВЕТ АГЕНТА:\n${answer.take(5000)}\n\nОТЧЁТ/ТАБЛИЦА АГЕНТА (JSON):\n${report.take(8000)}" +
+            (if (evidence.isNotBlank()) "\n\nЧТО НАХОДИЛОСЬ ПО ХОДУ РАБОТЫ (результаты инструментов, кратко):\n${evidence.take(6000)}" else "")
+        val got = runCatching { loop(ctx, core, system, task, CHECK, checkModel(), 8, step, mustVerify = true) }.getOrNull()
         if (got == null) { withContext(Dispatchers.Main) { step.done = true; step.detail = "проверить не вышло" }; return null }
         val (rep, n) = got
         val clean = rep.trim()
