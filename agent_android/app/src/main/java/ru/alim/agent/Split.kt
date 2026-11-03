@@ -39,7 +39,8 @@ object Split {
         val msgs = JSONArray().put(JSONObject().put("role", "system").put("content", sys)).put(JSONObject().put("role", "user").put("content", "ПРОСЬБА АЛИМА:\n$text"))
         var j: JSONObject? = null
         for (attempt in 0..1) {
-            val r = runCatching { Llm.chat(model, msgs, 2500, json = true) }.getOrElse { e -> why = "планировщик не ответил: ${e.message?.take(60)}"; null } ?: continue
+            // сеть — только в фоне: в главном потоке Android запрос обрывает
+            val r = runCatching { withContext(Dispatchers.IO) { Llm.chat(model, msgs, 2500, json = true) } }.getOrElse { e -> why = "планировщик не ответил: ${e.javaClass.simpleName} ${e.message?.take(60).orEmpty()}"; null } ?: continue
             core.addCost(r.cost(model), r.inTok, r.outTok)
             j = json(r.text)
             if (j != null) break
