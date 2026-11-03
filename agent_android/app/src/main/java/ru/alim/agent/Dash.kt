@@ -559,7 +559,7 @@ private fun splitResult(text: String): ResultParts {
     val pick = pick0 ?: ss.firstOrNull().orEmpty()
     var title = pick
     // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия, список уходит в текст
-    Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s)").find(title)?.let { m -> if (m.range.first >= 8) title = title.substring(0, m.range.first) }
+    Regex("(?<!\\d):\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s)").find(title)?.let { m -> if (m.range.first >= 8) title = title.substring(0, m.range.first) }
     if (title.length > 80) {
         val cut = Regex("[,;](\\s)|\\s[—–-]\\s").findAll(title).map { it.range.first }.firstOrNull { it in 20..80 }
         title = if (cut != null) title.substring(0, cut) else title
