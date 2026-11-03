@@ -55,38 +55,60 @@ object Split {
         return Plan(jj.optString("shared").trim(), parts)
     }
 
-    /** Одна часть — отдельная Тень; шаги её видно строкой у главной. Возвращает (ответ, отчёт JSON). */
-    private suspend fun child(main: Agent.Core, fid: String, task: String, step: Agent.Step): Pair<String, String> {
+    /** Потолок на все части одной задачи, ₽: дошли — части останавливаются, главная собирает из найденного. */
+    const val LIMIT_RUB = 20.0
+    private val running = java.util.Collections.synchronizedList(ArrayList<Agent.Core>())
+    @Volatile private var overLimit = false
+    private fun spent(): Double = synchronized(running) { running.sumOf { it.cost } } + doneCost
+    @Volatile private var doneCost = 0.0
+    /** Сколько частей не дали ничего — главной на них даём больше поисков. */
+    @Volatile var failedParts = 0
+
+    /** Одна часть — отдельная Тень; шаги её видно строкой у главной. Возвращает (ответ, отчёт JSON, справилась ли). */
+    private suspend fun child(main: Agent.Core, fid: String, task: String, step: Agent.Step): Triple<String, String, Boolean> {
         val c = Agent.of(fid)
         val t0 = System.currentTimeMillis()
-        withContext(Dispatchers.Main) { c.start(task) }
-        delay(300)
-        while (true) {
-            delay(800)
-            val busy = withContext(Dispatchers.Main) {
-                val last = c.steps.lastOrNull { it.text != "Думаю…" }
-                if (last != null) step.detail = last.text.take(80) + (last.detail.takeIf { it.isNotBlank() }?.let { " · " + it.lineSequence().first().take(80) } ?: "")
-                c.busy
+        withContext(Dispatchers.Main) { if (c.busy) c.stop(); c.start(task) }
+        running.add(c)
+        try {
+            delay(300)
+            while (true) {
+                delay(800)
+                val busy = withContext(Dispatchers.Main) {
+                    val last = c.steps.lastOrNull { it.text != "Думаю…" }
+                    if (last != null) step.detail = last.text.take(80) + (last.detail.takeIf { it.isNotBlank() }?.let { " · " + it.lineSequence().first().take(80) } ?: "")
+                    c.busy
+                }
+                if (!busy) break
+                if (main.stopRequested()) { withContext(Dispatchers.Main) { c.stop() }; break }
+                if (spent() > LIMIT_RUB) { overLimit = true; withContext(Dispatchers.Main) { c.stop() }; break }
             }
-            if (!busy) break
-            if (main.stopRequested()) { withContext(Dispatchers.Main) { c.stop() }; break }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // главную остановили (отмена корутины) — части не должны жить дальше и тратить деньги
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) { c.stop() }
+            throw e
+        } finally {
+            running.remove(c); doneCost += c.cost
+            main.addCost(c.cost, c.tokIn.toInt(), c.tokOut.toInt())
         }
-        main.addCost(c.cost, c.tokIn.toInt(), c.tokOut.toInt())
         val secs = (System.currentTimeMillis() - t0) / 1000
-        withContext(Dispatchers.Main) { step.done = true; step.detail = "${c.steps.size} шагов · $secs с" + if (c.failed) " · не доделала" else "" }
-        return c.result to c.lastBest
+        val ok = !c.failed && !c.refused && c.result.isNotBlank()
+        withContext(Dispatchers.Main) { step.done = true; step.detail = "${c.steps.size} шагов · $secs с · ${"%.1f".format(c.cost)} ₽" +
+            (if (c.refused) " · отказалась — без неё" else if (!ok) " · не доделала" else "") }
+        return Triple(if (c.refused) "" else c.result, if (c.refused) "" else c.lastBest, ok)
     }
 
     /** Сделать части. Возвращает текст для главной Тени: ответы и отчёты частей. */
     suspend fun run(main: Agent.Core, plan: Plan): String? {
         val t0 = System.currentTimeMillis()
+        overLimit = false; doneCost = 0.0; failedParts = 0
         // старые чаты частей (из прошлой версии) — удалить: их переписка попадала частям в голову
         runCatching { Agent.app.filesDir.listFiles()?.filter { it.name.startsWith("chat_part:") }?.forEach { it.delete() } }
         var shared = ""
         if (plan.shared.isNotBlank()) {
             val st = Agent.Step("Общий участок · один раз для всех")
             withContext(Dispatchers.Main) { main.steps.add(st) }
-            val (txt, rep) = child(main, "part:0",
+            val (txt, rep, _) = child(main, "part:0",
                 "Это часть большой задачи Алима. Найди ТОЛЬКО это: ${plan.shared}\nВремя, цены и источник у каждой цифры; нет — «нет данных». Таблицу и файл не делай. В ответе — report с маршрутом (route).", st)
             shared = "ОТВЕТ: $txt\nОТЧЁТ: ${rep.take(4000)}"
         }
@@ -102,12 +124,15 @@ object Split {
                 }
             }.awaitAll()
         }
+        failedParts = res.count { !it.third && it.first.isBlank() }
         if (res.all { it.first.isBlank() }) return null
+        val note = if (overLimit) " Части остановлены на лимите ${LIMIT_RUB.toInt()} ₽ — что не успели, по тем «нет данных» (или до 3 поисков)." else ""
         val secs = (System.currentTimeMillis() - t0) / 1000
         return buildString {
-            append("ЧАСТИ ЗАДАЧИ УЖЕ СДЕЛАНЫ отдельными полными прогонами (${plan.parts.size} одновременно, $secs с). Им доверяй и заново НЕ ищи — можно максимум 3 поиска, только чтобы закрыть «нет данных».\n")
+            append("ЧАСТИ ЗАДАЧИ УЖЕ СДЕЛАНЫ отдельными полными прогонами (${plan.parts.size} одновременно, $secs с). Им доверяй и заново НЕ ищи — можно максимум 3 поиска, только чтобы закрыть «нет данных».$note\n")
             if (shared.isNotBlank()) append("\n### Общий участок\n$shared\n")
             plan.parts.forEachIndexed { i, p ->
+                if (!res[i].third && res[i].first.isBlank()) { append("\n### ${p.title}\nЧАСТЬ НЕ СПРАВИЛАСЬ — данных нет. Эту часть дособери сама (на неё можно до 6 поисков) или честно «нет данных».\n"); return@forEachIndexed }
                 append("\n### ${p.title}\nОТВЕТ: ").append(res[i].first.take(4000)).append("\nОТЧЁТ (JSON): ").append(res[i].second.take(6000)).append('\n')
             }
             append("\nТеперь: сравни части по условиям Алима (жёсткие условия — сроки, бюджет — нарушать нельзя), выбери лучший вариант, " +

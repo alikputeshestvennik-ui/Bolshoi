@@ -152,9 +152,12 @@ object Agent {
         val isMain: Boolean get() = fid == Friends.MAIN
         /** Копия Тени для части большой задачи: не пишет в чат и историю, расход — в задачу главной. */
         val isPart: Boolean get() = fid.startsWith("part:")
-        private val PART_TOOLS = setOf("now", "calc", "time_calc", "weather", "web_search", "web_read", "web_page", "flights", "hotels",
+        /** Части большой задачи: только поиск и расчёт (и это же — список инструментов в её промпте). */
+        val PART_TOOLS = setOf("now", "calc", "time_calc", "weather", "web_search", "web_read", "web_page", "flights", "hotels",
             "shop_search", "shop_check", "maps_route", "maps_search", "youtube_search", "tg_channel", "history_search", "memory_search", "file_read", "escalate")
         fun stopRequested() = stopped
+        /** Часть ответила, ничего не поискав (отказ). */
+        @Volatile var refused = false
         /** Сейчас выполняется просьба, переданная другим другом. */
         @Volatile var delegated = false
         /** Модель друга — только из поддерживаемых (GPTunnel и Google убраны), иначе как в настройках. */
@@ -179,7 +182,7 @@ object Agent {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
             if (t.isEmpty() || busy) return
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
-            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false; paused = false
+            startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false; paused = false; refused = false
             Shop.shown.clear()
             model = fast(); phase = Phase.WORKING
             lastMsgs = null; photos.clear(); tgPhotos.clear(); ytVideos.clear(); products.clear(); files.clear()
@@ -358,8 +361,8 @@ object Agent {
             append("- Каждая часть просьбы — отдельный пункт результата: просили «что посмотреть/куда сходить» — колонка или раздел с конкретными местами по каждому варианту; просили «итог» — отдельный итог.\n")
             append("- Цифры в таблицах и ответе — только из найденного инструментами (цены, рейсы, характеристики). Не нашёл точную — пиши оценку с «≈» и источником или «нет данных», не выдумывай круглые числа.\n")
             append("- Для простого (одно-два действия) хватает тебя. Если задача сложная (несколько приложений, покупки, длинная цепочка, тонкий текст) — первым шагом вызови escalate.\n")
-            Deleg.summary().takeIf { it.isNotBlank() }?.let { append("ИДУЩИЕ ПОРУЧЕНИЯ:\n").append(it).append("\n") }
-            Watch.summary().takeIf { it.isNotBlank() }?.let { append("СЛЕЖКА (Пилот сам проверяет и пишет при изменениях):\n").append(it).append("\n") }
+            if (!isPart) Deleg.summary().takeIf { it.isNotBlank() }?.let { append("ИДУЩИЕ ПОРУЧЕНИЯ:\n").append(it).append("\n") }
+            if (!isPart) Watch.summary().takeIf { it.isNotBlank() }?.let { append("СЛЕЖКА (Пилот сам проверяет и пишет при изменениях):\n").append(it).append("\n") }
             append("Сейчас: ").append(SimpleDateFormat("EEEE, d MMMM yyyy, HH:mm", Locale("ru")).format(Date()))
             append(". Город по умолчанию: ").append(Prefs.homeCity).append(".\n")
             append("НЕДАВНЯЯ ПЕРЕПИСКА (контекст, последняя реплика Алима придёт отдельно):\n")
@@ -367,16 +370,16 @@ object Agent {
             append((if (isPart) "" else Chat.of(fid).recentForPrompt(12)).ifBlank { "(пока пусто)" }).append("\n")
             append("ПАМЯТЬ — что ты знаешь об Алиме (номер в скобках — id записи):\n")
             append(Memory.forPrompt(Agent.app, 40).ifBlank { "(пока пусто)" }).append("\n")
-            append("- Алим просит запомнить — memory_save. Узнал в разговоре что-то устойчивое и полезное (кто есть кто, привычки, планы) — тоже memory_save, коротко. Догадки проверяй, прежде чем на них опираться.\n")
-            append("- Личный Telegram Алима: «что нового/кто писал в телеге» — tg_overview; «что писал X», прочитать чат/канал — tg_chat; найти по переписке — tg_search; «за сегодня/вчера/за дату» — передавай day (today/yesterday/ГГГГ-ММ-ДД) в tg_chat/tg_media, сам даты не вычисляй; подписаться — tg_join; ПОКАЗАТЬ фото/видео/ролик из чата или паблика (в т.ч. «за вчера») — tg_media (покажет прямо в чате, видео играет по ▶); не говори «не могу показать» и не открывай приложение Telegram ради этого; написать кому-то — tg_send (tg_join и tg_send — только по прямой просьбе). Если Telegram не подключён, инструмент сам это скажет.\n")
-            append("- Календарь: «что у меня завтра/сегодня» — event_list; «поставь встречу/напоминание на …» — event_create. Погода/маршрут «где я», «отсюда» — сначала my_location, потом weather/maps с этими координатами или городом. Сохранить номер — contact_add.\n")
-            append("- Телефон: фонарик — flashlight; громкость — phone_volume; беззвучный/вибро — phone_ringer; «Не беспокоить» — do_not_disturb; заряд — battery; энергосбережение — power_saver. Короткие заметки/напоминания — note_add, список — note_list, убрать — note_done.\n")
-            append("- SMS и USSD: передавай sim, ТОЛЬКО если Алим назвал SIM именно в этом сообщении. НЕ подставляй SIM из прошлых сообщений — если сейчас не назвал, оставь sim пустым: инструмент вернёт вопрос, какую SIM, и ты спросишь у Алима.\n")
-            append("- Яндекс Музыка: найти — music_search; поставить трек — music_play (откроется в приложении Музыки); плейлисты — music_my.\n")
-            append("- Своя сборка на GitHub: «готова ли сборка», «собралось?» — gh_build; «обнови приложение», «поставь новую версию» — gh_update (скачает APK и откроет установку).\n")
-            append("- «Что нового», «кто писал», «что в почте», «что было сегодня» — events и mail_check. Ты сам следишь за уведомлениями, SMS и почтой.\n")
+            if (!isPart) append("- Алим просит запомнить — memory_save. Узнал в разговоре что-то устойчивое и полезное (кто есть кто, привычки, планы) — тоже memory_save, коротко. Догадки проверяй, прежде чем на них опираться.\n")
+            if (!isPart) append("- Личный Telegram Алима: «что нового/кто писал в телеге» — tg_overview; «что писал X», прочитать чат/канал — tg_chat; найти по переписке — tg_search; «за сегодня/вчера/за дату» — передавай day (today/yesterday/ГГГГ-ММ-ДД) в tg_chat/tg_media, сам даты не вычисляй; подписаться — tg_join; ПОКАЗАТЬ фото/видео/ролик из чата или паблика (в т.ч. «за вчера») — tg_media (покажет прямо в чате, видео играет по ▶); не говори «не могу показать» и не открывай приложение Telegram ради этого; написать кому-то — tg_send (tg_join и tg_send — только по прямой просьбе). Если Telegram не подключён, инструмент сам это скажет.\n")
+            if (!isPart) append("- Календарь: «что у меня завтра/сегодня» — event_list; «поставь встречу/напоминание на …» — event_create. Погода/маршрут «где я», «отсюда» — сначала my_location, потом weather/maps с этими координатами или городом. Сохранить номер — contact_add.\n")
+            if (!isPart) append("- Телефон: фонарик — flashlight; громкость — phone_volume; беззвучный/вибро — phone_ringer; «Не беспокоить» — do_not_disturb; заряд — battery; энергосбережение — power_saver. Короткие заметки/напоминания — note_add, список — note_list, убрать — note_done.\n")
+            if (!isPart) append("- SMS и USSD: передавай sim, ТОЛЬКО если Алим назвал SIM именно в этом сообщении. НЕ подставляй SIM из прошлых сообщений — если сейчас не назвал, оставь sim пустым: инструмент вернёт вопрос, какую SIM, и ты спросишь у Алима.\n")
+            if (!isPart) append("- Яндекс Музыка: найти — music_search; поставить трек — music_play (откроется в приложении Музыки); плейлисты — music_my.\n")
+            if (!isPart) append("- Своя сборка на GitHub: «готова ли сборка», «собралось?» — gh_build; «обнови приложение», «поставь новую версию» — gh_update (скачает APK и откроет установку).\n")
+            if (!isPart) append("- «Что нового», «кто писал», «что в почте», «что было сегодня» — events и mail_check. Ты сам следишь за уведомлениями, SMS и почтой.\n")
             append("Инструменты (аргументы — пример JSON):\n")
-            append(Tools.describe(if (isMain) null else Tools.FRIEND_TOOLS))
+            append(Tools.describe(if (isMain) null else if (isPart) PART_TOOLS else Tools.FRIEND_TOOLS))
         }
 
         private fun parse(t: String): JSONObject? {
@@ -420,7 +423,7 @@ object Agent {
             var truncRetry = 0
             var maxTok = 12000          // потолок ответа: платим только за реально написанное, так что не жмёмся
             val hard0 = hardText(text) || assemble
-            var cap = if (hard0) 40 else 18   // шагов на задачу: сложному подбору нужно место для обходов
+            var cap = if (isPart) 20 else if (hard0) 40 else 18   // шагов на задачу: сложному подбору нужно место для обходов
             var wrap = assemble         // шаги кончились (или Алим остановил поиск) — даём собрать итог из найденного
             var emptyRetry = 0
             var noMoneyAlt: String? = null   // AnyModel пуст — дальше вся задача на этой модели, без повторных попыток
@@ -456,7 +459,7 @@ object Agent {
                         // ответы частей — к той же просьбе (одно сообщение пользователя подряд)
                         val last = msgs.optJSONObject(msgs.length() - 1)
                         last?.put("content", last.optString("content") + "\n\n" + got)
-                        splitLeft = 3; cap = minOf(cap, 14)
+                        splitLeft = 3 + 6 * Split.failedParts; cap = minOf(cap, 14 + 6 * Split.failedParts)
                     }
                 }
             }
@@ -682,6 +685,8 @@ object Agent {
                 }
                 // добросовестность: перед ответом сверяем каждый пункт просьбы; не доделано — доделываем (один заход)
                 // честность: «отправил/создал/поставил» — только если инструмент реально отработал
+                // часть ответила, ничего не поискав (отказ, «не моя задача») — не гоняем её повторами: сразу сдаём как «не справилась»
+                if (isPart && final != null && calls.values.sum() == 0) { refused = true; break }
                 final?.let { f -> if (honesty < 1 && i < cap) unbacked(f, doneOk)?.let { why ->
                     honesty++
                     msgs.put(msg("user", "ПРОВЕРКА ЧЕСТНОСТИ: в ответе сказано «${why.substringBefore(" →")}», но в этой задаче это действие не выполнено (инструмент не вызывался или вернул ошибку). Либо сделай его сейчас инструментом, либо перепиши ответ честно: что сделано, а что нет и почему. Никогда не пиши «сделал», если не сделал."))
@@ -690,7 +695,7 @@ object Agent {
                 // тяжёлая задача, а в ответе только «Всё готово!» — вывод словами обязателен
                 val fc = final
                 if (fc != null && dropCliche(fc).replace(Regex("🕓.*"), "").trim().length >= 140) longSay = fc
-                if (fc != null && conclRetry < 1 && (hard0 || follow) && (files.isNotEmpty() || calls.values.sum() >= 4) && dropCliche(fc).replace(Regex("🕓.*"), "").trim().length < 140) {
+                if (fc != null && !isPart && conclRetry < 1 && (hard0 || follow) && (files.isNotEmpty() || calls.values.sum() >= 4) && dropCliche(fc).replace(Regex("🕓.*"), "").trim().length < 140) {
                     conclRetry++
                     steps.add(Step("Дописываю вывод").also { it.done = true })
                     msgs.put(msg("user", "Финальный ответ слишком короткий. Напиши Алиму вывод словами: что выбрать и почему, ключевые цифры (итог, время, что не влезает), чего не нашёл. Не пересказывай таблицу целиком. tool null."))
@@ -767,7 +772,7 @@ object Agent {
                     }
                 }
                 // пропуски, которые видно без модели-проверяющего (слабая модель проверяет сама себя и молчит)
-                if (final != null && hard0 && !follow && !assemble && !wrap && splitLeft < 0 && gapRetry < 2 && i < cap - 6) {
+                if (final != null && hard0 && !follow && !assemble && !wrap && splitLeft < 0 && gapRetry < (if (isPart) 1 else 2) && i < cap - 6) {
                     val g = gaps(text, lastBest, calls)
                     if (g.isNotEmpty()) {
                         gapRetry++
@@ -779,7 +784,7 @@ object Agent {
                 }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
-                val ending = fin == null || wrap || audits >= (if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
+                val ending = fin == null || wrap || audits >= (if (isPart) 0 else if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
                 // важная задача: независимый проверяющий — по САМОЙ последней версии ответа, прямо перед показом Алиму
                 if (ending && fin != null && !checked && !isPart && !assemble && i < cap - 2 && calls.values.sum() >= 2 && Helpers.important(if (follow) rootTask + "\n" + text else text)) {
                     checked = true
