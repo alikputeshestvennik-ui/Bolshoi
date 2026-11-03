@@ -150,6 +150,9 @@ object Agent {
         private var rootTask = ""
 
         val isMain: Boolean get() = fid == Friends.MAIN
+        /** Копия Тени для части большой задачи: не пишет в чат и историю, расход — в задачу главной. */
+        val isPart: Boolean get() = fid.startsWith("part:")
+        fun stopRequested() = stopped
         /** Сейчас выполняется просьба, переданная другим другом. */
         @Volatile var delegated = false
         /** Модель друга — только из поддерживаемых (GPTunnel и Google убраны), иначе как в настройках. */
@@ -293,7 +296,6 @@ object Agent {
             append("- Брендовые вещи за 20-40% реальной цены с кричащими скидками −90% — подделки: не советуй их, скажи прямо.\n")
             append("- Итог по товарам оформи списком: «- **Название** — цена, магазин — размер есть/нет/уточнить». Карточки с фото приложение покажет само.\n")
             append("- СПРАВКА / ОТЧЁТ / PDF «о компании и конкурентах», «сравни X с Y»: у каждого сравниваемого найди те же показатели, что у главного (выручка, прибыль, доля рынка, год — с источником), минимум у 3–4 конкурентов. Голый список имён без цифр — не сравнение, не сдавай его. Чего не нашёл — «нет данных» у конкретного.\n")
-            append("- ПОМОЩНИКИ (helpers): если задача делится на независимые части (несколько городов, магазинов, дат, вариантов) — отдай их одним вызовом helpers (2-4 задания, в каждом всё нужное: даты, бюджет, откуда, что найти и с какими цифрами). Они ищут одновременно — так в разы быстрее. Потом сам сложи отчёты, досчитай calc, сделай таблицу и ответ. НЕ перепроверяй и не ищи заново то, что помощники уже принесли с источником — доищи только их «нет данных». Если два отчёта противоречат друг другу (разное расписание одного автобуса, разные цены одного рейса) — проверь ЭТОТ факт одним поиском и в ответе скажи, какой верен. Мелкие задачи (одно действие) — без помощников.\n")
             append("- ЖЁСТКИЕ УСЛОВИЯ (успеть к сроку, вернуться до …, бюджет, ночей): вариант, который их нарушает, НЕ может быть «лучшим выбором» — помечай «не успевает»/«за бюджетом» и так и пиши в выводе; если не подходит ни один — скажи прямо и предложи, что поменять. Ночей в отеле = от даты заселения до даты выезда из города (улетаешь 7.01 — отель до 7.01); не совпадает с просьбой — скажи об этом, а не подгоняй даты.\n")
             append("- ДЕЛАЙ ЗАДАЧУ ЦЕЛИКОМ за один заход: просят список/таблицу — давай ВСЕ элементы (например, все регионы РФ, все города из просьбы), не урезай и не добавляй по одному. Таблицу собирай целиком и создавай одним вызовом file_create. Нужно данные по нескольким городам — поищи по каждому, потом дай итог сразу по всем.\n")
             append("- НИКОГДА не открывай Алиму сайт или браузер вместо работы: web_open и open_app — только если он прямо сказал «открой». Сайты читай сам: web_read, а если страница на JavaScript (Авиасейлс, Туту и т.п.) — web_page. Сказать «зайди сам и посмотри» — нельзя.\n")
@@ -436,6 +438,23 @@ object Agent {
             SrcTime.reset(); Tools.taskVideos.clear(); Viz.task.clear()
             Tools.parseDeadline(if (follow) rootTask else text)
             val seenAll = StringBuilder(if (assemble || follow) rootTask + "\n" + text else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
+            // несколько независимых вариантов (города, магазины) — части делают копии Тени одновременно, главная только собирает
+            var splitLeft = -1
+            if (isMain && hard0 && !follow && !assemble && extra.isBlank() && Prefs.split) {
+                val st = Step("Смотрю, можно ли разделить на части"); steps.add(st)
+                val plan = runCatching { Split.plan(text, smart(), this@Core) }.getOrNull()
+                st.done = true; st.detail = plan?.let { p -> "делю на ${p.parts.size}: " + p.parts.joinToString(", ") { it.title } + if (p.shared.isNotBlank()) " + общий участок" else "" } ?: "одна задача — делаю целиком"
+                if (plan != null) {
+                    val got = runCatching { Split.run(this@Core, plan) }.getOrNull()
+                    if (got != null && !stopped) {
+                        seenAll.append('\n').append(got)
+                        // ответы частей — к той же просьбе (одно сообщение пользователя подряд)
+                        val last = msgs.optJSONObject(msgs.length() - 1)
+                        last?.put("content", last.optString("content") + "\n\n" + got)
+                        splitLeft = 3; cap = minOf(cap, 14)
+                    }
+                }
+            }
             if (base != null) for (k in 0 until base.length()) base.optJSONObject(k)?.takeIf { it.optString("role") == "user" && it.optString("content").startsWith("РЕЗУЛЬТАТ ") }?.let { seenAll.append('\n').append(it.optString("content")) }
             var evRetry = 0
             var gapRetry = 0
@@ -599,12 +618,21 @@ object Agent {
                         }
                         fileStreak++
                     } else fileStreak = 0
+                    // после частей главная только собирает: до 3 поисков на дыры, дальше поиск закрыт
+                    if (splitLeft >= 0 && tool !in setOf("calc", "time_calc", "now", "file_create", "file_read", "draw")) {
+                        if (splitLeft == 0) { msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: поиск закрыт — части уже найдены отдельными прогонами. Собери итог из них (calc, file_create); чего нет — «нет данных».")); continue }
+                        splitLeft--
+                    }
+                    // копия для части: только поиск и расчёт
+                    if (isPart && (t.confirm != null || tool in setOf("file_create", "draw", "pdf_edit", "image_generate", "memory_save", "memory_forget", "delegate", "watch_start", "attachment_send", "file_send", "note_add", "event_create"))) {
+                        msgs.put(msg("user", "РЕЗУЛЬТАТ $tool: в части большой задачи это недоступно — только поиск и расчёт. Итог дай текстом с report.")); continue
+                    }
                     val used = (calls[tool] ?: 0) + 1; calls[tool] = used
                     if (tool == "file_create" && used > 3) {
                         msgs.put(msg("user", "РЕЗУЛЬТАТ file_create: файл в этой задаче создан уже 3 раза — больше не пересоздавай, шаги нужны на поиск. Дай финальный ответ (tool null) с report и best; чего не нашёл — честно напиши."))
                         continue
                     }
-                    val tcap = when (tool) { "shop_search" -> 3; "web_search" -> if (hard0) 20 else 8; "web_read", "web_page" -> if (hard0) 24 else 10; "file_create" -> 6; "helpers" -> 1; else -> 8 }
+                    val tcap = when (tool) { "shop_search" -> 3; "web_search" -> if (hard0) 20 else 8; "web_read", "web_page" -> if (hard0) 24 else 10; "file_create" -> 6; else -> 8 }
                     if (used > tcap) {
                         msgs.put(msg("user", "Ты уже вызывал $tool ${used - 1} раз(а) — лимит поиска на задачу. Больше не ищи. Доделай задачу из того, что уже узнал: если просили таблицу или файл — ОБЯЗАТЕЛЬНО создай его, недостающее пиши «нет данных». Потом дай итог Алиму и честно скажи, чего не нашёл."))
                         continue
@@ -707,7 +735,7 @@ object Agent {
                     final = null; continue
                 }
                 // просили таблицу, а файла нет — делаем, а не забываем
-                if (final != null && hard0 && !follow && tableRetry < 1 && files.isEmpty() && i < cap - 3 &&
+                if (final != null && hard0 && !follow && !isPart && tableRetry < 1 && files.isEmpty() && i < cap - 3 &&
                     Regex("таблиц|xlsx|excel", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
                     tableRetry++
                     steps.add(Step("Делаю таблицу").also { it.done = true })
@@ -733,7 +761,7 @@ object Agent {
                     }
                 }
                 // пропуски, которые видно без модели-проверяющего (слабая модель проверяет сама себя и молчит)
-                if (final != null && hard0 && !follow && !assemble && !wrap && gapRetry < 2 && i < cap - 6) {
+                if (final != null && hard0 && !follow && !assemble && !wrap && splitLeft < 0 && gapRetry < 2 && i < cap - 6) {
                     val g = gaps(text, lastBest, calls)
                     if (g.isNotEmpty()) {
                         gapRetry++
@@ -747,7 +775,7 @@ object Agent {
                 val fin = final
                 val ending = fin == null || wrap || audits >= (if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
                 // важная задача: независимый проверяющий — по САМОЙ последней версии ответа, прямо перед показом Алиму
-                if (ending && fin != null && !checked && !assemble && i < cap - 2 && calls.values.sum() >= 2 && Helpers.important(if (follow) rootTask + "\n" + text else text)) {
+                if (ending && fin != null && !checked && !isPart && !assemble && i < cap - 2 && calls.values.sum() >= 2 && Helpers.important(if (follow) rootTask + "\n" + text else text)) {
                     checked = true
                     val digest = steps.filter { it.detail.isNotBlank() }.takeLast(30).joinToString("\n") { "- ${it.text}: ${it.detail.replace('\n', ' ').take(220)}" }
                     val issues = runCatching { Helpers.check(Agent.app, if (follow) "$rootTask\nУточнение: $text" else text, fin, lastBest, digest) }.getOrNull()
@@ -878,7 +906,7 @@ object Agent {
             endedAt = System.currentTimeMillis()
             lastEnded = endedAt
             phase = Phase.DONE
-            runCatching {
+            if (!isPart) runCatching {
                 val log = steps.joinToString("\n") { it.text.replace('\n', ' ') + "\t" + it.detail.take(300).replace("\n", "⏎") }
                 Journal.add(Agent.app, TaskRec(startedAt, task, steps.size, Agent.short(model), cost, ok, endedAt - startedAt, text, log,
                     if (products.isEmpty()) "" else Shop.toJson(products.take(8)), tokIn, tokOut))
@@ -892,7 +920,7 @@ object Agent {
             val cb = onFinish
             if (cb != null) cb(Done(ok, text, lastButtons, products.toList().take(8), files.toList(), photos.toList(),
                 steps.map { it.text }, (endedAt - startedAt) / 1000, tgPhotos.toList(), ytVideos.toList(), payload))
-            else if (ok && Prefs.speak) onSpeak?.invoke(text)
+            else if (ok && Prefs.speak && !isPart) onSpeak?.invoke(text)
         }
 
         /** Пустой отказ модели без причины («не могу обсуждать эту тему») — повод переспросить другую модель. */

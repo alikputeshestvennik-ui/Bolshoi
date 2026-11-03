@@ -46,6 +46,8 @@ object Prefs {
     var flight3dStarting: Boolean get() = b("f3d_start", false); set(v) = sp.edit().putBoolean("f3d_start", v).commit().let {}
     /** Модель независимой проверки важных задач ("" — как «Руки»). Лучше другой «породы», чем главная. */
     var checkModel: String get() = s("chk", ""); set(v) = put("chk", v.trim())
+    /** Большая задача из нескольких независимых вариантов — по частям, копиями Тени одновременно. */
+    var split: Boolean get() = b("split", true); set(v) = putB("split", v)
     /** Проверять каждую большую задачу, а не только важные. */
     var checkAll: Boolean get() = b("chkAll", false); set(v) = putB("chkAll", v)
     var smartModel: String get() = pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())

@@ -718,6 +718,16 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 ModelEditor("Руки — сложные дела (много шагов, подборки)", "smart", smart, smartIn, smartOut,
                     { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
                 ModelEditor("Фон — уведомления, сводки, сам пишет", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
+                var spl by remember { mutableStateOf(Prefs.split) }
+                CardBox {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Делить на части", style = body(14, FontWeight.SemiBold))
+                            Text("Несколько городов, магазинов, дат — каждую часть делает отдельная копия Тени одновременно, потом Тень собирает таблицу и вывод.", style = body(12, color = Muted), lineHeight = 16.sp)
+                        }
+                        Toggle(spl) { spl = it; Prefs.split = it }
+                    }
+                }
                 var chk by remember { mutableStateOf(Prefs.checkModel.ifBlank { Prefs.smartModel }) }
                 var chkAll by remember { mutableStateOf(Prefs.checkAll) }
                 ModelEditor("Проверка — независимый взгляд на важные задачи (лучше другая модель, чем у «Рук»)", "check", chk, "0", "0", { chk = it; Prefs.checkModel = it }, {}, {}) {
