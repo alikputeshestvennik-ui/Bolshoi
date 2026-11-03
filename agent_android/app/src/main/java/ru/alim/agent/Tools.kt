@@ -1029,6 +1029,11 @@ object Tools {
             } }
             // «=15360+15840» → «=D2+D5», числа листа «Итог» → ссылки на ячейки других листов: поправил цену — пересчиталось везде
             if (type == "xlsx") runCatching { linkTotals(a.optJSONArray("sheets")) }
+            // сводка против листов-деталей: «Итог» по Москве обязан совпасть с «ИТОГО» листа «Москва» (Sonnet забывал обратный рейс в сводке)
+            if (type == "xlsx" && !a.optBoolean("force")) runCatching { summaryMismatch(a.optJSONArray("sheets")) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { m ->
+                return@t "ошибка сводки: ${m.joinToString("; ")}. Сводка не сходится с листами по городам — в ней пропущен участок или посчитан дважды. " +
+                    "Сделай итог сводки ссылкой на ИТОГО листа (='Москва'!D7) и пересоздай файл (тот же name). Если расхождение задумано — добавь \"force\": true."
+            }
             // таблица из одних заголовков — не сохраняем и не даём сказать «таблица готова»
             if (type == "xlsx") a.optJSONArray("sheets")?.let { sh ->
                 val dataRows = (0 until sh.length()).sumOf { k -> ((sh.optJSONObject(k)?.optJSONArray("rows")?.length() ?: 0) - 1).coerceAtLeast(0) }
@@ -1418,6 +1423,42 @@ object Tools {
             if (lone.isNotEmpty()) append("Числа без подтверждения в файле (ни на других листах, ни в тексте — откуда взяты, неясно; возможно, оценка):\n").append(lone.take(15).joinToString("\n") { "? $it" }).append('\n')
             if (bad.isEmpty()) append("Арифметических ошибок не нашла.\n")
         }.trim()
+    }
+
+    /** Строки сводки, названные как другой лист: их итог должен совпасть с «ИТОГО» того листа. */
+    fun summaryMismatch(sheets: org.json.JSONArray?): List<String> {
+        if (sheets == null) return emptyList()
+        val fe = FormulaEval(sheets)
+        val names = fe.order
+        fun rows(k: Int) = sheets.optJSONObject(k)?.optJSONArray("rows") ?: org.json.JSONArray()
+        // итог листа-детали: числа в последней строке «итог/всего»
+        val detailTotal = HashMap<String, Double>()
+        names.forEachIndexed { k, n ->
+            val rr = rows(k)
+            for (r in rr.length() - 1 downTo 1) {
+                val row = rr.optJSONArray(r) ?: continue
+                val lab = (row.opt(0) as? String)?.trim()?.lowercase().orEmpty()
+                if (!(lab.startsWith("итог") || lab.startsWith("всего"))) continue
+                val v = (1 until row.length()).mapNotNull { c -> fe.cell(n.lowercase(), c, r) }.maxOrNull() ?: continue
+                detailTotal[n.lowercase()] = v; break
+            }
+        }
+        if (detailTotal.isEmpty()) return emptyList()
+        val out = ArrayList<String>()
+        names.forEachIndexed { k, n ->
+            val rr = rows(k)
+            val head = rr.optJSONArray(0) ?: return@forEachIndexed
+            val totCol = (0 until head.length()).firstOrNull { c -> (head.opt(c) as? String)?.lowercase()?.let { h -> h.contains("итог") || h.contains("всего") } == true } ?: return@forEachIndexed
+            for (r in 1 until rr.length()) {
+                val row = rr.optJSONArray(r) ?: continue
+                val lab = (row.opt(0) as? String)?.trim()?.lowercase().orEmpty()
+                val d = detailTotal[lab] ?: continue
+                if (lab == n.lowercase()) continue
+                val v = fe.cell(n.lowercase(), totCol, r) ?: continue
+                if (kotlin.math.abs(v - d) > 1.0) out += "«${row.opt(0)}» на листе «$n» = ${fmtNum(v)}, а ИТОГО листа «${row.opt(0)}» = ${fmtNum(d)} (разница ${fmtNum(d - v)})"
+            }
+        }
+        return out
     }
 
     /** Итоги-числа превращаем в ссылки: «=15360+15840» → «=D2+D5»; на листе «Итог» число, равное ячейке другого листа, → «='Отели'!D2». */
