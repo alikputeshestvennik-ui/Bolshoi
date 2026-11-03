@@ -48,6 +48,12 @@ object Deleg {
         var parentId: Long = 0,
         /** Ожидающее подтверждения перенаправление: {"to","contact","goal"}. */
         var refer: String = "",
+        /** Алим сам вёл переписку и передал её (из лаунчера): не представляться заново, продолжать в его тоне. */
+        var handoff: Boolean = false,
+        /** «Показывать мне»: каждое сообщение — сначала Алиму на одобрение. */
+        var confirm: Boolean = false,
+        /** Черновик, ждущий одобрения Алима (строки через \n). */
+        var pending: String = "",
     ) {
         /** Идёт переписка (или ждёт решения Алима / ответа по цепочке / паузы). */
         val active get() = status == "active" || status == "ask" || status == "paused" || status == "wait_ref"
@@ -98,7 +104,8 @@ object Deleg {
                     sentFiles = o.optBoolean("sf"), nudged = o.optBoolean("nu"), created = o.optLong("cr"), lastIn = o.optLong("li"), lastOut = o.optLong("lo"),
                     subId = o.optInt("sub", -1), err = o.optString("err"),
                     startAt = o.optLong("sa"), resumeAt = o.optLong("ra"), repeat = o.optString("rep2"), until = o.optLong("un"), runs = o.optInt("runs"),
-                    parentId = o.optLong("par"), refer = o.optString("ref"))
+                    parentId = o.optLong("par"), refer = o.optString("ref"),
+                    handoff = o.optBoolean("ho"), confirm = o.optBoolean("cf"), pending = o.optString("pd"))
                 o.optJSONArray("lines")?.let { l -> for (k in 0 until l.length()) l.getJSONObject(k).let { x -> it.lines += Line(x.optBoolean("me"), x.optString("t"), x.optLong("ts")) } }
                 items += it
             }
@@ -117,10 +124,45 @@ object Deleg {
         for (it in keep) a.put(JSONObject().put("id", it.id).put("who", it.who).put("ch", it.channel).put("addr", it.addr)
             .put("goal", it.goal).put("files", JSONArray(it.files)).put("st", it.status).put("q", it.question).put("rep", it.report)
             .put("sf", it.sentFiles).put("nu", it.nudged).put("cr", it.created).put("li", it.lastIn).put("lo", it.lastOut).put("sub", it.subId).put("err", it.err)
-            .put("sa", it.startAt).put("ra", it.resumeAt).put("rep2", it.repeat).put("un", it.until).put("runs", it.runs).put("par", it.parentId).put("ref", it.refer)
+            .put("sa", it.startAt).put("ra", it.resumeAt).put("rep2", it.repeat).put("un", it.until).put("runs", it.runs).put("par", it.parentId).put("ref", it.refer).put("ho", it.handoff).put("cf", it.confirm).put("pd", it.pending)
             .put("lines", JSONArray().apply { it.lines.forEach { l -> put(JSONObject().put("me", l.me).put("t", l.text).put("ts", l.ts)) } }))
         runCatching { file(ctx).writeText(a.toString()) }
     }
+
+    // ——— передача переписки из лаунчера («Передать Тени») ———
+
+    /**
+     * history — уже бывшая переписка (me = Алим). goal — чего добиться, notes — указания, confirm — показывать черновики,
+     * until — когда забрать обратно (0 — по цели), manual — не завершать самой.
+     */
+    fun handoff(ctx: Context, who: String, addr: String, goal: String, notes: String, history: List<Line>, confirm: Boolean, until: Long, manual: Boolean): String {
+        init(ctx)
+        if (items.any { it.active && it.channel == "sms" && sameAddr(it.addr, addr, "sms") }) return "с ${who} уже идёт поручение — его видно в Тени, «Активные»"
+        if (items.count { it.active } >= 5) return "уже идут 5 поручений — останови одно в Тени"
+        val g = buildString {
+            append("Продолжи переписку с $who за Алима.")
+            if (goal.isNotBlank()) append(" Цель: $goal.")
+            if (notes.isNotBlank()) append("\nУказания Алима: $notes")
+            if (manual) append("\nНе завершай переписку сам (не ставь done), даже если цель достигнута: отвечай на новые сообщения, пока Алим не заберёт переписку.")
+        }
+        val now = System.currentTimeMillis()
+        val it = Item(now, who, "sms", addr, g, emptyList(), handoff = true, confirm = confirm)
+        it.until = until
+        history.sortedBy { h -> h.ts }.takeLast(40).forEach { h -> it.lines += Line(h.me, h.text, minOf(h.ts, now - 1)) }
+        it.lastIn = it.lines.lastOrNull { l -> !l.me }?.ts ?: 0
+        items += it; save()
+        awake(true)
+        val lastIn = it.lines.lastOrNull()?.me == false
+        scope.launch {
+            think(it, if (lastIn) "Переписку только что передали тебе. Ответь на последнее сообщение $who по цели." else "Переписку только что передали тебе. Последним писал Алим — если по цели не нужно писать сейчас, state=waiting и ничего не отправляй.")
+            awake(false)
+        }
+        scope.launch(Dispatchers.Main) { runCatching { Chat.main.note("↪ Алим передал переписку с $who — веду её${if (confirm) " (черновики — на одобрение)" else ""}") } }
+        return "передал Тени: переписку с $who ведёт она"
+    }
+
+    /** Активное поручение по этому номеру (для кнопки «Забрать» в лаунчере). */
+    fun activeFor(addr: String): Item? = items.lastOrNull { it.active && it.channel == "sms" && sameAddr(it.addr, addr, "sms") }
 
     // ——— старт ———
 
@@ -223,6 +265,28 @@ object Deleg {
         val it = (if (id != null) items.firstOrNull { x -> x.id % 1000 == id % 1000 && x.active } else null)
             ?: items.lastOrNull { x -> x.status == "ask" } ?: items.lastOrNull { x -> x.active } ?: return "активных поручений нет"
         if (it.refer.isNotBlank()) return referAnswer(ctx, it.id, text)
+        if (it.pending.isNotBlank()) {
+            val draft = it.pending; it.pending = ""; it.status = "active"; it.question = ""; save()
+            if (Regex("^\\s*(да|ок|ok|отправ|норм|го|давай|пойдёт|пойдет|верно|ага|\\+)", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                awake(true)
+                scope.launch {
+                    lock.withLock {
+                        for ((k, s) in draft.split("\n").filter { x -> x.isNotBlank() }.withIndex()) {
+                            if (k > 0) delay(2500L + s.length * 25L)
+                            val err = send(ctx, it, s)
+                            if (err != null) { it.err = err; report(it, "failed", "Не получилось отправить ${it.who}: $err"); return@withLock }
+                            it.lines += Line(true, s, System.currentTimeMillis()); it.lastOut = System.currentTimeMillis()
+                        }
+                        save()
+                    }
+                    awake(false)
+                }
+                return "отправил ${it.who} — жду ответа"
+            }
+            awake(true)
+            scope.launch { think(it, "АЛИМ НЕ ОДОБРИЛ ЧЕРНОВИК «$draft». Его указание: $text. Составь ответ заново по указанию."); awake(false) }
+            return "переделываю ответ для ${it.who} по твоему указанию"
+        }
         it.status = "active"; it.question = ""; save()
         awake(true)
         scope.launch { think(it, "АЛИМ ОТВЕТИЛ / ДОПОЛНИЛ (это его решение, действуй по нему): $text"); awake(false) }
@@ -287,7 +351,9 @@ object Deleg {
     // ——— мозг переговорщика ———
 
     private fun system(it: Item): String = buildString {
-        append("Ты — ЦИФРОВОЙ ПОМОЩНИК Алима (он экспедитор) и ведёшь переписку по его поручению. Ты НЕ Алим: никогда не пиши «это Алим», «я Алим». В первом сообщении представься: «Здравствуйте! Это цифровой помощник Алима.» Спросят «кто это?» — снова «цифровой помощник Алима». О себе «я», об Алиме — в третьем лице («Алим просит…»). ")
+        if (it.handoff) append("Ты — цифровой помощник Алима. Алим сам вёл эту переписку и передал её тебе: продолжай разговор в его тоне и манере (смотри его реплики выше), не здоровайся и не представляйся заново — вы уже общаетесь. " +
+            "Но не утверждай, что ты Алим, и не выдумывай за него личное; спросят «это ты?» / «кто пишет?» — честно: «Это помощник Алима, он попросил ответить». ")
+        else append("Ты — ЦИФРОВОЙ ПОМОЩНИК Алима (он экспедитор) и ведёшь переписку по его поручению. Ты НЕ Алим: никогда не пиши «это Алим», «я Алим». В первом сообщении представься: «Здравствуйте! Это цифровой помощник Алима.» Спросят «кто это?» — снова «цифровой помощник Алима». О себе «я», об Алиме — в третьем лице («Алим просит…»). ")
         append("Собеседник: ${it.who}. Канал: ${if (it.channel == "tg") "Telegram" else "SMS"}.\n")
         append("ПОРУЧЕНИЕ АЛИМА:\n${it.goal}\n")
         if (it.files.isNotEmpty()) append("У тебя есть ${it.files.size} фото/файл(ов) от Алима (накладные и т.п.)" +
@@ -321,7 +387,7 @@ object Deleg {
     private fun dialog(it: Item): String = if (it.lines.isEmpty()) "(переписки ещё не было)" else
         it.lines.takeLast(40).joinToString("\n") { l ->
             val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(l.ts))
-            "[$t] " + (if (l.me) "Помощник (ты)" else it.who) + ": " + l.text
+            "[$t] " + (if (l.me) (if (it.handoff && l.ts < it.created) "Алим (до передачи)" else "Помощник (ты)") else it.who) + ": " + l.text
         }
 
     private suspend fun think(it: Item, extra: String) = lock.withLock {
@@ -357,7 +423,14 @@ object Deleg {
         }
         // жёсткая страховка: никаких кодов/карт в исходящих
         val safe = outs.filterNot { s -> Regex("\\b\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}\\b|парол|cvv|cvc|код из смс", RegexOption.IGNORE_CASE).containsMatchIn(s) }
-        if (it.lines.count { l -> l.me } + safe.size > MAX_OUT) { report(it, "failed", "Переписка затянулась (больше $MAX_OUT сообщений) — остановился. Последнее от ${it.who}: «${it.lines.lastOrNull { l -> !l.me }?.text?.take(200).orEmpty()}»"); return@withLock }
+        // «Показывать мне»: не отправляем сами — черновик Алиму на одобрение
+        if (it.confirm && safe.isNotEmpty()) {
+            it.pending = safe.joinToString("\n"); it.status = "ask"
+            it.question = "отправить ${it.who}: «${safe.joinToString(" / ")}»? Ответь «да» — отправлю, или напиши, как ответить."
+            save(); tell(ctx, it, "✉️ ${it.title}\nЧерновик для ${it.who}:\n«${safe.joinToString("\n")}»\n\nОтветь «да» — отправлю, или напиши свой вариант.", "Черновик на одобрение")
+            return@withLock
+        }
+        if (it.lines.count { l -> l.me && (!it.handoff || l.ts >= it.created) } + safe.size > MAX_OUT) { report(it, "failed", "Переписка затянулась (больше $MAX_OUT сообщений) — остановился. Последнее от ${it.who}: «${it.lines.lastOrNull { l -> !l.me }?.text?.take(200).orEmpty()}»"); return@withLock }
         for ((k, s) in safe.withIndex()) {
             if (k > 0) delay(2500L + s.length * 25L)   // как человек: пауза между репликами
             val sendErr = send(ctx, it, s)
@@ -506,6 +579,9 @@ object Deleg {
         val ctx = app ?: return
         for (x in items.toList()) {
             when {
+                x.handoff && x.active && x.until in 1..now -> {
+                    report(x, "done", "Время вышло — дальше переписку с ${x.who} ведёшь ты. Последнее от ${x.who}: «${x.lines.lastOrNull { l -> !l.me }?.text?.take(200).orEmpty()}»")
+                }
                 x.status == "scheduled" && x.startAt in 1..now -> {
                     x.status = "active"; x.created = now; save()
                     if (x.channel == "tg") runCatching { Tg.start(ctx) }
@@ -621,7 +697,7 @@ object Deleg {
             val waitingForThem = it.lines.lastOrNull()?.me == true
             if (!waitingForThem) continue
             if (now - since > GIVE_UP_AFTER) report(it, "failed", "${it.who} не отвечает больше суток — перестал писать. Последнее моё: «${it.lines.lastOrNull { l -> l.me }?.text?.take(200).orEmpty()}»")
-            else if (!it.nudged && now - it.lastOut > NUDGE_AFTER) { it.nudged = true; save(); think(it, "Собеседник молчит больше 3 часов. Можно ОДИН раз коротко и вежливо напомнить (или не писать, если поздно — тогда waiting).") }
+            else if (!it.handoff && !it.nudged && now - it.lastOut > NUDGE_AFTER) { it.nudged = true; save(); think(it, "Собеседник молчит больше 3 часов. Можно ОДИН раз коротко и вежливо напомнить (или не писать, если поздно — тогда waiting).") }
         }
     }
 

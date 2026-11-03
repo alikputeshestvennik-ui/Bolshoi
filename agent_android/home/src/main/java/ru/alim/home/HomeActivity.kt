@@ -84,6 +84,15 @@ object Fonts {
     }
 }
 
+/** Какой экран открыт поверх главного: home · phone · sms · thread. */
+object Nav {
+    var screen by mutableStateOf("home")
+    var addr by mutableStateOf("")
+    var name by mutableStateOf("")
+    var back = "home"
+    fun thread(a: String, n: String) { back = if (screen == "thread") back else screen; addr = a; name = n; screen = "thread" }
+}
+
 class HomeActivity : ComponentActivity() {
     private var drawer by mutableStateOf(false)
     private var tick by mutableIntStateOf(0)
@@ -107,7 +116,7 @@ class HomeActivity : ComponentActivity() {
     }
 
     // кнопка «Домой» — всегда на главный, список закрываем
-    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); drawer = false }
+    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); drawer = false; Nav.screen = "home" }
     override fun onResume() { super.onResume(); tick++ }
 }
 

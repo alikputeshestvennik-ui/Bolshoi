@@ -117,7 +117,7 @@ fun Root(p: Pal, drawer: Boolean, tick: Int, openDrawer: (Boolean) -> Unit) {
     val homeAlpha by animateFloatAsState(if (drawer) 0f else 1f, tween(280, easing = FastOutSlowInEasing), label = "homeAlpha")
     Box(Modifier.fillMaxSize().background(p.bg)) {
         Box(Modifier.fillMaxSize().graphicsLayer { scaleX = homeScale; scaleY = homeScale; alpha = homeAlpha }
-            .then(if (drawer) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } } else Modifier)) {
+            .then(if (drawer || Nav.screen != "home") Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } } else Modifier)) {
             HomeScreen(p, pages, letters, ten, recents, usageOk,
                 onOpenApp = open, onOpenFolder = { openFolder = it.fid },
                 onMenu = { when (it) { is AppItem -> menu = it.app; is FolderItem -> folderMenu = it } },
@@ -131,6 +131,18 @@ fun Root(p: Pal, drawer: Boolean, tick: Int, openDrawer: (Boolean) -> Unit) {
             Box(Modifier.fillMaxSize().background(p.bg).pointerInput(Unit) { detectTapGestures { } }) {
                 Drawer(p, all, hidden, letters, onOpen = { open(it); openDrawer(false) }, onMenu = { menu = it }, close = { openDrawer(false) })
             }
+        }
+        // телефон, сообщения, переписка — выезжают поверх главного
+        val slide = slideInVertically(tween(340, easing = FastOutSlowInEasing)) { it / 5 } + fadeIn(tween(220))
+        val away = slideOutVertically(tween(240, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(180))
+        AnimatedVisibility(Nav.screen == "phone", enter = slide, exit = away) {
+            Box(Modifier.fillMaxSize().background(p.bg).pointerInput(Unit) { detectTapGestures { } }) { PhoneScreen(p, close = { Nav.screen = "home" }, openThread = { a, n -> Nav.thread(a, n) }) }
+        }
+        AnimatedVisibility(Nav.screen == "sms", enter = slide, exit = away) {
+            Box(Modifier.fillMaxSize().background(p.bg).pointerInput(Unit) { detectTapGestures { } }) { MessagesScreen(p, close = { Nav.screen = "home" }, openThread = { a, n -> Nav.thread(a, n) }) }
+        }
+        AnimatedVisibility(Nav.screen == "thread", enter = slide, exit = away) {
+            Box(Modifier.fillMaxSize().background(p.bg).pointerInput(Unit) { detectTapGestures { } }) { ThreadScreen(p, Nav.addr, Nav.name, close = { Nav.screen = Nav.back }) }
         }
     }
 
@@ -356,8 +368,8 @@ fun HomeScreen(p: Pal, pages: List<List<Item>>, letters: Map<String, String>, te
             Column(Modifier.padding(horizontal = 20.dp).padding(top = 10.dp)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(p.line))
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Dock(p, "Телефон", { Apps.dial(ctx) }) { Glyph.Phone(it) }
-                    Dock(p, "Сообщения", { Apps.sms(ctx) }) { Glyph.Messages(it) }
+                    Dock(p, "Телефон", { Nav.screen = "phone" }) { Glyph.Phone(it) }
+                    Dock(p, "Сообщения", { Nav.screen = "sms" }) { Glyph.Messages(it) }
                     Dock(p, "Тень", { Apps.ten(ctx) }) { TenMark(p, 40.dp, if (p.dark) p.tile else p.onTile, if (p.dark) p.onTile else p.tile) }
                     Dock(p, "Интернет", { Apps.browser(ctx) }) { Glyph.Internet(it) }
                     Dock(p, "Камера", { Apps.camera(ctx) }) { Glyph.Camera(it) }

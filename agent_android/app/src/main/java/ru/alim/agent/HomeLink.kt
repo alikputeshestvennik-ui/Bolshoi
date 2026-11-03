@@ -36,6 +36,36 @@ class HomeProvider : ContentProvider() {
     /** «ask» — вопрос с главного экрана лаунчера: уходит в чат Тени как обычное сообщение. Возвращает время отправки. */
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         if (!allowed()) throw SecurityException("нет доступа")
+        // «Передать Тени» из СМС лаунчера: переписка целиком + цель и указания
+        if (method == "handoff" && extras != null) {
+            val out = Bundle()
+            val done = CountDownLatch(1)
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    boot()
+                    val h = JSONArray(extras.getString("history") ?: "[]")
+                    val lines = (0 until h.length()).mapNotNull { h.optJSONObject(it) }.map { Deleg.Line(it.optBoolean("me"), it.optString("t"), it.optLong("ts")) }
+                    out.putString("msg", Deleg.handoff(context!!, extras.getString("who").orEmpty().ifBlank { extras.getString("addr").orEmpty() }, extras.getString("addr").orEmpty(),
+                        extras.getString("goal").orEmpty(), extras.getString("notes").orEmpty(), lines, extras.getBoolean("confirm"), extras.getLong("until"), extras.getBoolean("manual")))
+                } catch (e: Exception) { out.putString("msg", "не вышло: ${e.message?.take(80)}") } finally { done.countDown() }
+            }
+            done.await(5, TimeUnit.SECONDS)
+            return out
+        }
+        if (method == "handoffState" || method == "takeback") {
+            val out = Bundle()
+            val done = CountDownLatch(1)
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    boot()
+                    val it = Deleg.activeFor(arg.orEmpty())
+                    if (method == "takeback" && it != null) { out.putString("msg", Deleg.stop(context!!, it.id)); out.putBoolean("active", false) }
+                    else { out.putBoolean("active", it != null); out.putString("state", it?.let { x -> Deleg.stateText(x) }.orEmpty()); out.putString("goal", it?.goal.orEmpty()) }
+                } catch (e: Exception) { out.putBoolean("active", false) } finally { done.countDown() }
+            }
+            done.await(5, TimeUnit.SECONDS)
+            return out
+        }
         if (method != "ask" || arg.isNullOrBlank()) return null
         val ts = System.currentTimeMillis()
         val done = CountDownLatch(1)
