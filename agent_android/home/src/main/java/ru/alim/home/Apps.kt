@@ -185,71 +185,108 @@ object Desk {
     /** Первый стол — под карточками Тени, 3 ряда; следующие — во весь экран, 6 рядов. */
     const val FIRST = 12
     const val NEXT = 24
-    const val MAX = FIRST + NEXT * 6
+    const val PAGES = 7
+    fun cap(page: Int) = if (page == 0) FIRST else NEXT
 
     private fun sp(c: Context) = c.getSharedPreferences("home", Context.MODE_PRIVATE)
 
-    fun load(c: Context, all: List<App>): List<Item> {
-        val byKey = all.associateBy { it.key }
-        val raw = sp(c).getString("home", null) ?: return Apps.home(c, all).map { AppItem(it) }
-        val a = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
-        val out = ArrayList<Item>()
-        for (i in 0 until a.length()) {
-            val o = a.opt(i)
-            if (o is String) byKey[o]?.let { out += AppItem(it) }
-            else if (o is JSONObject) {
-                val ks = o.optJSONArray("a") ?: JSONArray()
-                val apps = (0 until ks.length()).mapNotNull { byKey[ks.optString(it)] }
-                when {
-                    apps.size >= 2 -> out += FolderItem(o.optString("f"), o.optString("n").ifBlank { "Папка" }, apps)
-                    apps.size == 1 -> out += AppItem(apps[0])
-                }
-            }
+    private fun parse(o: Any?, byKey: Map<String, App>): Item? = when (o) {
+        is String -> byKey[o]?.let { AppItem(it) }
+        is JSONObject -> {
+            val ks = o.optJSONArray("a") ?: JSONArray()
+            val apps = (0 until ks.length()).mapNotNull { byKey[ks.optString(it)] }
+            when { apps.size >= 2 -> FolderItem(o.optString("f"), o.optString("n").ifBlank { "Папка" }, apps); apps.size == 1 -> AppItem(apps[0]); else -> null }
         }
-        return out
+        else -> null
     }
 
-    fun save(c: Context, items: List<Item>) {
-        val a = JSONArray()
-        items.take(MAX).forEach { when (it) {
-            is AppItem -> a.put(it.app.key)
-            is FolderItem -> a.put(JSONObject().put("f", it.fid).put("n", it.name).put("a", JSONArray().also { j -> it.apps.forEach { x -> j.put(x.key) } }))
-        } }
-        sp(c).edit().putString("home", a.toString()).apply()
+    /** Столы по отдельности. Старый формат (одним списком) раскладываем по столам. */
+    fun load(c: Context, all: List<App>): List<List<Item>> {
+        val byKey = all.associateBy { it.key }
+        val raw = sp(c).getString("home", null) ?: return normalize(listOf(Apps.home(c, all).map { AppItem(it) }))
+        val a = runCatching { JSONArray(raw) }.getOrNull() ?: return listOf(emptyList())
+        if (a.length() > 0 && a.opt(0) is JSONArray)
+            return normalize((0 until a.length()).map { i -> val pa = a.optJSONArray(i) ?: JSONArray(); (0 until pa.length()).mapNotNull { parse(pa.opt(it), byKey) } })
+        val flat = (0 until a.length()).mapNotNull { parse(a.opt(it), byKey) }
+        return normalize(listOf(flat.take(FIRST)) + flat.drop(FIRST).chunked(NEXT))
     }
 
-    /** Разбить на столы: новые создаются сами, когда текущий заполнен. */
-    fun pages(items: List<Item>): List<List<Item>> {
-        val first = items.take(FIRST)
-        val rest = items.drop(FIRST).chunked(NEXT)
-        return listOf(first) + rest
+    fun save(c: Context, pages: List<List<Item>>) {
+        val out = JSONArray()
+        pages.forEach { pg ->
+            val a = JSONArray()
+            pg.forEach { when (it) {
+                is AppItem -> a.put(it.app.key)
+                is FolderItem -> a.put(JSONObject().put("f", it.fid).put("n", it.name).put("a", JSONArray().also { j -> it.apps.forEach { x -> j.put(x.key) } }))
+            } }
+            out.put(a)
+        }
+        sp(c).edit().putString("home", out.toString()).apply()
     }
-    fun base(page: Int) = if (page == 0) 0 else FIRST + (page - 1) * NEXT
 
-    fun appsIn(items: List<Item>): List<App> = items.flatMap { when (it) { is AppItem -> listOf(it.app); is FolderItem -> it.apps } }
-    fun contains(items: List<Item>, key: String) = appsIn(items).any { it.key == key }
+    /** Лишнее со стола переезжает на следующий (создаётся сам), пустые столы убираются. */
+    fun normalize(pages: List<List<Item>>): List<List<Item>> {
+        val out = pages.map { it.toMutableList() }.toMutableList()
+        if (out.isEmpty()) out.add(mutableListOf())
+        var i = 0
+        while (i < out.size) {
+            while (out[i].size > cap(i) && i < PAGES - 1) {
+                val x = out[i].removeAt(out[i].size - 1)
+                if (i + 1 >= out.size) out.add(mutableListOf())
+                out[i + 1].add(0, x)
+            }
+            i++
+        }
+        return out.filterIndexed { k, p -> k == 0 || p.isNotEmpty() }
+    }
 
-    /** Убрать приложение откуда угодно (стол или папка); папка из одного — снова приложение. */
-    fun remove(items: List<Item>, key: String): List<Item> = items.mapNotNull { when (it) {
+    fun appsIn(pages: List<List<Item>>): List<App> = pages.flatten().flatMap { when (it) { is AppItem -> listOf(it.app); is FolderItem -> it.apps } }
+    fun contains(pages: List<List<Item>>, key: String) = appsIn(pages).any { it.key == key }
+    fun find(pages: List<List<Item>>, id: String): Pair<Int, Int>? {
+        pages.forEachIndexed { p, l -> val i = l.indexOfFirst { it.id == id }; if (i >= 0) return p to i }
+        return null
+    }
+
+    private fun removeKey(l: List<Item>, key: String): List<Item> = l.mapNotNull { when (it) {
         is AppItem -> if (it.app.key == key) null else it
         is FolderItem -> { val rest = it.apps.filter { a -> a.key != key }; when { rest.size >= 2 -> it.copy(apps = rest); rest.size == 1 -> AppItem(rest[0]); else -> null } }
     } }
+    /** Убрать приложение откуда угодно (стол или папка); папка из одного — снова приложение. */
+    fun remove(pages: List<List<Item>>, key: String) = normalize(pages.map { removeKey(it, key) })
 
-    fun move(items: List<Item>, id: String, to: Int): List<Item> {
-        val it = items.firstOrNull { x -> x.id == id } ?: return items
-        val l = items.filter { x -> x.id != id }.toMutableList(); l.add(to.coerceIn(0, l.size), it); return l
+    /** Добавить: на последний стол, если там есть место, иначе — новый стол. */
+    fun add(pages: List<List<Item>>, item: Item): List<List<Item>> {
+        val l = pages.map { it.toMutableList() }.toMutableList()
+        if (l.last().size < cap(l.size - 1) || l.size >= PAGES) l.last().add(item) else l.add(mutableListOf(item))
+        return normalize(l)
+    }
+
+    /** Перенести на стол page в позицию idx (idx < 0 — в конец). Стола ещё нет — появится. */
+    fun moveTo(pages: List<List<Item>>, id: String, page: Int, idx: Int): List<List<Item>> {
+        val at = find(pages, id) ?: return pages
+        val item = pages[at.first][at.second]
+        val l = pages.map { p -> p.filter { it.id != id }.toMutableList() }.toMutableList()
+        while (l.size <= page && l.size < PAGES) l.add(mutableListOf())
+        val tgt = l[page.coerceAtMost(l.size - 1)]
+        tgt.add(if (idx < 0) tgt.size else idx.coerceIn(0, tgt.size), item)
+        return normalize(l)
     }
 
     /** Бросил приложение на другое — папка; на папку — внутрь. */
-    fun merge(items: List<Item>, dragId: String, targetId: String): List<Item> {
-        val drag = items.firstOrNull { it.id == dragId } as? AppItem ?: return items
-        return items.mapNotNull { x -> when {
+    fun merge(pages: List<List<Item>>, dragId: String, targetId: String): List<List<Item>> {
+        val at = find(pages, dragId) ?: return pages
+        val drag = pages[at.first][at.second] as? AppItem ?: return pages
+        return normalize(pages.map { pg -> pg.mapNotNull { x -> when {
             x.id == dragId -> null
             x.id == targetId && x is AppItem -> FolderItem(System.currentTimeMillis().toString(36), "Папка", listOf(x.app, drag.app))
             x.id == targetId && x is FolderItem -> x.copy(apps = x.apps + drag.app)
             else -> x
-        } }
+        } } })
     }
+
+    fun replace(pages: List<List<Item>>, id: String, with: List<Item>) = normalize(pages.map { pg -> pg.flatMap { if (it.id == id) with else listOf(it) } })
+    fun insertAfter(pages: List<List<Item>>, id: String, item: Item) = normalize(pages.map { pg -> pg.flatMap { if (it.id == id) listOf(it, item) else listOf(it) } })
+    fun folder(pages: List<List<Item>>, fid: String) = pages.flatten().firstOrNull { it is FolderItem && it.fid == fid } as? FolderItem
 }
 
 /** Недавние приложения: из статистики Android (если дан доступ), иначе — что открывали из лаунчера. */
