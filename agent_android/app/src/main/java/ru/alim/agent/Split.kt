@@ -69,6 +69,14 @@ object Split {
 
     /** Одна часть — отдельная Тень; шаги её видно строкой у главной. Возвращает (ответ, отчёт JSON, справилась ли). */
     private suspend fun child(main: Agent.Core, fid: String, task: String, step: Agent.Step): Triple<String, String, Boolean> {
+        // отказ модели случаен (одна и та же просьба: две части работают, третья «нет инструментов») — один раз запускаем заново
+        val first = once(main, fid, task, step)
+        if (first.third || main.stopRequested() || overLimit || !Agent.of(fid).refused) return first
+        withContext(Dispatchers.Main) { step.done = false; step.detail = "отказалась — запускаю заново" }
+        return once(main, fid, task, step)
+    }
+
+    private suspend fun once(main: Agent.Core, fid: String, task: String, step: Agent.Step): Triple<String, String, Boolean> {
         val c = Agent.of(fid)
         val t0 = System.currentTimeMillis()
         withContext(Dispatchers.Main) { if (c.busy) c.stop(); c.start(task) }
