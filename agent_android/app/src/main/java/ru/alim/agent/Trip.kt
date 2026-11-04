@@ -143,4 +143,59 @@ object Trip {
     }
 
     private fun fmt(d: LocalDate) = "%d.%02d".format(d.dayOfMonth, d.monthValue)
+
+    // ——— Сборка кодом после деления ———
+
+    class Row(val kind: String, val whenText: String, val what: String, val src: String, val price: Int?, val note: String)
+    class Plan(val rows: List<Row>, val gaps: List<String>, val end: LocalDateTime?, val total: Int, val missing: Int)
+
+    private val rubRe = Regex("(\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+|\\d{3,7})\\s*(?:₽|руб)")
+    private fun num(s: String) = s.replace(Regex("\\D"), "").toIntOrNull()
+
+    /** Цена отрезка из подписи «15 ч 15 мин · 6 175 ₽» / «3 ночи · 8 330 ₽/ночь = 24 990 ₽». */
+    fun priceOf(sub: String, nights: Int): Pair<Int?, String> {
+        val all = rubRe.findAll(sub).toList()
+        if (all.isEmpty()) return null to ""
+        val perNight = all.filter { sub.substring(it.range.last + 1).trimStart().startsWith("/") }
+        val whole = all - perNight.toSet()
+        whole.lastOrNull()?.let { return num(it.groupValues[1]) to "" }
+        val pn = num(perNight.last().groupValues[1]) ?: return null to ""
+        return (pn * maxOf(1, nights)) to "цена за ночь × $nights"
+    }
+
+    /** Маршрут одной части → строки таблицы + доплата за ночи без жилья (по цене ночи этого же отеля). */
+    fun plan(rep: JSONObject?): Plan {
+        val rt = legs(rep?.optJSONArray("route"))
+        val rows = ArrayList<Row>()
+        val gaps = ArrayList<String>()
+        var base: LocalDate? = null
+        val pts = rt.map { l ->
+            var p = points(l.optString("when"), base)
+            if (l.optString("kind") == "stay" && p.size < 2) points(l.optString("when") + " " + l.optString("what") + " " + l.optString("sub"), base).takeIf { it.size >= 2 }?.let { p = it }
+            p.also { q -> q.lastOrNull()?.let { base = it.dt.toLocalDate() } }
+        }
+        for ((k, l) in rt.withIndex()) {
+            val kind = l.optString("kind")
+            var nights = 0
+            if (kind == "stay" && pts[k].size >= 2) nights = java.time.temporal.ChronoUnit.DAYS.between(pts[k].first().dt.toLocalDate(), pts[k].last().dt.toLocalDate()).toInt()
+            if (kind == "stay" && nights <= 0) nights = Regex("(\\d+)\\s*ноч").find(l.optString("sub") + " " + l.optString("what") + " " + l.optString("when"))?.groupValues?.get(1)?.toInt() ?: 0
+            val (price, note) = priceOf(l.optString("sub"), nights)
+            rows += Row(kind, l.optString("when"), l.optString("what"), l.optString("src"), price, note)
+            if (kind != "stay" || pts[k].size < 2) continue
+            val checkOut = pts[k].last().dt.toLocalDate()
+            val nx = (k + 1 until rt.size).firstOrNull { rt[it].optString("kind") in TRANSPORT && pts[it].isNotEmpty() } ?: continue
+            val dep = pts[nx].first()
+            val extra = java.time.temporal.ChronoUnit.DAYS.between(checkOut, dep.dt.toLocalDate()).toInt()
+            if (extra >= 2 || (extra == 1 && (!dep.hasTime || dep.dt.hour >= 6))) {
+                val per = if (price != null && nights > 0) price / nights else null
+                gaps += "ночь ${fmt(checkOut)} → ${fmt(dep.dt.toLocalDate())}: выезд из отеля ${fmt(checkOut)}, а дорога только ${fmt(dep.dt.toLocalDate())}"
+                rows += Row("stay", "${fmt(checkOut)} → ${fmt(dep.dt.toLocalDate())}", "Доплата: ещё $extra ноч. в том же отеле (иначе ночь без жилья)", "оценка",
+                    per?.let { it * extra }, if (per != null) "по цене ночи этого отеля" else "нет цены — уточнить")
+            }
+        }
+        val end = (rt.indices).lastOrNull { rt[it].optString("kind") in TRANSPORT && pts[it].isNotEmpty() }?.let { pts[it].last().dt }
+        return Plan(rows, gaps, end, rows.sumOf { it.price ?: 0 }, rows.count { it.price == null })
+    }
+
+    fun fmtDt(d: LocalDateTime) = "%d.%02d %02d:%02d".format(d.dayOfMonth, d.monthValue, d.hour, d.minute)
 }

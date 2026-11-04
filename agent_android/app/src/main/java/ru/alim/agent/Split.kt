@@ -63,6 +63,8 @@ object Split {
     @Volatile private var doneCost = 0.0
     /** Сколько частей не дали ничего — главной на них даём больше поисков. */
     @Volatile var failedParts = 0
+    /** Таблицу собрал код — главной остаётся только вывод. */
+    @Volatile var built = false
     /** Сырые результаты инструментов всех частей. */
     @Volatile var evidence = ""
     private val ev = StringBuffer()
@@ -110,14 +112,63 @@ object Split {
         return Triple(if (c.refused) "" else c.result, if (c.refused) "" else c.lastBest, ok)
     }
 
+    private fun sheetName(t: String, used: MutableSet<String>): String {
+        var n = t.replace(Regex("[\\[\\]:*?/\\\\']"), " ").trim().take(28).ifBlank { "Вариант" }
+        var k = 2; val b = n
+        while (!used.add(n)) n = "$b ${k++}"
+        return n
+    }
+
+    /** Таблица кодом: лист на вариант (все отрезки, доплата за ночь, ИТОГО формулой) и сводка ссылками. (подпись шага, имя файла, сводка для модели) */
+    private suspend fun buildTable(plan: Plan, plans: List<Trip.Plan>, ask: String): Triple<String, String, String>? {
+        val budget = Regex("бюджет[^\\d]{0,20}(\\d{1,3}(?:[ \\u00A0]\\d{3})+|\\d{4,7})", RegexOption.IGNORE_CASE).find(ask)?.groupValues?.get(1)?.replace(Regex("\\D"), "")?.toIntOrNull()
+        val deadline = Tools.deadline
+        val used = HashSet<String>()
+        val sheets = JSONArray()
+        val sum = JSONArray().put(JSONArray(listOf("Вариант", "Итого, ₽", "Бюджет, ₽", "Запас, ₽", "Дома", "Срок", "Ночи", "Без цены")))
+        val text = StringBuilder()
+        plan.parts.forEachIndexed { i, p ->
+            val pl = plans[i]
+            val name = sheetName(p.title, used)
+            val rows = JSONArray().put(JSONArray(listOf("Участок", "Когда", "Что", "Цена, ₽", "Источник", "Примечание")))
+            val kindRu = mapOf("bus" to "Автобус", "train" to "Поезд", "flight" to "Перелёт", "stay" to "Жильё", "taxi" to "Такси", "car" to "Машина", "ship" to "Паром", "walk" to "Пешком")
+            pl.rows.forEach { r -> rows.put(JSONArray(listOf(kindRu[r.kind] ?: r.kind, r.whenText, r.what, r.price ?: "нет данных", r.src, r.note))) }
+            val last = pl.rows.size + 1
+            rows.put(JSONArray(listOf("ИТОГО", "", "", "=SUM(D2:D$last)", "", if (pl.missing > 0) "без ${pl.missing} цен" else "")))
+            val late = deadline != null && pl.end != null && pl.end.isAfter(deadline)
+            pl.end?.let { rows.put(JSONArray(listOf("Дома", Trip.fmtDt(it), "", "", "", if (deadline == null) "" else if (late) "НЕ УСПЕВАЕТ к ${Trip.fmtDt(deadline)}" else "успевает к ${Trip.fmtDt(deadline)}"))) }
+            sheets.put(JSONObject().put("name", name).put("rows", rows))
+            val q = "'$name'"
+            val r = sum.length() + 1
+            sum.put(JSONArray(listOf(p.title, "=$q!D${last + 1}", budget ?: "", if (budget != null) "=C$r-B$r" else "", pl.end?.let { Trip.fmtDt(it) } ?: "нет данных",
+                if (deadline == null || pl.end == null) "" else if (late) "НЕ УСПЕВАЕТ" else "успевает",
+                if (pl.gaps.isEmpty()) "ок" else "доплата: " + pl.gaps.joinToString("; ") { it.substringBefore(":") }, pl.missing)))
+            text.append("- ${p.title}: ИТОГО ${"%,d".format(pl.total).replace(',', ' ')} ₽")
+            if (budget != null) text.append(if (pl.total <= budget) " (в бюджете, запас ${"%,d".format(budget - pl.total).replace(',', ' ')} ₽)" else " (СВЕРХ БЮДЖЕТА на ${"%,d".format(pl.total - budget).replace(',', ' ')} ₽)")
+            pl.end?.let { text.append(", дома ${Trip.fmtDt(it)}") }
+            if (deadline != null && pl.end != null) text.append(if (late) " — НЕ УСПЕВАЕТ к ${Trip.fmtDt(deadline)}" else " — успевает")
+            if (pl.gaps.isNotEmpty()) text.append("; добавлена доплата: ").append(pl.gaps.joinToString("; "))
+            if (pl.missing > 0) text.append("; без цены отрезков: ${pl.missing}")
+            text.append('\n')
+        }
+        sheets.put(JSONObject().put("name", sheetName("Сводка", used)).put("rows", sum))
+        val file = "Сравнение — " + plan.parts.joinToString(", ") { it.title }.take(60)
+        val t = Tools.byName("file_create") ?: return null
+        val args = JSONObject().put("type", "xlsx").put("name", file).put("sheets", sheets)
+        var r = withContext(Dispatchers.IO) { t.run(Agent.app, args) }
+        if (r.startsWith("ошибка")) r = withContext(Dispatchers.IO) { t.run(Agent.app, args.put("force", true)) }
+        if (r.startsWith("ошибка")) return null
+        return Triple("${plan.parts.size} листа + сводка · " + text.lines().filter { it.isNotBlank() }.joinToString(" · ") { it.removePrefix("- ").substringBefore(" ₽") + " ₽" }.take(140), file, text.toString())
+    }
+
     /** Отчёт части без ссылок на фото и картинок — погода и места не должны обрезаться из-за длинных url. */
     private fun slim(rep: String): String = rep.replace(Regex("\"(photo|img|image|thumb|pic)\"\\s*:\\s*\"[^\"]*\",?"), "")
         .replace(Regex("https?://[^\"\\s]{60,}")) { it.value.take(60) }
 
     /** Сделать части. Возвращает текст для главной Тени: ответы и отчёты частей. */
-    suspend fun run(main: Agent.Core, plan: Plan): String? {
+    suspend fun run(main: Agent.Core, plan: Plan, ask: String = ""): String? {
         val t0 = System.currentTimeMillis()
-        overLimit = false; doneCost = 0.0; failedParts = 0; ev.setLength(0); evidence = ""
+        overLimit = false; doneCost = 0.0; failedParts = 0; ev.setLength(0); evidence = ""; built = false
         // старые чаты частей (из прошлой версии) — удалить: их переписка попадала частям в голову
         runCatching { Agent.app.filesDir.listFiles()?.filter { it.name.startsWith("chat_part:") }?.forEach { it.delete() } }
         var shared = ""
@@ -145,6 +196,31 @@ object Split {
         if (res.all { it.first.isBlank() }) return null
         val note = if (overLimit) " Части остановлены на лимите ${LIMIT_RUB.toInt()} ₽ — что не успели, по тем «нет данных» (или до 3 поисков)." else ""
         val secs = (System.currentTimeMillis() - t0) / 1000
+        // все части сдали маршрут — таблицу, итоги, ночи и срок считает код; модели остаётся только вывод
+        val reps = res.map { Rich.parse(it.second)?.optJSONObject("report") }
+        val plans = reps.map { Trip.plan(it) }
+        if (res.all { it.third } && plans.all { it.rows.any { r -> r.kind != "stay" } }) {
+            val st = Agent.Step("Собираю таблицу · кодом"); withContext(Dispatchers.Main) { main.steps.add(st) }
+            val made = runCatching { buildTable(plan, plans, ask) }.getOrNull()
+            withContext(Dispatchers.Main) { st.done = true; st.detail = made?.first ?: "не вышло — соберёт модель" }
+            if (made != null) {
+                built = true
+                return buildString {
+                    append("ЧАСТИ ЗАДАЧИ СДЕЛАНЫ (${plan.parts.size} одновременно, $secs с), ТАБЛИЦУ «${made.second}» УЖЕ СОБРАЛ КОД — не пересоздавай её и НИЧЕГО не ищи.$note\n")
+                    append("Итоги, ночи, срок и бюджет посчитаны кодом по маршрутам частей:\n").append(made.third).append('\n')
+                    plan.parts.forEachIndexed { i, p ->
+                        val r = reps[i]
+                        append("\n### ${p.title}\n")
+                        r?.optJSONArray("route")?.let { append("route: ").append(slim(it.toString()).take(3000)).append('\n') }
+                        listOf("weather", "places", "stay", "sources").forEach { k -> r?.opt(k)?.let { append("$k: ").append(slim(it.toString()).take(2000)).append('\n') } }
+                        append("кратко от части: ").append(res[i].first.replace('\n', ' ').take(800)).append('\n')
+                    }
+                    append("\nТеперь только финальный ответ (tool null): say — вывод словами с цифрами (что выбрать и почему, чего нет); " +
+                        "report — route ЛУЧШЕГО (его route выше + строка доплаты за ночь, если код её добавил), compare всех вариантов с ИТОГО ровно как в таблице, totals, places и weather каждого (если есть), sources; best. " +
+                        "Вариант с «НЕ УСПЕВАЕТ» или сверх бюджета не может быть лучшим. Числа — только из блоков выше.")
+                }
+            }
+        }
         return buildString {
             append("ЧАСТИ ЗАДАЧИ УЖЕ СДЕЛАНЫ отдельными полными прогонами (${plan.parts.size} одновременно, $secs с). Им доверяй и заново НЕ ищи — можно максимум 3 поиска, только чтобы закрыть «нет данных».$note\n")
             if (shared.isNotBlank()) append("\n### Общий участок\n$shared\n")

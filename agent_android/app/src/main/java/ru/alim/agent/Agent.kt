@@ -470,7 +470,7 @@ object Agent {
                 val plan = runCatching { Split.plan(text, smart(), this@Core) }.getOrNull()
                 st.done = true; st.detail = plan?.let { p -> "делю на ${p.parts.size}: " + p.parts.joinToString(", ") { it.title } + if (p.shared.isNotBlank()) " + общий участок" else "" } ?: ("одна задача — делаю целиком" + Split.why.takeIf { it.isNotBlank() }?.let { " (${it.take(120)})" }.orEmpty())
                 if (plan != null) {
-                    val got = runCatching { Split.run(this@Core, plan) }.getOrNull()
+                    val got = runCatching { Split.run(this@Core, plan, text) }.getOrNull()
                     if (got != null && !stopped) {
                         seenAll.append('\n').append(got)
                         // сырые результаты поисков частей — чтобы сверка источников не считала их цифры «выдуманными»
@@ -478,7 +478,7 @@ object Agent {
                         // ответы частей — к той же просьбе (одно сообщение пользователя подряд)
                         val last = msgs.optJSONObject(msgs.length() - 1)
                         last?.put("content", last.optString("content") + "\n\n" + got)
-                        splitLeft = 3 + 6 * Split.failedParts; cap = minOf(cap, 14 + 6 * Split.failedParts)
+                        if (Split.built) { splitLeft = 0; cap = minOf(cap, 8) } else { splitLeft = 3 + 6 * Split.failedParts; cap = minOf(cap, 14 + 6 * Split.failedParts) }
                     }
                 }
             }
@@ -829,7 +829,7 @@ object Agent {
                 }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
-                val ending = fin == null || wrap || audits >= (if (isPart) 0 else if (splitLeft >= 0) 1 else if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
+                val ending = fin == null || wrap || audits >= (if (isPart || (splitLeft >= 0 && Split.built)) 0 else if (splitLeft >= 0) 1 else if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
                 // важная задача: независимый проверяющий — по САМОЙ последней версии ответа, прямо перед показом Алиму
                 if (ending && fin != null && !checked && !isPart && !assemble && i < cap - 2 && calls.values.sum() >= 2 && Helpers.important(if (follow) rootTask + "\n" + text else text)) {
                     checked = true
