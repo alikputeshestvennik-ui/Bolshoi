@@ -622,7 +622,7 @@ object Agent {
                         continue
                     }
                     if (wrap && tool != "file_create") { msgs.put(msg("user", "Шаги кончились — инструменты, кроме file_create, недоступны. Дай финальный ответ из найденного (tool null).")); continue }
-                    if (!isMain && tool !in Tools.FRIEND_TOOLS) {
+                    if (!isMain && !isPart && tool !in Tools.FRIEND_TOOLS) {   // у части свой список (PART_TOOLS) — ниже
                         msgs.put(msg("user", "Инструмент «$tool» — у главного (${Friends.main.name}). Вызови ask_main с просьбой, а Алиму коротко скажи, что передал."))
                         continue
                     }

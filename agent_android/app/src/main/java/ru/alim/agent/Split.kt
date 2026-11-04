@@ -98,7 +98,7 @@ object Split {
         val secs = (System.currentTimeMillis() - t0) / 1000
         val ok = !c.failed && !c.refused && c.result.isNotBlank()
         withContext(Dispatchers.Main) { step.done = true; step.detail = "${c.steps.size} шагов · $secs с · ${"%.1f".format(c.cost)} ₽" +
-            (if (c.refused) " · отказалась — без неё" else if (!ok) " · не доделала" else "") }
+            (if (c.refused) " · отказалась — без неё: «${c.result.replace('\n', ' ').take(100)}»" else if (!ok) " · не доделала" else "") }
         return Triple(if (c.refused) "" else c.result, if (c.refused) "" else c.lastBest, ok)
     }
 
