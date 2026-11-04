@@ -446,6 +446,8 @@ object Agent {
             val doneOk = HashSet<String>()   // инструменты, которые реально отработали (не ошибка, не отмена)
             var honesty = 0
             var partNudge = 0
+            var nightRetry = 0
+            var legRetry = 0
             SrcTime.reset(); Tools.taskVideos.clear(); Viz.task.clear()
             Tools.parseDeadline(if (follow) rootTask else text)
             val seenAll = StringBuilder(if (assemble || follow) rootTask + "\n" + text else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
@@ -780,6 +782,27 @@ object Agent {
                         final = null; continue
                     }
                 }
+                // ночи без жилья: выезд из отеля раньше, чем уезжаешь (или заезд позже, чем приехал) — проверяет код, не модель
+                if (final != null && nightRetry < 2 && i < cap - 2) {
+                    val n = Trip.nightGaps(Rich.parse(lastBest)?.optJSONObject("report"))
+                    if (n.isNotEmpty()) {
+                        nightRetry++
+                        steps.add(Step("Сверяю ночи в отеле с дорогой").also { it.done = true; it.detail = n.first().take(160) })
+                        msgs.put(msg("user", "ПРОВЕРКА НОЧЕЙ (код сверил даты маршрута): ${n.joinToString("; ")}. Алим не может ночевать на улице. " +
+                            "Исправь: продли отель на эти ночи (цена за ночь × ночей — через calc) или найди дорогу в день выезда. Пересчитай итог, обнови таблицу (тот же name) и повтори финальный ответ (tool null, report, best)."))
+                        final = null; continue
+                    }
+                }
+                // часть вернулась без какого-то отрезка (нет перелёта обратно) — пусть закроет сама, пока поиск у неё дешёвый
+                if (final != null && isPart && legRetry < 1 && i < cap - 3) {
+                    val miss = Trip.missingLegs(Rich.parse(lastBest)?.optJSONObject("report"), text)
+                    if (miss.isNotEmpty()) {
+                        legRetry++
+                        steps.add(Step("Доискиваю отрезок").also { it.done = true; it.detail = miss.joinToString("; ").take(160) })
+                        msgs.put(msg("user", "В маршруте не хватает: ${miss.joinToString("; ")}. Найди это сейчас инструментами (flights, hotels, web_page на Туту/Автовокзалах) и повтори финальный ответ с полным report.route — туда, отель, обратно, каждый отрезок с датой, временем и ценой."))
+                        final = null; continue
+                    }
+                }
                 // пропуски, которые видно без модели-проверяющего (слабая модель проверяет сама себя и молчит)
                 if (final != null && hard0 && !follow && !assemble && !wrap && splitLeft < 0 && gapRetry < (if (isPart) 1 else 2) && i < cap - 6) {
                     val g = gaps(text, lastBest, calls)
@@ -793,7 +816,7 @@ object Agent {
                 }
                 if (final == null && honesty == 1 && steps.none { it.text == "Проверяю, что всё правда сделано" }) { steps.add(Step("Проверяю, что всё правда сделано").also { it.done = true }); continue }
                 val fin = final
-                val ending = fin == null || wrap || audits >= (if (isPart) 0 else if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
+                val ending = fin == null || wrap || audits >= (if (isPart) 0 else if (splitLeft >= 0) 1 else if (hard0) 2 else 1) || i >= cap - 1 || !(calls.values.sum() >= 2 || hard0)
                 // важная задача: независимый проверяющий — по САМОЙ последней версии ответа, прямо перед показом Алиму
                 if (ending && fin != null && !checked && !isPart && !assemble && i < cap - 2 && calls.values.sum() >= 2 && Helpers.important(if (follow) rootTask + "\n" + text else text)) {
                     checked = true
