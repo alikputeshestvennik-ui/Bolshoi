@@ -110,6 +110,10 @@ object Split {
         return Triple(if (c.refused) "" else c.result, if (c.refused) "" else c.lastBest, ok)
     }
 
+    /** Отчёт части без ссылок на фото и картинок — погода и места не должны обрезаться из-за длинных url. */
+    private fun slim(rep: String): String = rep.replace(Regex("\"(photo|img|image|thumb|pic)\"\\s*:\\s*\"[^\"]*\",?"), "")
+        .replace(Regex("https?://[^\"\\s]{60,}")) { it.value.take(60) }
+
     /** Сделать части. Возвращает текст для главной Тени: ответы и отчёты частей. */
     suspend fun run(main: Agent.Core, plan: Plan): String? {
         val t0 = System.currentTimeMillis()
@@ -146,8 +150,10 @@ object Split {
             if (shared.isNotBlank()) append("\n### Общий участок\n$shared\n")
             plan.parts.forEachIndexed { i, p ->
                 if (!res[i].third && res[i].first.isBlank()) { append("\n### ${p.title}\nЧАСТЬ НЕ СПРАВИЛАСЬ — данных нет. Эту часть дособери сама (на неё можно до 6 поисков) или честно «нет данных».\n"); return@forEachIndexed }
-                append("\n### ${p.title}\nОТВЕТ: ").append(res[i].first.take(4000)).append("\nОТЧЁТ (JSON): ").append(res[i].second.take(6000)).append('\n')
+                append("\n### ${p.title}\nОТВЕТ: ").append(res[i].first.take(3000)).append("\nОТЧЁТ (JSON): ").append(slim(res[i].second).take(12000)).append('\n')
             }
+            append("\nНОЧИ: отель должен покрывать каждую ночь между приездом и отъездом. Если обратный рейс на день позже выезда из отеля — это лишняя платная ночь (добавь её в цену) или нужен рейс в день выезда; " +
+                "«3 ночи» в просьбе — не повод оставить ночь без жилья. Не урезай ночи, которые часть посчитала правильно.\n")
             append("\nТеперь: сравни части по условиям Алима (жёсткие условия — сроки, бюджет — нарушать нельзя), выбери лучший вариант, " +
                 "сделай таблицу file_create (лист на каждую часть: ВСЕ её участки с ценами и строкой ИТОГО; сводка — ссылками на ИТОГО листов) и дай финальный ответ (tool null, report с compare, best).")
         }

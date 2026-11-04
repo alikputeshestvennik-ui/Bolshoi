@@ -18,7 +18,22 @@ object Trip {
     /** Даты и время из строки «Чт 7.01 · 09:00 → 11:45» / «3.01 → 6.01 · 3 ночи». Дата без времени — 12:00. */
     private class Pt(val dt: LocalDateTime, val hasTime: Boolean)
 
-    private fun points(s: String, base: LocalDate?): List<Pt> {
+    private val MONTHS = listOf("январ", "феврал", "март", "апрел", "ма[йя]", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр")
+
+    /** «3 января» → «3.01», «3→6.01» / «3–6 января» → «3.01 → 6.01». */
+    fun norm(src: String): String {
+        var s = src
+        MONTHS.forEachIndexed { i, m ->
+            val mm = "%02d".format(i + 1)
+            s = Regex("(?<![\\d.:])(\\d{1,2})\\s*(→|–|—|-|по)\\s*(\\d{1,2})\\s+$m[а-я]*", RegexOption.IGNORE_CASE).replace(s) { r -> "${r.groupValues[1]}.$mm → ${r.groupValues[3]}.$mm" }
+            s = Regex("(?<![\\d.:])(\\d{1,2})\\s+$m[а-я]*", RegexOption.IGNORE_CASE).replace(s) { r -> "${r.groupValues[1]}.$mm" }
+        }
+        s = Regex("(?<![\\d.:])(\\d{1,2})\\s*(→|–|—|-)\\s*(\\d{1,2})\\.(\\d{2})(?![\\d:])").replace(s) { r -> "${r.groupValues[1]}.${r.groupValues[4]} → ${r.groupValues[3]}.${r.groupValues[4]}" }
+        return s
+    }
+
+    private fun points(src: String, base: LocalDate?): List<Pt> {
+        val s = norm(src)
         val out = ArrayList<Pt>()
         var lastDate: LocalDate? = base
         // идём по строке слева направо: дата задаёт день, время после неё — точку
@@ -72,7 +87,12 @@ object Trip {
         val out = ArrayList<String>()
         for ((name, rt) in routes(rep)) {
             var base: LocalDate? = null
-            val pts = rt.map { l -> points(l.optString("when"), base).also { p -> p.lastOrNull()?.let { base = it.dt.toLocalDate() } } }
+            val pts = rt.map { l ->
+                var p = points(l.optString("when"), base)
+                // у отеля даты бывают в названии или подписи: «Отель «Моя», 3 ночи (3→6.01)»
+                if (l.optString("kind") == "stay" && p.size < 2) points(l.optString("when") + " " + l.optString("what") + " " + l.optString("sub"), base).takeIf { it.size >= 2 }?.let { p = it }
+                p.also { q -> q.lastOrNull()?.let { base = it.dt.toLocalDate() } }
+            }
             for ((k, l) in rt.withIndex()) {
                 if (l.optString("kind") != "stay") continue
                 val sp = pts[k]; if (sp.size < 2) continue
