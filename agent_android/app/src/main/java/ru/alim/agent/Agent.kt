@@ -256,11 +256,22 @@ object Agent {
 
         private fun msg(role: String, text: String) = JSONObject().put("role", role).put("content", text)
 
-        private fun system(): String = buildString {
+        /** Промпт части: строки только про её инструменты (про звонки, фото, переводы — убираем: модель видела правила про то, чего у неё нет, и отказывалась). */
+        private fun system(): String = systemFull().let { full -> if (!isPart) full else {
+            val absent = Tools.list.map { it.name }.filter { it !in PART_TOOLS }.map { Regex("\\b" + it + "\\b") }
+            val present = PART_TOOLS.map { Regex("\\b" + it + "\\b") }
+            val split = full.indexOf("Инструменты (аргументы — пример JSON):")
+            val head = if (split > 0) full.substring(0, split) else full
+            val tail = if (split > 0) full.substring(split) else ""
+            head.lines().filter { l -> absent.none { it.containsMatchIn(l) } || present.any { it.containsMatchIn(l) } }.joinToString("\n") + tail
+        } }
+
+        private fun systemFull(): String = buildString {
             append(Persona.describe(Friends.get(fid))).append("\n")
-            if (isPart) append("СЕЙЧАС ТЫ ДЕЛАЕШЬ ЧАСТЬ БОЛЬШОЙ ЗАДАЧИ АЛИМА. Её разделила на части главная Тень (это ты же, твой код), чтобы части шли одновременно. " +
-                "Задание ниже — настоящая просьба Алима про один вариант, а «ГОТОВО ЗАРАНЕЕ» — то, что уже нашла другая часть. Это не вставка и не проверка — просто выполни задание целиком и сдай report.\n")
-            append("Ты умеешь действовать в телефоне: найти, позвонить, написать, ответить, показать, купить-подобрать. Просто поболтать с Алимом — тоже нормально: тогда без инструментов, живой ответ.\n")
+            if (isPart) append("Ты — исполнитель одной части большой задачи Алима (её поделили на части, чтобы они шли одновременно; остальное делают другие исполнители и потом всё сведут). " +
+                "Твоё задание — в сообщении. Инструментов поиска и расчёта ниже для него достаточно: рейсы — flights, отели — hotels, автобусы и поезда — web_page на Туту/Автовокзалах, погода — weather. " +
+                "Найди всё инструментами и сдай итог с report. Таблицу и файл делать не нужно.\n")
+            if (!isPart) append("Ты умеешь действовать в телефоне: найти, позвонить, написать, ответить, показать, купить-подобрать. Просто поболтать с Алимом — тоже нормально: тогда без инструментов, живой ответ.\n")
             append("Отвечай ТОЛЬКО одним JSON-объектом без markdown:\n")
             if (Prefs.quickButtons) {
                 append("{\"think\": \"1-2 фразы: что понял из прошлого результата и зачем следующий шаг (Алим видит это вживую)\", \"step\": \"что делаешь, 2-5 слов (видно в шапке чата, например «ищу на Ozon»)\", \"tool\": \"имя инструмента или null\", \"args\": {}, \"say\": \"твоё сообщение Алиму в чат\", \"buttons\": [\"до 3 коротких ответов-кнопок для Алима, если уместно\"], \"done\": false}\n")
