@@ -645,6 +645,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
             }
             SetGroup("Подключения") {
+            Section("ChatGPT", if (ChatGptAccount.connected && tick >= 0) ChatGptAccount.email.ifBlank { "подключён" } else "не подключён") {
+                ChatGptSettings()
+            }
             val mails = listOf(1, 2).count { Mail.hasPass(ctx, it) && tick >= 0 }
             Section("Почта Gmail", if (mails > 0) "подключено ящиков: $mails" else "не подключена",
                 statusColor = if (mails > 0) Muted else Amber, first = true) { MailSettings() }
@@ -815,7 +818,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
         "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
         "cx/gpt-6.1-sol" to "GPT-6.1 Sol · Any", "cx/gpt-6.1-terra" to "GPT-6.1 Terra · Any", "cc/claude-sonnet-5" to "Claude Sonnet 5 · Any",
         "ds/deepseek-v4-pro" to "DeepSeek V4 Pro · Any", "ds/deepseek-v4-flash-vision" to "DeepSeek V4 Flash Vision · Any")
-    val list = when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS }
+    val list = (when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS } + ChatGptAccount.models + listOf(model).filter { Llm.isChatGpt(it) }).distinct()
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -824,11 +827,12 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
                 val k = AnyPrice.coef(m)
                 Box(Modifier.height(40.dp).clip(shp(12.dp)).background(if (on) Line else Bg)
                     .clickable { onModel(m); onIn("0"); onOut("0") }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                    Text((names[m] ?: m) + if (k != null) " ×" + k.toString().removeSuffix(".0").replace('.', ',') else "", style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
+                    Text((names[m] ?: if (Llm.isChatGpt(m)) m.removePrefix("chatgpt:") + " · ChatGPT" else m) + if (k != null) " ×" + k.toString().removeSuffix(".0").replace('.', ',') else "", style = body(13, FontWeight.SemiBold, if (on) Ink else Muted))
                 }
             }
         }
         val note = when {
+            Llm.isChatGpt(model) -> "Использует подписку ChatGPT · лимиты аккаунта"
             Llm.isYandex(model) -> "бесплатно · без VPN"
             Llm.isAny(model) -> AnyPrice.coef(model)?.let { "платно · AnyModel ×${it.toString().removeSuffix(".0").replace('.', ',')} ≈ ${"%.1f".format(it * AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов" } ?: "платно · AnyModel"
             else -> ""

@@ -11,6 +11,7 @@ import java.util.Calendar
 object Prefs {
     private lateinit var sp: SharedPreferences
     fun init(ctx: Context) {
+        ChatGptAccount.init(ctx.applicationContext)
         if (!::sp.isInitialized) sp = ctx.applicationContext.getSharedPreferences("agent", Context.MODE_PRIVATE)
     }
 
@@ -24,7 +25,7 @@ object Prefs {
     val HANDS_MODELS = listOf("yc:aliceai-llm", "yandexgpt-5.1/latest", "yc:deepseek-v4.1-flash",
         "cx/gpt-6-astra", "cx/gpt-6.1-sol", "cx/gpt-6.1-terra", "cc/claude-sonnet-5", "ds/deepseek-v4-pro", "ds/deepseek-v4-flash-vision")
     val BG_MODELS = listOf("yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
-    private fun pick(v: String, allowed: List<String>, def: String) = allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
+    private fun pick(v: String, allowed: List<String>, def: String) = if (Llm.isChatGpt(v)) v.trim() else allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
     var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, CHAT_MODELS[0]); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
     var fastLane: Boolean get() = b("fastlane", true); set(v) = putB("fastlane", v)
@@ -144,6 +145,7 @@ object Prefs {
     fun num(t: String) = t.replace(',', '.').trim().toDoubleOrNull() ?: 0.0
     /** Цена вызова в рублях по токенам. */
     fun price(model: String, inTok: Int, outTok: Int): Double {
+        if (Llm.isChatGpt(model)) return 0.0 // Usage belongs to the user's plan; not a ruble API charge.
         if (Llm.isGoogle(model)) return 0.0
         if (Llm.isAny(model)) return AnyPrice.rub(model, inTok.toLong() + outTok) ?: 0.0
         val smart = model == smartModel && model != fastModel

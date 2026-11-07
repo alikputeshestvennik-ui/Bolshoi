@@ -163,7 +163,7 @@ object Agent {
         /** Сейчас выполняется просьба, переданная другим другом. */
         @Volatile var delegated = false
         /** Модель друга — только из поддерживаемых (GPTunnel и Google убраны), иначе как в настройках. */
-        private fun friendModel(): String = Friends.get(fid).model.takeIf { m -> Llm.isAny(m) || Llm.isYandex(m) }.orEmpty()
+        private fun friendModel(): String = Friends.get(fid).model.takeIf { m -> Llm.isAny(m) || Llm.isYandex(m) || Llm.isChatGpt(m) }.orEmpty()
         fun fast(): String = friendModel().ifBlank { Prefs.fastModel }
         fun smart(): String = friendModel().ifBlank { Prefs.smartModel }
 
@@ -1160,6 +1160,7 @@ object Agent {
     }
 
     fun short(m: String): String = when {
+        Llm.isChatGpt(m) -> m.removePrefix("chatgpt:")
         Llm.isAny(m) -> m.removePrefix("any:").substringAfter('/').take(24)   // у AnyModel важна точная версия: deepseek-v4-pro ≠ …-flash-vision
         m.contains("haiku", true) -> "Haiku"
         m.contains("sonnet", true) -> "Sonnet"

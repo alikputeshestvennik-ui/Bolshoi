@@ -10,6 +10,15 @@ import java.util.concurrent.TimeUnit
 
 /** Запросы к моделям: AnyModel (OpenAI-формат), Yandex AI Studio, Google AI Studio. GPTunnel убран. */
 object Llm {
+    fun isChatGpt(model: String) = model.startsWith("chatgpt:")
+    private fun chatGpt(model: String, messages: JSONArray, onPart: ((String, String) -> Unit)? = null): Reply {
+        val full = StringBuilder()
+        val r = ChatGptResponses.chat(ChatGptAccount.access(), model.removePrefix("chatgpt:"), messages) { delta ->
+            full.append(delta); onPart?.invoke(full.toString(), "")
+        }
+        lastUsed = model; whyNotWanted = ""
+        return Reply(r.text, r.inputTokens, r.outputTokens, 0.0)
+    }
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(200, TimeUnit.SECONDS).callTimeout(300, TimeUnit.SECONDS).build()   // тяжёлый ход DeepSeek с большим контекстом думает дольше 2 минут
     private val JSON = "application/json; charset=utf-8".toMediaType()
@@ -255,7 +264,8 @@ object Llm {
     }
 
     private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, onPart: ((String, String) -> Unit)? = null): Reply =
-        if (isAny(model)) anyChat(model, messages, maxTokens, json, onPart)
+        if (isChatGpt(model)) chatGpt(model, messages, onPart)
+        else if (isAny(model)) anyChat(model, messages, maxTokens, json, onPart)
         else if (isYandex(model)) yandexChat(model, messages, maxTokens, json)
         else error("Модель «$model» больше не поддерживается (GPTunnel убран) — выбери модель в настройках")
 
@@ -265,6 +275,12 @@ object Llm {
      */
     fun stream(model: String, messages: JSONArray, maxTokens: Int, onDelta: (String) -> Unit): String {
         return when {
+            isChatGpt(model) -> {
+                val r = ChatGptResponses.chat(ChatGptAccount.access(), model.removePrefix("chatgpt:"), messages, onDelta)
+                lastStreamTok = r.inputTokens.toLong() + r.outputTokens
+                lastUsed = model; whyNotWanted = ""
+                r.text
+            }
             isYandex(model) -> {
                 val k = YaCloud.llmKey
                 if (k.isBlank()) error("нет ключа Yandex")
