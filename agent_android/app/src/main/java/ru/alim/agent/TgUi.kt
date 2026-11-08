@@ -1,5 +1,7 @@
 package ru.alim.agent
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,10 +33,11 @@ fun TgScreen(back: () -> Unit) {
     LaunchedEffect(Unit) { Tg.start(ctx) }
 
     Screen("Telegram", back) {
-        Column(Modifier.padding(top = LocalTopPad.current, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = Tg.state
             val status = Tg.statusText
-            Section("Личный Telegram", status, statusColor = if (st == Tg.St.READY) Muted else Amber) {
+            CardBox {
+                Text(status, style = body(16, androidx.compose.ui.text.font.FontWeight.SemiBold))
                 Text("Тень подключается к твоему Telegram как сторонний клиент (Telegram это разрешает) на твоих ключах. " +
                     "Сможет показывать твои чаты и искать по переписке, а писать — только по твоей просьбе и с подтверждением. " +
                     "Коды входа он не читает и не пересылает.", style = body(13, color = Muted), lineHeight = 18.sp)

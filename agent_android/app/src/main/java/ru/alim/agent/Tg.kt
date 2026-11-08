@@ -109,7 +109,10 @@ object Tg {
                 val dir = app!!.filesDir.resolve("tdlib")
                 p.databaseDirectory = dir.absolutePath
                 p.filesDirectory = dir.resolve("files").absolutePath
-                p.databaseEncryptionKey = dbKey()
+                p.databaseEncryptionKey = try { dbKey() } catch (_: Exception) {
+                    fail("Не удалось открыть защищённую сессию Telegram. Данные сохранены; попробуй проверить подключение снова.")
+                    return
+                }
                 p.useFileDatabase = true
                 p.useChatInfoDatabase = true
                 p.useMessageDatabase = true
