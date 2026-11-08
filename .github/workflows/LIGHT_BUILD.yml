@@ -49,9 +49,13 @@ jobs:
           VK_SECURE_KEY: ${{ secrets.VK_SECURE_KEY }}
         shell: bash
         run: |
+          set -euo pipefail
           for name in ANYMODEL_KEY YOOMONEY_CLIENT_ID YANDEX_SEARCH_KEY YANDEX_API_KEY YANDEX_FOLDER_ID QWEN_MODEL GOOGLE_API TG_API_ID TG_API_HASH GH_PAT YT_CLIENT_ID TRAVELPAYOUTS_TOKEN YT_CLIENT_SECRET VK_APP_ID VK_SECURE_KEY; do
             if [[ -n "${!name:-}" ]]; then echo "$name: configured"; else echo "$name: missing"; fi
           done
+          latest=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/AGENT_APK.yml/runs?per_page=1" | jq -er '.workflow_runs[0].run_number')
+          export TEN_VERSION_CODE=$((latest + 2))
+          echo "Version code: $TEN_VERSION_CODE"
           gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :home:assembleRelease
       - uses: actions/upload-artifact@v7
         with:

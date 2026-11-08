@@ -12,7 +12,7 @@ android {
         applicationId = "ru.alim.home"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
+        versionCode = System.getenv("TEN_VERSION_CODE")?.toIntOrNull() ?: (1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0))
         versionName = "1.0"
     }
     val ksPath: String? = System.getenv("ANDROID_KEYSTORE_PATH")

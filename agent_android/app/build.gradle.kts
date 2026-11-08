@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 34
         // Номер растёт с каждой сборкой — обновление ставится поверх
-        versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
+        versionCode = System.getenv("TEN_VERSION_CODE")?.toIntOrNull() ?: (1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0))
         versionName = "1.1"
         buildConfigField("String", "ANYMODEL_KEY", secret("ANYMODEL_KEY"))
         buildConfigField("String", "YOOMONEY_CLIENT_ID", secret("YOOMONEY_CLIENT_ID"))
