@@ -101,6 +101,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -164,6 +165,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     }
     var tick by remember { mutableStateOf(0) }
     var composerH by remember { mutableStateOf(220) }
+    var composerFocused by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
@@ -178,7 +180,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             val bars = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 68.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 20.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
                 if (core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
@@ -203,8 +205,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         }
 
         // ——— затемнение сверху и снизу: лента плавно уходит в фон под плашками ———
-        val fade = Th.c.wall.first()
-        val fadeBottom = Th.c.wall.last()
+        val fade = Th.c.bg
+        val fadeBottom = Th.c.bg
         val topH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 96.dp
         val botH = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
             with(LocalDensity.current) { composerH.toDp() } + 34.dp
@@ -233,7 +235,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     chat.delete(ChatSel.ids.toList()); ChatSel.ids.clear()
                 }.padding(10.dp))
             }
-        } else Row(Modifier.fillMaxWidth().then(if (search != null) Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
+        } else if (search != null) Row(Modifier.fillMaxWidth().then(if (search != null) Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
             // поиск выезжает на место шапки Пилота и уезжает обратно
             androidx.compose.animation.AnimatedContent(search != null, Modifier.weight(1f), label = "head",
                 transitionSpec = {
@@ -258,7 +260,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().background(Bg).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 10.dp)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().background(Card).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
@@ -277,9 +279,10 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             } else {
                 if (fid == Friends.MAIN) {
                     if (search == null && Activity.count() > 0) { ActiveButton(go); Spacer(Modifier.height(8.dp)) }
-                    ChatControls(go); Spacer(Modifier.height(8.dp))
+                    NavBar(haze, Scr.Home, go); Spacer(Modifier.height(8.dp))
+                    if (composerFocused && WindowInsets.ime.getBottom(LocalDensity.current) > 0) { ChatControls(go); Spacer(Modifier.height(8.dp)) }
                 }
-                Composer(haze, chat, f)
+                Composer(haze, chat, f) { composerFocused = it }
             }
         }
 
@@ -596,7 +599,7 @@ fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
 // ———————————————— ввод и голосовое ————————————————
 
 @Composable
-fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
+fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (Boolean) -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -655,7 +658,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
                 if (locked) Text("Отмена", style = body(15, FontWeight.Bold, Teal), modifier = Modifier.clickable { finishVoice(true) }.padding(6.dp))
                 else Text("‹ Влево — отмена", style = body(15, color = Muted), modifier = Modifier.offset { IntOffset(dragX.roundToInt() / 2, 0) })
             } else {
-                BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f), textStyle = body(16), cursorBrush = SolidColor(Teal), maxLines = 6,
+                BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f).onFocusChanged { onInputFocusChange(it.isFocused) }, textStyle = body(16), cursorBrush = SolidColor(Teal), maxLines = 6,
                     decorationBox = { inner -> if (text.isEmpty()) Text("Сообщение", style = body(16, color = Muted)); inner() })
                 HGap(8)
                 Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(40.dp).clickable { attach() }.padding(8.dp))

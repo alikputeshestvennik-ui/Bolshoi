@@ -26,6 +26,7 @@ object Prefs {
         "cx/gpt-6-astra", "cx/gpt-6.1-sol", "cx/gpt-6.1-terra", "cc/claude-sonnet-5", "ds/deepseek-v4-pro", "ds/deepseek-v4-flash-vision")
     val BG_MODELS = listOf("yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
     private fun pick(v: String, allowed: List<String>, def: String) = if (Llm.isChatGpt(v)) v.trim() else allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
+    var showOtherModels: Boolean get() = b("show_other_models", false); set(v) = putB("show_other_models", v)
     var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, CHAT_MODELS[0]); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
     var fastLane: Boolean get() = b("fastlane", true); set(v) = putB("fastlane", v)

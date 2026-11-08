@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -467,15 +469,16 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 @Composable
 fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = false, onSearch: (() -> Unit)? = null) {
     // только иконки, по центру; текущий раздел подсвечен
-    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icSun, "Сводки", Scr.Digest), Triple(icGear, "Настройки", Scr.Settings))
+    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icSun, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
     val cur = when (here) {
         Scr.Journal -> Scr.Home
+        Scr.Digest -> Scr.History
         Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt -> Scr.Settings
         else -> here
     }
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.width(56.dp), to == cur) { go(to) } }
+    Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f), to == cur) { go(to) } }
         if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(56.dp), searchOn, onSearch)
     }
 }
@@ -483,9 +486,10 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
 @Composable
 private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onClick: () -> Unit) {
     val shape = shp(20.dp)
-    Box(modifier.height(44.dp).then(if (on) Modifier.clip(shape).background(AccentSoft).border(1.dp, Teal, shape) else Modifier.glassDash(haze, shape))
-        .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Ink, modifier = Modifier.size(19.dp))
+    Column(modifier.height(52.dp).clip(shape).background(if (on) AccentSoft else Color.Transparent)
+        .clickable(onClickLabel = label, onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Muted, modifier = Modifier.size(19.dp))
+        Text(label, style = body(10, FontWeight.Medium, if (on) Teal else Muted), maxLines = 1)
     }
 }
 
@@ -715,15 +719,19 @@ private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): S
 @Composable
 fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier = Modifier) {
     val chat = remember { Chat.of(Friends.MAIN) }
+    var composerFocused by remember { mutableStateOf(false) }
     val n0 = remember { chat.msgs.size }
     LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
     // как в чате: лёгкое затемнение снизу, сквозь которое видно экран, кнопки — стекло с размытием
-    Column(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Th.c.bg.copy(alpha = 0f), Th.c.bg.copy(alpha = 0.55f), Th.c.bg.copy(alpha = 0.8f))))
+    Column(modifier.fillMaxWidth().background(Card)
         .padding(horizontal = 10.dp).padding(top = 24.dp, bottom = 10.dp)) {
         // как в чате: пока что-то идёт — над кнопками «Активные · N» (на самой странице «Активные» не нужна)
         if (here != Scr.Active) { ActiveButton(go); if (Activity.count() > 0) Spacer(Modifier.height(10.dp)) }
         NavBar(haze, here, go)
         Spacer(Modifier.height(10.dp))
-        Composer(haze, chat, chat.friend)
+        if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {
+            ChatControls(go); Spacer(Modifier.height(8.dp))
+        }
+        Composer(haze, chat, chat.friend) { composerFocused = it }
     }
 }

@@ -92,6 +92,7 @@ fun ActiveScreen(go: (Scr) -> Unit) {
     val total = (if (core.busy) 1 else 0) + delegs.size + watches.size
     Screen("Активные", {}, showBack = false, trailing = if (total == 0) "ничего не идёт" else "$total ${proc(total)}") {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text("Задачи", style = body(22, FontWeight.SemiBold))
             if (core.busy || core.pending != null) Block("Тяжёлая задача", 1) {
                 core.pending?.let { ConfirmCard(it, core) }
                 if (core.busy) Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).border(1.5.dp, Teal, shp(20.dp)).padding(14.dp),
@@ -160,9 +161,9 @@ fun ActiveScreen(go: (Scr) -> Unit) {
                     }
                 }
             }
-            if (total == 0 && core.pending == null) Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Сейчас ничего не идёт", style = TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, color = Ink))
-                PillBtn("В чат", true, Modifier) { go(Scr.Home) }
+            if (total == 0 && core.pending == null) CardBox {
+                Text("Активных задач пока нет", style = body(15, FontWeight.SemiBold))
+                Text("Когда Тень начнёт работу или будет ждать твоего ответа, задача появится здесь.", style = body(13, color = Muted))
             }
         }
     }

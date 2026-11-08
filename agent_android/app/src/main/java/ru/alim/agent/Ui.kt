@@ -118,7 +118,7 @@ fun App(voice: Voice) {
     }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); Th.tick() } }
     // Все страницы, включая подробности задачи, используют выбранную тему.
-    androidx.compose.runtime.SideEffect { Th.forceCockpit = false }
+    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task }
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
@@ -166,7 +166,7 @@ fun App(voice: Voice) {
                 if (w.attributes.layoutInDisplayCutoutMode != mode) w.attributes = w.attributes.apply { layoutInDisplayCutoutMode = mode }
             }
             androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).apply {
-                isAppearanceLightStatusBars = !Th.c.dark; isAppearanceLightNavigationBars = !Th.c.dark
+                isAppearanceLightStatusBars = !Th.c.dark && scr != Scr.Task; isAppearanceLightNavigationBars = !Th.c.dark && scr != Scr.Task
             }
         }
     }
@@ -178,9 +178,12 @@ fun App(voice: Voice) {
                 else scr = destination
             }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
-            // Only the chat owns a composer. Secondary pages use the same compact navigation.
+            val withBar = scr != Scr.Home && scr != Scr.Journal && scr != Scr.Task
+            var barH by remember { mutableStateOf(0) }
+            val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
+            val barHaze = remember { dev.chrisbanes.haze.HazeState() }
             androidx.compose.runtime.CompositionLocalProvider(
-                LocalBarPad provides 24.dp, LocalBarHaze provides null, LocalNavigate provides go) {
+                LocalBarPad provides (if (withBar) barDp + 12.dp else 24.dp), LocalBarHaze provides null, LocalNavigate provides go) {
             pageState.SaveableStateProvider(if (scr == Scr.Journal) Scr.Home.name else scr.name) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
@@ -201,6 +204,7 @@ fun App(voice: Voice) {
             }
             }
             }
+            if (withBar) GlobalBar(scr, go, barHaze, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
             if (Panel.open) Panel.open = false
         }
     }
@@ -241,10 +245,12 @@ fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "") {
 fun Screen(title: String, back: () -> Unit, showBack: Boolean = true, trailing: String = "", content: @Composable ColumnScope.() -> Unit) {
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(Modifier.fillMaxSize().background(Bg)) {
-        androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 68.dp) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + (if (showBack) 68.dp else 20.dp)) {
             Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
         }
-        if (showBack) ScreenHeader(title, back, trailing) else PageNavigation(title)
+        Box(Modifier.fillMaxWidth().height(top + 48.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(
+            listOf(Bg.copy(alpha = 0.98f), Bg.copy(alpha = 0.65f), Bg.copy(alpha = 0f)))))
+        if (showBack) ScreenHeader(title, back, trailing)
     }
 }
 

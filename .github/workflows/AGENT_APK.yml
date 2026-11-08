@@ -119,7 +119,7 @@ jobs:
           retention-days: 14
 
       - name: Publish APK for direct download
-        if: github.ref_name != 'feature/ui-refresh'
+        if: github.ref_name != 'feature/ui-refresh' && github.ref_name != 'feature/ten-approved'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

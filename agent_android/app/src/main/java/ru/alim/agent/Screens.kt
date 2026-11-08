@@ -388,7 +388,6 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val ctx = LocalContext.current
     var period by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
-    var showBg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val jv = Journal.version.intValue
     var clock by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); clock = System.currentTimeMillis() } }
@@ -396,7 +395,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val recs = remember(jv, period, from, clock) { Journal.since(ctx, from) }
     val input = recs.sumOf { it.tokIn }
     val output = recs.sumOf { it.tokOut }
-    val list = recs.filter { showBg || !it.background }.sortedByDescending { it.ts }
+    val list = recs.sortedByDescending { it.ts }
     val df = SimpleDateFormat("d MMMM", Locale("ru"))
 
     Screen("История", back, showBack = false) {
@@ -421,13 +420,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
                     if (recs.any { it.tokIn + it.tokOut == 0L }) Text("У части записей расход не сохранён. Они не включены в сумму токенов.", style = body(11, color = Muted))
                 }
             }
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Label("Запросы"); Spacer(Modifier.weight(1f))
-                    Text(if (showBg) "Скрыть фон" else "Показать фон", style = body(12, FontWeight.Medium, Teal),
-                        modifier = Modifier.clickable { showBg = !showBg }.padding(vertical = 12.dp))
-                }
-            }
+            item { Label("Запросы") }
             if (list.isEmpty()) item { CardBox { Text("Здесь появятся выполненные запросы", style = body(14, FontWeight.Medium)); Text("За выбранный период записей пока нет.", style = body(12, color = Muted)) } }
             var lastDay = ""
             list.forEach { r ->
@@ -566,6 +559,29 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
       androidx.compose.runtime.CompositionLocalProvider(LocalSetNav provides nav) {
         val sc = remember(nav.page) { androidx.compose.foundation.ScrollState(0) }
         Column(Modifier.weight(1f).verticalScroll(sc).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (nav.page == null) {
+                Text("Настройки", style = body(22, FontWeight.SemiBold))
+                @Composable fun group(title: String, rows: List<Pair<String, String>>) {
+                    SetGroup(title) { rows.forEachIndexed { i, (name, sub) -> SetRow(name, sub, first = i == 0) { nav.page = name } } }
+                }
+                group("Аккаунты и подключения", listOf(
+                    "ChatGPT" to if (ChatGptAccount.connected) ChatGptAccount.email.ifBlank { "подключён" } else "не подключён",
+                    "Telegram" to Tg.statusText, "Почта Gmail" to "почтовые ящики", "ЮMoney" to "платежи",
+                    "Яндекс Музыка" to "музыка", "YouTube" to "подписки и плейлисты"))
+                group("Модели и расход", listOf("Модели и использование" to "чат · задачи · фон · проверка", "Лимит расходов" to "платные сервисы"))
+                SetGroup("Поведение Тени") {
+                    listOf(Triple("Что Тень помнит", "память", Scr.Memory), Triple("Сам пишет первым", "инициатива и расписание", Scr.Initiative), Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules)).forEachIndexed { i, (name, sub, destination) ->
+                        SetRow(name, sub, first = i == 0) { open(destination) }
+                    }
+                    SetRow("Поведение", "сигналы и вибрация") { nav.page = "Поведение" }
+                }
+                group("Голос", listOf("Голос" to "распознавание и озвучка"))
+                group("Мониторинг", listOf("Мониторинг" to "уведомления и почта"))
+                SetGroup("Оформление") { SetRow("Оформление", if (Th.auto) "автоматически" else Th.c.title, first = true) { open(Scr.Look) } }
+                group("Доступ к телефону", listOf("Быстрый доступ" to "поделиться · шторка", "Разрешения" to "доступ к телефону"))
+                group("Город", listOf("Город" to city))
+            }
+            if (nav.page != null) {
             // Пилот: память, характер, вид — отдельные экраны
             if (nav.page == null) SetGroup {
                 listOf(Triple("Что Тень помнит", "что знает о тебе", Scr.Memory), Triple("Сам пишет первым", "утром, вечером и иногда просто так", Scr.Initiative),
@@ -669,8 +685,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
 
             }
             SetGroup("Остальное") {
-            Section("Город и лимит", "${city.ifBlank { "город не задан" }} · лимит ${limit.ifBlank { "—" }} ₽ в месяц", first = true) {
-                Field("Город для погоды", city) { city = it; Prefs.homeCity = it }
+            Section("Город", city, first = true) { Field("Город для погоды", city) { city = it; Prefs.homeCity = it } }
+            Section("Лимит расходов", "${limit.ifBlank { "—" }} ₽ в месяц") {
                 Field("Лимит расходов в месяц, ₽", limit, KeyboardType.Number) { limit = it; Prefs.monthLimit = it }
             }
 
@@ -695,6 +711,15 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Модели и использование", "чат · задачи · фон · проверка", Muted) {
+                var showOthers by remember { mutableStateOf(Prefs.showOtherModels) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Показывать сторонние модели", style = body(14, FontWeight.SemiBold))
+                        Text("При подключённом ChatGPT добавляет модели других сервисов в список.", style = body(12, color = Muted))
+                    }
+                    Toggle(showOthers) { showOthers = it; Prefs.showOtherModels = it }
+                }
+                androidx.compose.runtime.key(showOthers) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
                 Text("Модель для каждой роли. Яндекс — бесплатно и без VPN; AnyModel — платно: ${"%.2f".format(AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов баланса × коэффициент модели, расход токенов — в «Истории».",
                     style = body(12, color = Muted), lineHeight = 16.sp)
@@ -751,6 +776,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                 }, bg = Card, fg = Ink, border = Line)
                 check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+                }
+            }
             }
             }
 
@@ -809,9 +836,10 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
         "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
         "cx/gpt-6.1-sol" to "GPT-6.1 Sol · Any", "cx/gpt-6.1-terra" to "GPT-6.1 Terra · Any", "cc/claude-sonnet-5" to "Claude Sonnet 5 · Any",
         "ds/deepseek-v4-pro" to "DeepSeek V4 Pro · Any", "ds/deepseek-v4-flash-vision" to "DeepSeek V4 Flash Vision · Any")
-    val list = (when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS } + ChatGptAccount.models + listOf(model).filter { Llm.isChatGpt(it) }).distinct()
+    val list = visibleModels(when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS })
     CardBox {
         Text(title, style = body(14, FontWeight.SemiBold))
+        if (model !in list) Text("Выбрана модель: ${Agent.short(model)}. Выбор сохранён; измени его вручную при необходимости.", style = body(12, color = Muted))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             list.forEach { m ->
                 val on = model.equals(m, true)

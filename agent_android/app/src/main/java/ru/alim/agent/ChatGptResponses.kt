@@ -68,6 +68,7 @@ internal object ChatGptResponses {
             }
         }
         val body = JSONObject().put("model", model).put("input", input).put("store", false).put("stream", true)
+        body.put("reasoning", JSONObject().put("effort", Prefs.effort.takeIf { it in setOf("low", "medium", "high") } ?: "medium"))
         if (instructions.isNotEmpty()) body.put("instructions", instructions.joinToString("\n\n"))
         val request = Request.Builder().url("https://api.openai.com/v1/responses")
             .header("Authorization", "Bearer $token")
