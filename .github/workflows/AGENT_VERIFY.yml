@@ -5,6 +5,11 @@ on:
   push:
     branches:
       - 'codex/chatgpt-signin'
+      - 'feature/ui-refresh'
+  pull_request:
+    paths:
+      - 'agent_android/**'
+      - '.github/workflows/AGENT_VERIFY.yml'
 
 permissions:
   contents: read

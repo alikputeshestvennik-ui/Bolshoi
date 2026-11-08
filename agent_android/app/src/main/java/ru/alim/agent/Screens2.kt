@@ -109,42 +109,27 @@ fun MemoryScreen(back: () -> Unit) {
 @Composable
 fun DigestScreen(back: () -> Unit) {
     val ctx = LocalContext.current
-    val dv = Digests.version.intValue
     val ev = Events.version.intValue
-    val digests = remember(dv) { Digests.all(ctx).reversed() }
-    val urgent = remember(ev) { Events.since(ctx, Journal.startOfDay()).filter { it.urgent }.reversed() }
-    val counts = remember(ev) { Events.since(ctx, Journal.startOfDay()).groupingBy { it.kind }.eachCount() }
-    var busy by remember { mutableStateOf(false) }
-    LaunchedEffect(dv) { busy = false }
-
-    Screen("Сводки", back, showBack = false) {
+    val urgent = remember(ev) { Events.all(ctx).filter { it.urgent }.sortedByDescending { it.ts } }
+    Screen("Важное", back, showBack = false) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Сегодня увидел: уведомлений ${counts["notif"] ?: 0}, сообщений ${counts["msg"] ?: 0}, SMS ${counts["sms"] ?: 0}, писем ${counts["mail"] ?: 0}",
-                style = body(13, color = Muted))
-            Label("Важное сегодня", Amber)
-            if (urgent.isEmpty()) Text("Ничего срочного.", style = body(14, color = Muted))
-            urgent.forEach { e ->
-                CardBox(border = WarnLine, bg = WarnBg) {
-                    Text(e.note.ifBlank { e.title.ifBlank { e.text.take(80) } }, style = body(15, FontWeight.SemiBold))
-                    Text("${e.source} · ${e.from} · ${SimpleDateFormat("HH:mm", Locale("ru")).format(Date(e.ts))}", style = body(12, color = Muted))
-                }
+            Text("Требует внимания", style = body(24, FontWeight.SemiBold))
+            Text("Важные сообщения и события из подключённых сервисов", style = body(13, color = Muted), lineHeight = 19.sp)
+            if (urgent.isEmpty()) CardBox {
+                Text("Всё спокойно", style = body(17, FontWeight.SemiBold))
+                Text("Когда появится важное событие, оно будет здесь.", style = body(13, color = Muted))
             }
-            Label("Итог дня")
-            digests.firstOrNull()?.let { d ->
-                CardBox(bg = AccentSoft) {
-                    Text(dm.format(Date(d.ts)), style = body(12, color = AccentSoftInk))
-                    Text(d.text, style = body(15, color = Ink), lineHeight = 21.sp)
-                }
-            } ?: Text("Итог собирается сам вечером, в ${Prefs.digestHour}:00. Можно собрать сейчас.", style = body(14, color = Muted))
-            BigButton(if (busy) "Собираю…" else "Собрать итог сейчас", { if (!busy) { busy = true; Monitor.runNow(ctx, digest = true) } },
-                bg = Card, fg = Ink, border = Line)
-            if (digests.size > 1) {
-                Label("Прошлые дни")
-                digests.drop(1).forEach { d ->
-                    CardBox {
-                        Text(dm.format(Date(d.ts)), style = body(12, color = Muted))
-                        Text(d.text, style = body(14), lineHeight = 19.sp)
+            urgent.forEach { e ->
+                CardBox {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).clip(shp(3.dp)).background(Teal))
+                        HGap(8)
+                        Text(e.source, style = body(11, FontWeight.SemiBold, Teal), modifier = Modifier.weight(1f))
+                        Text(SimpleDateFormat("d MMM · HH:mm", Locale("ru")).format(Date(e.ts)), style = body(11, color = Muted))
                     }
+                    Gap(4)
+                    Text(e.note.ifBlank { e.title.ifBlank { e.text.take(160) } }, style = body(15, FontWeight.Medium), lineHeight = 22.sp)
+                    if (e.from.isNotBlank()) Text(e.from, style = body(12, color = Muted))
                 }
             }
         }

@@ -179,22 +179,21 @@ fun HomeScreen(voice: Voice, go: (Scr) -> Unit) {
 
 @Composable
 fun TaskRow(r: TaskRec, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).clickable(onClickLabel = "Открыть", onClick = onClick).padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(shp(12.dp)).background(if (r.ok) AccentSoft else DangerBg),
-            contentAlignment = Alignment.Center) {
-            if (r.ok) Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(18.dp))
-            else Text("!", style = body(16, FontWeight.Bold, Danger))
+    Row(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card)
+        .clickable(onClickLabel = "Открыть запрос", onClick = onClick).padding(16.dp), verticalAlignment = Alignment.Top) {
+        Box(Modifier.size(32.dp).clip(shp(10.dp)).background(if (r.ok) AccentSoft else DangerBg), contentAlignment = Alignment.Center) {
+            if (r.ok) Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(16.dp))
+            else Text("!", style = body(15, FontWeight.Bold, Danger))
         }
         HGap(12)
-        Column(Modifier.weight(1f)) {
-            Text(r.title, style = body(15, FontWeight.SemiBold, if (r.background) Muted else Ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${hm.format(Date(r.ts))} · ${r.model}" + (if (r.tokIn + r.tokOut > 0 && r.cost <= 0.0) " · ${tok(r.tokIn + r.tokOut)}" else ""), style = body(12, color = Muted))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(r.title, style = body(15, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${hm.format(Date(r.ts))} · ${r.model}" + if (r.background) " · фон" else "", style = body(12, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (r.ok) "Выполнено" else "Не завершено", style = body(11, color = Muted), modifier = Modifier.weight(1f))
+                Text(if (r.tokIn + r.tokOut > 0) tok(r.tokIn + r.tokOut) else "Нет данных о токенах", style = body(12, FontWeight.Medium, Teal))
+            }
         }
-        HGap(8)
-        // у моделей без введённой цены рубли не посчитать — показываем токены (по ним видно расход баланса AnyModel)
-        if (r.cost <= 0.0 && r.tokIn + r.tokOut > 0) Text(tok(r.tokIn + r.tokOut), style = body(14, FontWeight.SemiBold, Ink))
-        else Text(rub(r.cost), style = body(14, FontWeight.SemiBold, if (r.cost > 0) Ink else Muted))
     }
 }
 
@@ -387,70 +386,73 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 @Composable
 fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val ctx = LocalContext.current
-    var period by remember { mutableStateOf(0) } // 0 день, 1 неделя, 2 месяц
+    val go = LocalNavigate.current
+    var period by remember { mutableStateOf(0) }
     var showBg by remember { mutableStateOf(false) }
     val jv = Journal.version.intValue
+    var clock by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { delay(60_000); clock = System.currentTimeMillis() } }
     val from = when (period) { 0 -> Journal.startOfDay(); 1 -> Journal.startOfWeek(); else -> Journal.startOfMonth() }
-    val recs = remember(jv, period) { Journal.since(ctx, from) }
-    val total = recs.sumOf { it.cost }
-    val list = recs.filter { showBg || !it.background }.reversed()
+    val recs = remember(jv, period, from, clock) { Journal.since(ctx, from) }
+    val input = recs.sumOf { it.tokIn }
+    val output = recs.sumOf { it.tokOut }
+    val list = recs.filter { showBg || !it.background }.sortedByDescending { it.ts }
     val df = SimpleDateFormat("d MMMM", Locale("ru"))
 
     Screen("История", back, showBack = false) {
-        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item {
-                Row(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Card).padding(4.dp)) {
-                    listOf("Сегодня", "Неделя", "Месяц").forEachIndexed { i, t ->
-                        Box(Modifier.weight(1f).height(40.dp).clip(shp(11.dp))
-                            .background(if (period == i) Line else Color.Transparent).clickable { period = i },
-                            contentAlignment = Alignment.Center) {
-                            Text(t, style = body(14, FontWeight.SemiBold, if (period == i) Ink else Muted))
+                Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).padding(4.dp)) {
+                    listOf("Сегодня", "7 дней", "Месяц").forEachIndexed { i, t ->
+                        Box(Modifier.weight(1f).height(44.dp).clip(shp(12.dp)).background(if (period == i) AccentSoft else Color.Transparent)
+                            .clickable { period = i }, contentAlignment = Alignment.Center) {
+                            Text(t, style = body(13, FontWeight.SemiBold, if (period == i) Teal else Muted))
                         }
                     }
                 }
             }
             item {
-                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(rub(total), style = TextStyle(fontFamily = Fonts.display, fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Ink))
-                    HGap(10)
-                    Text("потрачено · ${recs.count { !it.background }} запросов", style = body(13, color = Muted), modifier = Modifier.padding(bottom = 6.dp))
+                CardBox(bg = AccentSoft) {
+                    Text("ИСПОЛЬЗОВАНО ЗА ПЕРИОД", style = body(10, FontWeight.Bold, Muted).copy(letterSpacing = 1.sp))
+                    Text(tok(input + output), style = body(30, FontWeight.SemiBold))
+                    Text("Вход ${tok(input)} · выход ${tok(output)}", style = body(12, color = Muted))
+                    Text("${recs.count { !it.background }} запросов · ${recs.count { it.background }} фоновых записей", style = body(12, color = Muted))
+                    if (recs.any { it.tokIn + it.tokOut == 0L }) Text("У части записей расход не сохранён. Они не включены в сумму токенов.", style = body(11, color = Muted))
                 }
-                if (period == 2) {
-                    val limit = Prefs.num(Prefs.monthLimit)
-                    if (limit > 0) {
-                        val f = (total / limit).toFloat().coerceIn(0f, 1f)
-                        Gap(8)
-                        Box(Modifier.fillMaxWidth().height(8.dp).clip(shp(4.dp)).background(Track)) {
-                            Box(Modifier.fillMaxWidth(f).fillMaxHeight().clip(shp(4.dp)).background(if (f > 0.9f) Amber else Teal))
-                        }
-                        Gap(4)
-                        Text("лимит ${rub(limit)} · осталось ${rub((limit - total).coerceAtLeast(0.0))}", style = body(12, color = Muted))
+            }
+            item {
+                Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).clickable { go(Scr.Digest) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Важные события", style = body(14, FontWeight.SemiBold))
+                        Text("Сообщения, требующие внимания", style = body(12, color = Muted))
                     }
+                    Text("›", style = body(22, color = Teal))
                 }
             }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label("Запросы"); Spacer(Modifier.weight(1f))
-                    Text(if (showBg) "скрыть фоновые" else "показать фоновые", style = body(13, FontWeight.SemiBold, Teal),
-                        modifier = Modifier.clickable { showBg = !showBg }.padding(6.dp))
+                    Text(if (showBg) "Скрыть фон" else "Показать фон", style = body(12, FontWeight.Medium, Teal),
+                        modifier = Modifier.clickable { showBg = !showBg }.padding(vertical = 12.dp))
                 }
             }
-            if (list.isEmpty()) item { Text("За этот период запросов нет.", style = body(14, color = Muted)) }
+            if (list.isEmpty()) item { CardBox { Text("Здесь появятся выполненные запросы", style = body(14, FontWeight.Medium)); Text("За выбранный период записей пока нет.", style = body(12, color = Muted)) } }
             var lastDay = ""
             list.forEach { r ->
                 val d = df.format(Date(r.ts))
-                if (period != 0 && d != lastDay) { lastDay = d; item { Text(d, style = body(13, FontWeight.SemiBold, Muted), modifier = Modifier.padding(top = 6.dp)) } }
+                if (period != 0 && d != lastDay) { lastDay = d; item { Text(d, style = body(12, FontWeight.Medium, Muted), modifier = Modifier.padding(top = 4.dp)) } }
                 item { TaskRow(r) { open(r) } }
             }
             if (period != 0 && recs.isNotEmpty()) item { DayBars(recs, if (period == 1) 7 else Calendar.getInstance().get(Calendar.DAY_OF_MONTH)) }
             if (recs.isNotEmpty()) item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                CardBox {
                     Label("По моделям")
-                    recs.groupBy { it.model }.entries.sortedByDescending { e -> e.value.sumOf { it.cost } }.forEach { (m, l) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Text("$m · ${l.size}", style = body(14), modifier = Modifier.weight(1f))
+                    recs.groupBy { it.model }.entries.sortedByDescending { e -> e.value.sumOf { it.tokIn + it.tokOut } }.forEach { (m, l) ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(m, style = body(13), modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            HGap(12)
                             val tk = l.sumOf { it.tokIn + it.tokOut }
-                            Text(if (l.sumOf { it.cost } <= 0.0 && tk > 0) tok(tk) else rub(l.sumOf { it.cost }), style = body(14, FontWeight.SemiBold))
+                            Text(if (tk > 0) tok(tk) else "Нет данных", style = body(12, FontWeight.SemiBold))
                         }
                     }
                 }
@@ -461,30 +463,27 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
 
 @Composable
 fun DayBars(recs: List<TaskRec>, days: Int) {
-    val cal = Calendar.getInstance()
-    val start = Calendar.getInstance().apply {
+    val dates = (0 until days).map { offset -> Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        add(Calendar.DAY_OF_YEAR, -(days - 1))
-    }.timeInMillis
-    val sums = DoubleArray(days)
-    recs.forEach { r ->
-        val i = ((r.ts - start) / 86_400_000L).toInt()
-        if (i in 0 until days) sums[i] += r.cost
+        add(Calendar.DAY_OF_YEAR, -(days - 1) + offset)
+    }.timeInMillis }
+    val sums = dates.map { start ->
+        val end = Calendar.getInstance().apply { timeInMillis = start; add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+        recs.filter { it.ts >= start && it.ts < end }.sumOf { it.tokIn + it.tokOut }
     }
-    val max = (sums.maxOrNull() ?: 0.0).coerceAtLeast(0.01)
+    val max = (sums.maxOrNull() ?: 0L).coerceAtLeast(1L)
     CardBox {
-        Label("По дням"); Gap(8)
-        Row(Modifier.fillMaxWidth().height(110.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+        Label("Токены по дням"); Gap(8)
+        Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
             sums.forEachIndexed { i, v ->
-                val f = (v / max).toFloat().coerceIn(0.03f, 1f)
-                Box(Modifier.weight(1f).fillMaxHeight(f).clip(shp(3.dp))
-                    .background(if (i == days - 1) Teal else if (v == sums.max() && v > 0) Violet else Teal.copy(alpha = 0.45f)))
+                Box(Modifier.weight(1f).fillMaxHeight((v.toFloat() / max).coerceIn(0.025f, 1f)).clip(shp(4.dp))
+                    .background(if (v == 0L) Line else if (i == days - 1) Teal else Teal.copy(alpha = 0.4f)))
             }
         }
-        Row {
-            Text(SimpleDateFormat("d MMM", Locale("ru")).format(Date(start)), style = body(12, color = Muted))
+        Row(Modifier.fillMaxWidth()) {
+            Text(SimpleDateFormat("d MMM", Locale("ru")).format(Date(dates.first())), style = body(11, color = Muted))
             Spacer(Modifier.weight(1f))
-            Text("сегодня, ${cal.get(Calendar.DAY_OF_MONTH)}", style = body(12, color = Muted))
+            Text("Сегодня", style = body(11, color = Muted))
         }
     }
 }
@@ -565,7 +564,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
     var speak by remember { mutableStateOf(Prefs.speak) }
     var check by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(1500); tick++ } }
+    LaunchedEffect(Unit) { Tg.start(ctx); while (true) { delay(1500); tick++ } }
 
     fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
@@ -650,7 +649,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
             }
             val mails = listOf(1, 2).count { Mail.hasPass(ctx, it) && tick >= 0 }
             Section("Почта Gmail", if (mails > 0) "подключено ящиков: $mails" else "не подключена",
-                statusColor = if (mails > 0) Muted else Amber, first = true) { MailSettings() }
+                statusColor = if (mails > 0) Muted else Amber) { MailSettings() }
 
             val yc = Yoo.connected(ctx) && tick >= 0
             Section("ЮMoney", if (yc) "подключено · переводы с отпечатком" else "не подключено", Violet) {
@@ -659,10 +658,10 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 else BigButton("Подключить ЮMoney", openYoo, bg = Violet, fg = Bg)
             }
 
-            Section("Telegram", if (Tg.state == Tg.St.READY) "подключён" else "не подключён",
+            Section("Telegram", Tg.statusText,
                 statusColor = if (Tg.state == Tg.St.READY) Muted else Amber) {
                 Text("Твой личный Telegram: «что нового», «что писал Егор», поиск по переписке. Писать — только по твоей просьбе.", style = body(12, color = Muted))
-                BigButton(if (Tg.state == Tg.St.READY) "Открыть" else "Подключить Telegram", openTg, bg = if (Tg.state == Tg.St.READY) Card else Teal, fg = if (Tg.state == Tg.St.READY) Ink else Bg, border = if (Tg.state == Tg.St.READY) Line else null)
+                BigButton(if (Tg.state == Tg.St.READY) "Открыть" else "Открыть Telegram", openTg, bg = if (Tg.state == Tg.St.READY) Card else Teal, fg = if (Tg.state == Tg.St.READY) Ink else Bg, border = if (Tg.state == Tg.St.READY) Line else null)
             }
 
             Section("Яндекс Музыка", if (YaMusic.ready) "подключена" else "не подключена", statusColor = if (YaMusic.ready) Muted else Amber) {
@@ -703,9 +702,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 if (missing.isEmpty()) Teal else Amber, if (missing.isEmpty()) Muted else Amber) {
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
-            Section("Для разработчика", "модели · расходы", Muted) {
+            Section("Модели и использование", "чат · задачи · фон · проверка", Muted) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
-                Text("Модель для каждой роли. Яндекс — бесплатно и без VPN; AnyModel — платно: ${"%.2f".format(AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов баланса × коэффициент модели, расход в рублях — в «Истории».",
+                Text("Модель для каждой роли. Яндекс — бесплатно и без VPN; AnyModel — платно: ${"%.2f".format(AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов баланса × коэффициент модели, расход токенов — в «Истории».",
                     style = body(12, color = Muted), lineHeight = 16.sp)
                 var fl by remember { mutableStateOf(Prefs.fastLane) }
                 ModelEditor("Чат — сообщения, простые просьбы и быстрые ответы", "fast", fast, fastIn, fastOut,

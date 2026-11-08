@@ -172,13 +172,14 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     Box(Modifier.fillMaxSize().then(if (skyBehind) Modifier else Modifier.background(Th.c.bg))) {
         // ——— фон и лента (под стеклом) ———
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
-            Wallpaper()
+            // A quiet surface keeps long answers readable.
+            Box(Modifier.fillMaxSize().background(Bg))
             // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
             val bars = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = top + 80.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 68.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
                 if (core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
                 val rev = shown.asReversed()
@@ -232,7 +233,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     chat.delete(ChatSel.ids.toList()); ChatSel.ids.clear()
                 }.padding(10.dp))
             }
-        } else Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        } else Row(Modifier.fillMaxWidth().then(if (search != null) Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
             // поиск выезжает на место шапки Пилота и уезжает обратно
             androidx.compose.animation.AnimatedContent(search != null, Modifier.weight(1f), label = "head",
                 transitionSpec = {
@@ -251,28 +252,13 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
                 }
             } else {
-                val hap = androidx.compose.ui.platform.LocalHapticFeedback.current
-                Row(Modifier.fillMaxWidth().height(56.dp).glass(haze, shp(28.dp))
-                    // долгий тап по шапке — поиск по переписке (бабл превращается в поле поиска)
-                    .combinedClickable(onClickLabel = null, onLongClickLabel = "Поиск по переписке", onClick = {},
-                        onLongClick = { hap.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); search = "" })
-                    .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(44.dp, f = f)
-                    HGap(10)
-                    Column(Modifier.weight(1f)) {
-                        Text(f.name, style = body(17, FontWeight.Bold), maxLines = 1)
-                        // «в сети» не пишем — Пилот на телефоне всегда рядом; статус только когда занят или нет связи
-                        val st = Online.status(core, f)
-                        if (core.busy || !Online.online || tick < 0) Text(if (core.busy) shortStatus(st) else st, style = body(if (core.busy) 12 else 13, color = Muted),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
+                PageNavigation(f.name, search = { search = "" })
             }
             }
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().background(Bg).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
@@ -290,8 +276,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 }
             } else {
                 if (fid == Friends.MAIN) {
-                    if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
-                    NavBar(haze, Scr.Home, go); Spacer(Modifier.height(10.dp))
+                    if (search == null && Activity.count() > 0) { ActiveButton(go); Spacer(Modifier.height(8.dp)) }
+                    ChatControls(go); Spacer(Modifier.height(8.dp))
                 }
                 Composer(haze, chat, f)
             }
@@ -367,7 +353,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     var dx by remember { mutableFloatStateOf(0f) }
     val anim by animateFloatAsState(dx, label = "swipe")
     var menu by remember { mutableStateOf(false) }
-    val shape = if (Th.cockpit) shp(18.dp) else if (m.me) shp(18.dp, 18.dp, 5.dp, 18.dp) else shp(18.dp, 18.dp, 18.dp, 5.dp)
+    val shape = if (m.me) shp(20.dp, 20.dp, 6.dp, 20.dp) else shp(20.dp, 20.dp, 20.dp, 6.dp)
     val bg = if (m.me) Th.c.outBubble else Th.c.inBubble
     val ink = if (m.me) Th.c.outInk else Th.c.ink
     val meta = if (m.me) Th.c.outMeta else Th.c.meta
@@ -392,12 +378,12 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
     // служебное (остановил, обрыв связи, ошибка) — не бабл, а тёмная плашка на ширину листа с серым текстом
     if (!m.me && !ChatSel.on && (m.failed || m.text.startsWith("Остановил по твоей команде"))) {
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Column(Modifier.fillMaxWidth().clip(shp(10.dp)).background(Color(0xF01B1C1F))
+            Column(Modifier.fillMaxWidth().clip(shp(10.dp)).background(DangerBg)
                 .combinedClickable(onClick = {}, onLongClick = { ChatSel.toggle(m.id) }).padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(m.text, style = body(14, color = Color(0xFFB4B6BC)), lineHeight = 19.sp)
+                Text(m.text, style = body(14, color = Ink), lineHeight = 19.sp)
                 val tm = hhmm.format(Date(m.ts))
-                Text(if (m.meta.isNotBlank()) "${m.meta} · $tm" else tm, style = body(11, color = Color(0xFF7D8088)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (m.meta.isNotBlank()) "${m.meta} · $tm" else tm, style = body(11, color = Muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (showButtons && m.buttons.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 m.buttons.forEach { b ->
@@ -448,14 +434,14 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
                     onDragCancel = { dx = 0f },
                 ) { _, d -> dx = (dx + d).coerceIn(0f, limit) }
             }) {
-            Column(Modifier.widthIn(max = if (hasCards) 320.dp else 285.dp).clip(shape).background(bg)
+            Column(Modifier.widthIn(max = if (hasCards) 520.dp else if (m.me) 320.dp else 600.dp).clip(shape).background(bg)
                 .combinedClickable(onClick = { if (ChatSel.on) ChatSel.toggle(m.id) }, onLongClick = { ChatSel.toggle(m.id) })
-                .padding(horizontal = if (hasCards) 6.dp else 9.dp, vertical = 6.dp),
+                .padding(horizontal = if (hasCards) 8.dp else 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (m.replyText.isNotBlank()) Quote(if (m.replyMe) "Алим" else f.name, m.replyText, m.me)
                 if (m.voice.isNotBlank()) VoiceRow(m, meta)
                 val text = m.text
-                if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(15, color = if (m.failed) Danger else ink), lineHeight = 20.sp,
+                if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(16, color = if (m.failed) Danger else ink), lineHeight = 24.sp,
                     modifier = Modifier.padding(horizontal = if (hasCards) 4.dp else 2.dp))
                 if (m.voice.isNotBlank() && m.me && text.isNotBlank())
                     Text(text, style = body(13, color = meta), modifier = Modifier.padding(horizontal = 2.dp))
@@ -504,11 +490,11 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
             .combinedClickable(onClick = {}, onLongClick = { ChatSel.toggle(m.id) }).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("ЛИСТ · ГОТОВО", style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.4.sp), modifier = Modifier.weight(1f))
+                Text("ОТВЕТ", style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.4.sp), modifier = Modifier.weight(1f))
                 Text(hhmm.format(Date(m.ts)), style = body(12, color = Th.c.meta))
             }
-            if (title.isNotBlank()) Text(title, style = androidx.compose.ui.text.TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, lineHeight = 25.sp, color = Ink))
-            if (rest.isNotBlank()) Text(md(rest), style = body(14, color = Ink.copy(alpha = 0.86f)), lineHeight = 20.sp)
+            if (title.isNotBlank()) Text(title, style = androidx.compose.ui.text.TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, lineHeight = 25.sp, color = Ink))
+            if (rest.isNotBlank()) Text(md(rest), style = body(16, color = Ink), lineHeight = 24.sp)
             if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
             if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('\n').filter { it.isNotBlank() })
             if (m.ytVideos.isNotBlank()) YtGrid(m.ytVideos.split('\n').filter { it.isNotBlank() })
@@ -657,7 +643,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
 
     Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
         // поле — растёт вместе с текстом (до 6 строк)
-        Row(Modifier.fillMaxWidth().padding(end = 54.dp).heightIn(min = 46.dp).glass(haze, shp(23.dp))
+        Row(Modifier.fillMaxWidth().padding(end = 58.dp).heightIn(min = 52.dp).clip(shp(26.dp)).background(Card).border(1.dp, Line, shp(26.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
@@ -672,7 +658,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
                 BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f), textStyle = body(16), cursorBrush = SolidColor(Teal), maxLines = 6,
                     decorationBox = { inner -> if (text.isEmpty()) Text("Сообщение", style = body(16, color = Muted)); inner() })
                 HGap(8)
-                Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(24.dp).clickable { attach() })
+                Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(40.dp).clickable { attach() }.padding(8.dp))
             }
         }
         // кнопка: отправить / микрофон
@@ -687,7 +673,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.BottomEnd).size(46.dp).scale(sc).clip(circ).background(Teal)
+        Box(Modifier.align(Alignment.BottomEnd).size(52.dp).scale(sc).clip(circ).background(Teal)
             .then(
                 if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }

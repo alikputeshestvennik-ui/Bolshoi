@@ -33,15 +33,7 @@ fun TgScreen(back: () -> Unit) {
     Screen("Telegram", back) {
         Column(Modifier.padding(top = LocalTopPad.current, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = Tg.state
-            val status = when (st) {
-                Tg.St.READY -> "подключён${if (Tg.me.isNotBlank()) " · ${Tg.me}" else ""}"
-                Tg.St.OFF, Tg.St.STARTING -> "запуск…"
-                Tg.St.NO_KEYS -> "нет ключей"
-                Tg.St.WAIT_PHONE -> "нужен номер"
-                Tg.St.WAIT_CODE -> "нужен код"
-                Tg.St.WAIT_PASSWORD -> "нужен пароль"
-                Tg.St.ERROR -> "ошибка"
-            }
+            val status = Tg.statusText
             Section("Личный Telegram", status, statusColor = if (st == Tg.St.READY) Muted else Amber) {
                 Text("Тень подключается к твоему Telegram как сторонний клиент (Telegram это разрешает) на твоих ключах. " +
                     "Сможет показывать твои чаты и искать по переписке, а писать — только по твоей просьбе и с подтверждением. " +
@@ -49,7 +41,9 @@ fun TgScreen(back: () -> Unit) {
 
                 if (st == Tg.St.NO_KEYS) Text("В сборке нет ключей Telegram. Добавь в секреты GitHub TG_API_ID и TG_API_HASH (с my.telegram.org) и пересобери.",
                     style = body(13, color = Amber), lineHeight = 18.sp)
-                if (st == Tg.St.ERROR) Text(Tg.error, style = body(13, color = Amber))
+                Text("При обновлении поверх установленной Тени сессия сохраняется. После полного удаления приложения потребуется войти снова.", style = body(12, color = Muted), lineHeight = 18.sp)
+                if (Tg.error.isNotBlank()) Text(Tg.error, style = body(13, color = Amber))
+                if (st == Tg.St.ERROR || st == Tg.St.OFF) BigButton("Проверить подключение", { Tg.retry(ctx) }, bg = Card, fg = Ink, border = Line)
 
                 when (st) {
                     Tg.St.WAIT_PHONE -> {

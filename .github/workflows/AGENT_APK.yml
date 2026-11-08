@@ -5,6 +5,7 @@ on:
   push:
     branches-ignore:
       - 'codex/chatgpt-signin'
+      - 'feature/ui-refresh'
     paths:
       - 'agent_android/**'
       - '.github/workflows/AGENT_APK.yml'

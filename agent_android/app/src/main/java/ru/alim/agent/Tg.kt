@@ -45,14 +45,33 @@ object Tg {
 
     // ——— запуск и вход ———
 
-    fun start(ctx: Context) {
+    val statusText: String get() = when (state) {
+        St.READY -> me.ifBlank { "Подключён" }
+        St.OFF -> if (configured) "Подключение ещё не проверено" else "В сборке нет ключей"
+        St.STARTING -> "Восстанавливаем подключение…"
+        St.NO_KEYS -> "В сборке нет ключей"
+        St.WAIT_PHONE -> "Нужен вход по номеру"
+        St.WAIT_CODE -> "Ожидается код подтверждения"
+        St.WAIT_PASSWORD -> "Нужен пароль Telegram"
+        St.ERROR -> "Не удалось проверить подключение"
+    }
+
+    @Synchronized fun start(ctx: Context) {
         app = ctx.applicationContext
-        if (state == St.READY || state == St.STARTING) return
+        // A client already waiting for a phone/code/password still owns the database.
+        // Creating another client here can lock the saved session after an app restart.
+        if (client != null) return
         if (!available) { state = St.OFF; error = "Библиотека Telegram не вшита в эту сборку"; return }
         if (!configured) { state = St.NO_KEYS; return }
         state = St.STARTING; error = ""
         runCatching { Client.setLogMessageHandler(0) { _, _ -> } }
-        client = Client.create({ u -> onUpdate(u) }, null, null)
+        try {
+            client = Client.create({ u -> onUpdate(u) }, null, null)
+        } catch (e: Exception) {
+            fail("Не удалось запустить Telegram: ${e.message.orEmpty()}")
+        } catch (_: UnsatisfiedLinkError) {
+            fail("Библиотека Telegram недоступна для этого устройства")
+        }
     }
 
     private fun onUpdate(u: TdApi.Object) {
@@ -103,14 +122,14 @@ object Tg {
                 p.applicationVersion = "Пилот"
                 client?.send(p) { r -> if (r is TdApi.Error) fail("параметры: ${r.message}") }
             }
-            is TdApi.AuthorizationStateWaitPhoneNumber -> { state = St.WAIT_PHONE; hint = "" }
+            is TdApi.AuthorizationStateWaitPhoneNumber -> { state = St.WAIT_PHONE; hint = ""; me = "" }
             is TdApi.AuthorizationStateWaitEmailAddress -> { state = St.WAIT_PHONE; hint = "Telegram просит email" }
             is TdApi.AuthorizationStateWaitCode -> { state = St.WAIT_CODE; hint = codeHint(s.codeInfo) }
             is TdApi.AuthorizationStateWaitPassword -> { state = St.WAIT_PASSWORD; hint = s.passwordHint ?: "" }
             is TdApi.AuthorizationStateWaitRegistration -> fail("этот номер не зарегистрирован в Telegram")
-            is TdApi.AuthorizationStateReady -> { state = St.READY; hint = ""; loadMe() }
+            is TdApi.AuthorizationStateReady -> { state = St.READY; hint = ""; error = ""; loadMe() }
             is TdApi.AuthorizationStateLoggingOut -> state = St.STARTING
-            is TdApi.AuthorizationStateClosed -> { state = St.OFF; client = null }
+            is TdApi.AuthorizationStateClosed -> { synchronized(this) { state = St.OFF; client = null; me = "" } }
             else -> {}
         }
     }
@@ -142,10 +161,23 @@ object Tg {
 
     fun logout() {
         client?.send(TdApi.LogOut()) {}
-        state = St.OFF; me = ""
+        state = if (client != null) St.STARTING else St.OFF; me = ""
     }
 
-    private fun fail(m: String) { error = m; state = St.ERROR }
+    private fun fail(m: String) {
+        error = m
+        // A rejected code must leave its input available for another attempt.
+        if (state !in listOf(St.WAIT_PHONE, St.WAIT_CODE, St.WAIT_PASSWORD)) state = St.ERROR
+    }
+
+    fun retry(ctx: Context) {
+        val current = client
+        if (current == null) start(ctx)
+        else { error = ""; current.send(TdApi.GetAuthorizationState()) { r ->
+            if (r is TdApi.AuthorizationState) onAuth(r)
+            else if (r is TdApi.Error) fail(r.message)
+        } }
+    }
 
     private fun loadMe() {
         client?.send(TdApi.GetMe()) { r -> if (r is TdApi.User) me = listOfNotNull(r.firstName, r.lastName).joinToString(" ").trim() }
@@ -159,7 +191,9 @@ object Tg {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
         sp.getString("k", null)?.let { return android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        sp.edit().putString("k", android.util.Base64.encodeToString(k, android.util.Base64.NO_WRAP)).apply()
+        check(sp.edit().putString("k", android.util.Base64.encodeToString(k, android.util.Base64.NO_WRAP)).commit()) {
+            "Не удалось сохранить ключ Telegram"
+        }
         return k
     }
 
