@@ -41,7 +41,7 @@ class UiRefreshTest {
             CompositionLocalProvider(LocalNavigate provides { opened = it }) { PageNavigation("Чат") }
         } }
         compose.onNodeWithText("Чат").performClick()
-        compose.onNodeWithText("История").performClick()
+        compose.onNodeWithText("История и важное").performClick()
         compose.runOnIdle { assertEquals(Scr.History, opened) }
     }
 
@@ -57,6 +57,16 @@ class UiRefreshTest {
         screenshot("history")
         compose.onNodeWithText("Показать фон").performClick()
         compose.onNodeWithText("Мониторинг").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun journalTabsOpenImportantEvents() {
+        var opened: Scr? = null
+        compose.setContent { MaterialTheme {
+            CompositionLocalProvider(LocalNavigate provides { opened = it }) { HistoryTabs(important = false) }
+        } }
+        compose.onNodeWithText("Запросы").assertIsSelected()
+        compose.onNodeWithText("Важное").performClick()
+        compose.runOnIdle { assertEquals(Scr.Digest, opened) }
     }
 
     @Test fun importantPageHasNoDailySummaryOrCounters() {

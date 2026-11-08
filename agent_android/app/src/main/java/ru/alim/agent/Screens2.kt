@@ -111,8 +111,9 @@ fun DigestScreen(back: () -> Unit) {
     val ctx = LocalContext.current
     val ev = Events.version.intValue
     val urgent = remember(ev) { Events.all(ctx).filter { it.urgent }.sortedByDescending { it.ts } }
-    Screen("Важное", back, showBack = false) {
+    Screen("История", back, showBack = false) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            HistoryTabs(important = true)
             Text("Требует внимания", style = body(24, FontWeight.SemiBold))
             Text("Важные сообщения и события из подключённых сервисов", style = body(13, color = Muted), lineHeight = 19.sp)
             if (urgent.isEmpty()) CardBox {

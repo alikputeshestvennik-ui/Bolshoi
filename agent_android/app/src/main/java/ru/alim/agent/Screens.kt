@@ -387,7 +387,6 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 @Composable
 fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val ctx = LocalContext.current
-    val go = LocalNavigate.current
     var period by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     var showBg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val jv = Journal.version.intValue
@@ -402,6 +401,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
 
     Screen("История", back, showBack = false) {
         LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item { HistoryTabs(important = false) }
             item {
                 Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).padding(4.dp)) {
                     listOf("Сегодня", "7 дней", "Месяц").forEachIndexed { i, t ->
@@ -419,15 +419,6 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
                     Text("Общий расход: чат, задачи и фон", style = body(12, color = Muted))
                     Text("${recs.count { !it.background }} запросов · ${recs.count { it.background }} фоновых записей", style = body(12, color = Muted))
                     if (recs.any { it.tokIn + it.tokOut == 0L }) Text("У части записей расход не сохранён. Они не включены в сумму токенов.", style = body(11, color = Muted))
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).clickable { go(Scr.Digest) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Важные события", style = body(14, FontWeight.SemiBold))
-                        Text("Сообщения, требующие внимания", style = body(12, color = Muted))
-                    }
-                    Text("›", style = body(22, color = Teal))
                 }
             }
             item {
