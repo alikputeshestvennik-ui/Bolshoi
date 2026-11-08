@@ -469,7 +469,7 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 @Composable
 fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = false, onSearch: (() -> Unit)? = null) {
     // только иконки, по центру; текущий раздел подсвечен
-    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icSun, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
+    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icActivity, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
     val cur = when (here) {
         Scr.Journal -> Scr.Home
         Scr.Digest -> Scr.History
@@ -504,6 +504,7 @@ private fun ico(name: String, path: String) = androidx.compose.ui.graphics.vecto
         strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
 }.build()
 private val icChat by lazy { ico("chat", "M4 5h16v11H9l-5 4z") }
+private val icActivity by lazy { ico("activity", "M3 12h4l3-7 4 14 3-7h4") }
 private val icClock by lazy { ico("clock", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7v5l3 2") }
 private val icSun by lazy { ico("sun", "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4") }
 private val icGear by lazy { ico("gear", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3a1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5a1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z") }
