@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -478,16 +480,18 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
     }
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f), to == cur) { go(to) } }
-        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(56.dp), searchOn, onSearch)
+        items.forEach { (ic, label, to) ->
+            NavDot(haze, ic, label, Modifier.weight(1f), to == cur, if (to == Scr.Home) onSearch else null) { go(to) }
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onClick: () -> Unit) {
+private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val shape = shp(20.dp)
     Column(modifier.height(52.dp).clip(shape).background(if (on) AccentSoft else Color.Transparent)
-        .clickable(onClickLabel = label, onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        .combinedClickable(onClickLabel = label, onClick = onClick, onLongClickLabel = if (onLongClick != null) "Поиск по переписке" else null, onLongClick = onLongClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Muted, modifier = Modifier.size(19.dp))
         Text(label, style = body(10, FontWeight.Medium, if (on) Teal else Muted), maxLines = 1)
     }

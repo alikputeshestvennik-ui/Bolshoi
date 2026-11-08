@@ -279,7 +279,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             } else {
                 if (fid == Friends.MAIN) {
                     if (search == null && Activity.count() > 0) { ActiveButton(go); Spacer(Modifier.height(8.dp)) }
-                    NavBar(haze, Scr.Home, go); Spacer(Modifier.height(8.dp))
+                    NavBar(haze, Scr.Home, go, onSearch = { search = "" }); Spacer(Modifier.height(8.dp))
                     if (composerFocused && WindowInsets.ime.getBottom(LocalDensity.current) > 0) { ChatControls(go); Spacer(Modifier.height(8.dp)) }
                 }
                 Composer(haze, chat, f) { composerFocused = it }
