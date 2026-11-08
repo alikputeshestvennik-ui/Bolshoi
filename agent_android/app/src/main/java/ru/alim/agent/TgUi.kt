@@ -1,5 +1,7 @@
 package ru.alim.agent
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,25 +33,20 @@ fun TgScreen(back: () -> Unit) {
     LaunchedEffect(Unit) { Tg.start(ctx) }
 
     Screen("Telegram", back) {
-        Column(Modifier.padding(top = LocalTopPad.current, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = Tg.state
-            val status = when (st) {
-                Tg.St.READY -> "подключён${if (Tg.me.isNotBlank()) " · ${Tg.me}" else ""}"
-                Tg.St.OFF, Tg.St.STARTING -> "запуск…"
-                Tg.St.NO_KEYS -> "нет ключей"
-                Tg.St.WAIT_PHONE -> "нужен номер"
-                Tg.St.WAIT_CODE -> "нужен код"
-                Tg.St.WAIT_PASSWORD -> "нужен пароль"
-                Tg.St.ERROR -> "ошибка"
-            }
-            Section("Личный Telegram", status, statusColor = if (st == Tg.St.READY) Muted else Amber) {
+            val status = Tg.statusText
+            CardBox {
+                Text(status, style = body(16, androidx.compose.ui.text.font.FontWeight.SemiBold))
                 Text("Тень подключается к твоему Telegram как сторонний клиент (Telegram это разрешает) на твоих ключах. " +
                     "Сможет показывать твои чаты и искать по переписке, а писать — только по твоей просьбе и с подтверждением. " +
                     "Коды входа он не читает и не пересылает.", style = body(13, color = Muted), lineHeight = 18.sp)
 
                 if (st == Tg.St.NO_KEYS) Text("В сборке нет ключей Telegram. Добавь в секреты GitHub TG_API_ID и TG_API_HASH (с my.telegram.org) и пересобери.",
                     style = body(13, color = Amber), lineHeight = 18.sp)
-                if (st == Tg.St.ERROR) Text(Tg.error, style = body(13, color = Amber))
+                Text("При обновлении поверх установленной Тени сессия сохраняется. После полного удаления приложения потребуется войти снова.", style = body(12, color = Muted), lineHeight = 18.sp)
+                if (Tg.error.isNotBlank()) Text(Tg.error, style = body(13, color = Amber))
+                if (st == Tg.St.ERROR || st == Tg.St.OFF) BigButton("Проверить подключение", { Tg.retry(ctx) }, bg = Card, fg = Ink, border = Line)
 
                 when (st) {
                     Tg.St.WAIT_PHONE -> {

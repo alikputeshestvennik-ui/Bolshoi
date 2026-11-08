@@ -5,9 +5,18 @@ on:
   push:
     branches:
       - 'codex/chatgpt-signin'
+      - 'feature/ui-refresh'
+  pull_request:
+    paths:
+      - 'agent_android/**'
+      - '.github/workflows/AGENT_VERIFY.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: verify-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -27,5 +36,12 @@ jobs:
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :home:assembleDebug
       - uses: actions/upload-artifact@v7
         with:
-          name: chatgpt-debug-apk
+          name: ten-debug-apk
           path: agent_android/app/build/outputs/apk/debug/*.apk
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-checks
+          path: |
+            agent_android/app/build/screenshots/*.png
+            agent_android/app/build/reports/tests/testDebugUnitTest/**

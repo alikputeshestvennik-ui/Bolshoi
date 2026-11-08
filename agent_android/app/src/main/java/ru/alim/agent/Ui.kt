@@ -76,6 +76,9 @@ fun neededPerms(): Array<String> {
 
 @Composable
 fun App(voice: Voice) {
+    val pageState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var scr by remember { mutableStateOf(Scr.Home) }
     var taskBack by remember { mutableStateOf(Scr.Home) }
     var subFrom by remember { mutableStateOf(Scr.Home) }
@@ -103,6 +106,7 @@ fun App(voice: Voice) {
                     runCatching { BuildWatch.check(tgCtx) }.getOrNull()?.let { m -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { Chat.main.noteUpd(m) } }
                 }
             }
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured) Tg.start(tgCtx)
             if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && Tg.configured && Prefs.tgDigest) tgScope.launch {
                 Tg.start(tgCtx)
                 var w = 0; while (Tg.state != Tg.St.READY && w++ < 20) kotlinx.coroutines.delay(500)
@@ -113,8 +117,8 @@ fun App(voice: Voice) {
         onDispose { life.lifecycle.removeObserver(obs) }
     }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); Th.tick() } }
-    // кабина задачи — всегда в цветах «Кабины» (небо, полёт), панель и журнал — в выбранной теме
-    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task }
+    // Все страницы, включая подробности задачи, используют выбранную тему.
+    androidx.compose.runtime.SideEffect { Th.forceCockpit = false }
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
@@ -145,6 +149,7 @@ fun App(voice: Voice) {
         when (scr) {
             Scr.Task -> { Agent.close(); scr = taskBack; taskBack = Scr.Home }
             Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look -> { scr = subFrom; subFrom = Scr.Home }
+            Scr.Tg, Scr.Music, Scr.Yt, Scr.YooMoney -> scr = Scr.Settings
             else -> scr = Scr.Home
         }
     }
@@ -161,32 +166,30 @@ fun App(voice: Voice) {
                 if (w.attributes.layoutInDisplayCutoutMode != mode) w.attributes = w.attributes.apply { layoutInDisplayCutoutMode = mode }
             }
             androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).apply {
-                isAppearanceLightStatusBars = !Th.c.dark && scr != Scr.Task; isAppearanceLightNavigationBars = !Th.c.dark && scr != Scr.Task
+                isAppearanceLightStatusBars = !Th.c.dark; isAppearanceLightNavigationBars = !Th.c.dark
             }
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
         Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task) Modifier else Modifier.navigationBarsPadding().imePadding())) {
-            val go: (Scr) -> Unit = { scr = it }
+            val go: (Scr) -> Unit = { destination ->
+                focus.clearFocus(); keyboard?.hide()
+                if (VoiceMsg.recording) tgScope.launch { VoiceMsg.stop(true); scr = destination }
+                else scr = destination
+            }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
-            // одна сцена полёта под чатом и задачей: из чата в задачу — тот же самолёт на той же полосе
-            // кабина и 3D-полёт убраны: главный экран — Чат, идущие дела — на странице «Активные»
-            // кнопки разделов и ввод — на всех экранах (в чате и задаче они свои)
-            val withBar = scr != Scr.Home && scr != Scr.Journal
-            var barH by remember { mutableStateOf(0) }
-            val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
-            // экран идёт под кнопками, как в чате: вокруг кнопок прозрачно и размыто, в конце списков — запас на высоту кнопок
-            val barHaze = remember { dev.chrisbanes.haze.HazeState() }
-            Box(Modifier.fillMaxSize().then(if (withBar) Modifier.then(if (scr == Scr.Task) Modifier else Modifier.background(Bg)).haze(barHaze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f)) else Modifier)) {
-              androidx.compose.runtime.CompositionLocalProvider(LocalBarPad provides (if (withBar) barDp else 0.dp), LocalBarHaze provides (if (withBar) barHaze else null)) {
+            // Only the chat owns a composer. Secondary pages use the same compact navigation.
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalBarPad provides 24.dp, LocalBarHaze provides null, LocalNavigate provides go) {
+            pageState.SaveableStateProvider(if (scr == Scr.Journal) Scr.Home.name else scr.name) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
                 Scr.Active -> ActiveScreen(go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen { scr = subFrom; subFrom = Scr.Home }
-                Scr.Tg -> TgScreen(home)
-                Scr.Music -> MusicScreen(home)
-                Scr.Yt -> YtScreen(home)
+                Scr.Tg -> TgScreen { scr = Scr.Settings }
+                Scr.Music -> MusicScreen { scr = Scr.Settings }
+                Scr.Yt -> YtScreen { scr = Scr.Settings }
                 Scr.Initiative -> InitiativeScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Task -> TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }
@@ -197,8 +200,7 @@ fun App(voice: Voice) {
                 Scr.Digest -> DigestScreen(home)
             }
             }
-              }
-            if (withBar) GlobalBar(scr, go, barHaze, Modifier.align(Alignment.BottomCenter).then(if (scr == Scr.Task) Modifier.navigationBarsPadding().imePadding() else Modifier).onSizeChanged { barH = it.height })
+            }
             if (Panel.open) Panel.open = false
         }
     }
@@ -213,60 +215,36 @@ fun body(size: Int, weight: FontWeight = FontWeight.Normal, color: Color = Ink) 
 fun Label(text: String, color: Color = Muted, modifier: Modifier = Modifier) =
     Text(text.uppercase(), modifier, style = body(13, FontWeight.Bold, color).copy(letterSpacing = 1.sp))
 
-/** Отступ сверху под общую шапку (строка состояния + бабл): списки начинают с него и уезжают под шапку. */
+/** Content inset for the compact page navigation. */
 val LocalTopPad = androidx.compose.runtime.compositionLocalOf { 0.dp }
 /** Размытие под стеклянными плашками (общий фон экранов с нижней панелью). */
 val LocalBarHaze = androidx.compose.runtime.compositionLocalOf<dev.chrisbanes.haze.HazeState?> { null }
 
-/**
- * Шапка страницы — как в чате: стеклянный бабл с аватаром Пилота и названием. На вложенных страницах
- * стрелка «назад» выезжает из аватара и сдвигает бабл вправо.
- */
+/** Compact back navigation for nested pages. */
 @Composable
-fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "", haze: dev.chrisbanes.haze.HazeState? = null) {
-    val glassBg = Th.c.glass.copy(alpha = if (haze != null) (if (Th.c.dark) 0.35f else 0.30f) else (if (Th.c.dark) 0.55f else 0.62f))
-    fun Modifier.gl(shape: androidx.compose.ui.graphics.Shape): Modifier = this.clip(shape)
-        .then(if (haze != null) Modifier.hazeChild(haze, shape) else Modifier).background(glassBg).border(1.dp, Th.c.glassLine, shape)
-    val vis = remember { androidx.compose.animation.core.MutableTransitionState(false) }
-    vis.targetState = back != null
-    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.animation.AnimatedVisibility(vis,
-            enter = androidx.compose.animation.expandHorizontally(androidx.compose.animation.core.tween(320), expandFrom = Alignment.Start) +
-                androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(320)) { it } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260)),
-            exit = androidx.compose.animation.shrinkHorizontally(androidx.compose.animation.core.tween(280), shrinkTowards = Alignment.Start) +
-                androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { it } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))) {
-            Row {
-                Box(Modifier.size(56.dp).gl(circ).clickable(onClickLabel = "Назад") { back?.invoke() }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Ink, modifier = Modifier.size(22.dp))
-                }
-                Spacer(Modifier.width(8.dp))
+fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "") {
+    Row(Modifier.fillMaxWidth().background(Bg).statusBarsPadding().padding(horizontal = 16.dp)
+        .height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (back != null) {
+            Box(Modifier.size(44.dp).clickable(onClickLabel = "Назад", onClick = back), contentAlignment = Alignment.Center) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Ink, modifier = Modifier.size(22.dp))
             }
+            Spacer(Modifier.width(8.dp))
         }
-        Row(Modifier.weight(1f).height(56.dp).gl(shp(28.dp)).padding(start = 6.dp, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(44.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(title, style = body(17, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (trailing.isNotBlank()) Text(trailing, style = body(12, color = Muted), maxLines = 1)
-        }
+        Text(title, style = body(18, FontWeight.SemiBold), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (trailing.isNotBlank()) Text(trailing, style = body(12, color = Muted))
     }
 }
 
-/** Страница с общей шапкой: содержимое идёт под строку состояния и шапку, сверху мягкое затемнение, как в чате. */
+/** Shared spacing and navigation for full-height secondary pages. */
 @Composable
 fun Screen(title: String, back: () -> Unit, showBack: Boolean = true, trailing: String = "", content: @Composable ColumnScope.() -> Unit) {
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    // своё размытие у страницы: шапка лежит ВНЕ размываемого слоя (иначе размывается она сама), под ней — содержимое
-    val haze = remember { dev.chrisbanes.haze.HazeState() }
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Th.c.bg).haze(haze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
-            androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 76.dp) {
-                Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
-            }
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 68.dp) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
         }
-        // затемнение сверху вместе со строкой состояния: лента уходит под шапку плавно, как в чате
-        Box(Modifier.fillMaxWidth().height(top + 96.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(
-            listOf(Th.c.bg.copy(alpha = 0.95f), Th.c.bg.copy(alpha = 0.75f), Th.c.bg.copy(alpha = 0f)))))
-        ScreenHeader(title, if (showBack) back else null, trailing, haze)
+        if (showBack) ScreenHeader(title, back, trailing) else PageNavigation(title)
     }
 }
 
@@ -291,8 +269,8 @@ fun SetGroup(label: String = "", content: @Composable ColumnScope.() -> Unit) {
 @Composable
 fun SetRow(title: String, sub: String, subColor: Color = Muted, first: Boolean = false, onClick: () -> Unit) {
     if (!first) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(Line))
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 17.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = body(15, FontWeight.SemiBold))
             if (sub.isNotBlank()) Text(sub, style = body(12, color = subColor), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
