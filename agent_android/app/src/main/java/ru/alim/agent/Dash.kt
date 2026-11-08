@@ -474,16 +474,16 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
         else -> here
     }
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.width(56.dp), to == cur) { go(to) } }
-        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.width(56.dp), searchOn, onSearch)
+    Row(Modifier.fillMaxWidth().clip(shp(16.dp)).background(Card).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        items.forEach { (ic, label, to) -> NavDot(haze, ic, label, Modifier.weight(1f), to == cur) { go(to) } }
+        if (onSearch != null) NavDot(haze, icSearch, "Поиск", Modifier.weight(1f), searchOn, onSearch)
     }
 }
 
 @Composable
 private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onClick: () -> Unit) {
-    val shape = shp(20.dp)
-    Box(modifier.height(44.dp).then(if (on) Modifier.clip(shape).background(AccentSoft).border(1.dp, Teal, shape) else Modifier.glassDash(haze, shape))
+    val shape = shp(12.dp)
+    Box(modifier.height(40.dp).clip(shape).background(if (on) AccentSoft else Color.Transparent)
         .clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Ink, modifier = Modifier.size(19.dp))
     }
@@ -724,6 +724,9 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
         if (here != Scr.Active) { ActiveButton(go); if (Activity.count() > 0) Spacer(Modifier.height(10.dp)) }
         NavBar(haze, here, go)
         Spacer(Modifier.height(10.dp))
-        Composer(haze, chat, chat.friend)
+        Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).padding(6.dp)) {
+            RequestControls()
+            Composer(haze, chat, chat.friend)
+        }
     }
 }
