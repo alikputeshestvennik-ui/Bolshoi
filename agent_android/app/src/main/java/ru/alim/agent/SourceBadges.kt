@@ -62,7 +62,7 @@ fun SourceBadges(text: String, metadata: String = "") {
                 val label = host.split('.').let { parts -> parts.getOrNull(parts.size - 2).orEmpty().take(3) }.uppercase(Locale.ROOT).ifBlank { "↗" }
                 Box(Modifier.size(36.dp).clip(circ).background(AccentSoft).clickable(onClickLabel = "Открыть источник $host") { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }, contentAlignment = Alignment.Center) { Text(label, style = body(10, FontWeight.Bold, Teal)) }
                 val formatted = remember(publication) { runCatching { val d = java.time.OffsetDateTime.parse(publication); d.atZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru"))) }.getOrElse { runCatching { java.time.LocalDateTime.parse(publication).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru"))) }.getOrElse { runCatching { java.time.LocalDate.parse(publication.take(10)).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", Locale("ru"))) }.getOrDefault("") } } }
-                Text(if (formatted.isBlank()) "Дата публикации не указана" else "Опубликовано · $formatted", style = body(11, FontWeight.SemiBold, OnAccent), modifier = Modifier.clip(shp(8.dp)).background(Teal).padding(horizontal = 8.dp, vertical = 5.dp))
+                Text(if (formatted.isBlank()) "Дата публикации не найдена" else "Опубликовано · $formatted", style = body(11, FontWeight.SemiBold, OnAccent), modifier = Modifier.clip(shp(8.dp)).background(Teal).padding(horizontal = 8.dp, vertical = 5.dp))
             }
         }
     }
