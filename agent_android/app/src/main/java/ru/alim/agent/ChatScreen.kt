@@ -256,6 +256,11 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         // ——— ввод ———
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
+            if (!ChatSel.on && fid == Friends.MAIN) {
+                if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
+                NavBar(haze, Scr.Home, go)
+                Spacer(Modifier.height(10.dp))
+            }
             androidx.compose.animation.AnimatedContent(targetState = search != null && !ChatSel.on, label = "search-composer",
                 transitionSpec = { (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
                     androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 3 }) togetherWith
@@ -286,10 +291,6 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
             } else {
-                if (fid == Friends.MAIN) {
-                    if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
-                    NavBar(haze, Scr.Home, go); Spacer(Modifier.height(10.dp))
-                }
                 if (fid == Friends.MAIN) {
                     Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).padding(6.dp)) {
                         RequestControls()
