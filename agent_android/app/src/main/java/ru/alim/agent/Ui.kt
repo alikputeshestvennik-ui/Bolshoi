@@ -114,7 +114,7 @@ fun App(voice: Voice) {
     }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); Th.tick() } }
     // кабина задачи — всегда в цветах «Кабины» (небо, полёт), панель и журнал — в выбранной теме
-    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task }
+    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task && Prefs.theme != "light_minimal" }
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
@@ -161,7 +161,7 @@ fun App(voice: Voice) {
                 if (w.attributes.layoutInDisplayCutoutMode != mode) w.attributes = w.attributes.apply { layoutInDisplayCutoutMode = mode }
             }
             androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).apply {
-                isAppearanceLightStatusBars = !Th.c.dark && scr != Scr.Task; isAppearanceLightNavigationBars = !Th.c.dark && scr != Scr.Task
+                isAppearanceLightStatusBars = !Th.c.dark; isAppearanceLightNavigationBars = !Th.c.dark
             }
         }
     }
@@ -188,7 +188,7 @@ fun App(voice: Voice) {
                 Scr.Music -> MusicScreen(home)
                 Scr.Yt -> YtScreen(home)
                 Scr.Initiative -> InitiativeScreen { scr = subFrom; subFrom = Scr.Home }
-                Scr.Task -> TaskScreen(voice, home)
+                Scr.Task -> if (Prefs.theme == "light_minimal") LightTaskScreen(home) else TaskScreen(voice, home)
                 Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt }) { s -> subFrom = Scr.Settings; scr = s }
