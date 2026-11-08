@@ -203,6 +203,6 @@ class ArturService : Service() {
 /** После перезагрузки телефона — снова «рядом». */
 class BootIn : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) { Prefs.init(ctx); ArturService.start(ctx) }
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) { Prefs.init(ctx); Scenarios.init(ctx); Deleg.init(ctx); Watch.init(ctx); Planner.plan(ctx); ArturService.start(ctx) }
     }
 }

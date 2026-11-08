@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         Agent.app = applicationContext
         Chat.init(this)
         CrashLog.report(this)
-        Deleg.init(this); Watch.init(this)
+        Scenarios.init(this); Deleg.init(this); Watch.init(this)
         Online.init(this)
         YaMusic.init(this)
         YtMe.init(this)

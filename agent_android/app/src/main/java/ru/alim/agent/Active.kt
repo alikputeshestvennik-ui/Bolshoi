@@ -83,6 +83,14 @@ fun ActiveButton(go: (Scr) -> Unit) {
 @Composable
 fun ActiveScreen(go: (Scr) -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    var scenariosTab by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var editItem by remember { mutableStateOf<Scenarios.Item?>(null) }
+    androidx.activity.compose.BackHandler(enabled = editing) { editing = false }
+    if (editing) {
+        ScenarioEditor(editItem, onBack = { editing = false }, onSave = { Scenarios.save(ctx, it); editing = false })
+        return
+    }
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(2000); tick++ } }
     val core = Agent.main
@@ -93,6 +101,13 @@ fun ActiveScreen(go: (Scr) -> Unit) {
     Screen("Активные", {}, showBack = false, trailing = if (total == 0) "ничего не идёт" else "$total ${proc(total)}") {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Text("Задачи", style = body(22, FontWeight.SemiBold))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PillBtn("Активные", !scenariosTab, Modifier.weight(1f)) { scenariosTab = false }
+                PillBtn("Сценарии", scenariosTab, Modifier.weight(1f)) { scenariosTab = true }
+            }
+            if (scenariosTab) {
+                ScenarioList(onNew = { editItem = null; editing = true }, onEdit = { editItem = it; editing = true }, go = go)
+            } else {
             if (core.busy || core.pending != null) Block("Тяжёлая задача", 1) {
                 core.pending?.let { ConfirmCard(it, core) }
                 if (core.busy) Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).border(1.5.dp, Teal, shp(20.dp)).padding(14.dp),
@@ -164,6 +179,7 @@ fun ActiveScreen(go: (Scr) -> Unit) {
             if (total == 0 && core.pending == null) CardBox {
                 Text("Активных задач пока нет", style = body(15, FontWeight.SemiBold))
                 Text("Когда Тень начнёт работу или будет ждать твоего ответа, задача появится здесь.", style = body(13, color = Muted))
+            }
             }
         }
     }

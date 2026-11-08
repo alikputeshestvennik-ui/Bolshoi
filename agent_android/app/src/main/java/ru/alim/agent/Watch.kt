@@ -265,7 +265,7 @@ object Watch {
 object Planner {
     fun plan(ctx: Context) {
         val c = ctx.applicationContext
-        val next = listOf(Deleg.nextDue(), Watch.nextDue()).filter { it > 0 }.minOrNull()
+        val next = listOf(Deleg.nextDue(), Watch.nextDue(), Scenarios.nextDue()).filter { it > 0 }.minOrNull()
         val am = c.getSystemService(AlarmManager::class.java) ?: return
         val pi = PendingIntent.getBroadcast(c, 4711, Intent(c, PlanAlarm::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         if (next == null) { am.cancel(pi); return }
@@ -285,10 +285,11 @@ class PlanAlarm : BroadcastReceiver() {
         wl.acquire(3 * 60_000L)
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                runCatching { Prefs.init(ctx) }; runCatching { Chat.init(ctx) }
-                Deleg.init(ctx); Watch.init(ctx)
+                runCatching { Prefs.init(ctx) }; Agent.app = ctx; runCatching { Chat.init(ctx) }; Online.init(ctx)
+                Scenarios.init(ctx); Deleg.init(ctx); Watch.init(ctx)
                 runCatching { Deleg.tick() }
                 runCatching { Watch.tick() }
+                kotlinx.coroutines.withContext(Dispatchers.Main) { runCatching { Scenarios.tick(ctx) } }
                 Planner.plan(ctx)
             } finally { runCatching { wl.release() }; res.finish() }
         }
