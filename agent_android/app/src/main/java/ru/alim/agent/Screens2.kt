@@ -112,15 +112,15 @@ fun DigestScreen(back: () -> Unit) {
     val ev = Events.version.intValue
     val urgent = remember(ev) { Events.all(ctx).filter { it.urgent }.sortedByDescending { it.ts } }
     Screen("История", back, showBack = false) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            HistoryTabs(important = true)
-            Text("Требует внимания", style = body(24, FontWeight.SemiBold))
-            Text("Важные сообщения и события из подключённых сервисов", style = body(13, color = Muted), lineHeight = 19.sp)
-            if (urgent.isEmpty()) CardBox {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item { HistoryTabs(important = true) }
+            item { Text("Требует внимания", style = body(24, FontWeight.SemiBold)) }
+            item { Text("Важные сообщения и события из подключённых сервисов", style = body(13, color = Muted), lineHeight = 19.sp) }
+            if (urgent.isEmpty()) item { CardBox {
                 Text("Всё спокойно", style = body(17, FontWeight.SemiBold))
                 Text("Когда появится важное событие, оно будет здесь.", style = body(13, color = Muted))
-            }
-            urgent.forEach { e ->
+            } }
+            items(urgent, key = { it.id }) { e ->
                 CardBox {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(6.dp).clip(shp(3.dp)).background(Teal))

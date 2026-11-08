@@ -71,6 +71,7 @@ class UiRefreshTest {
 
     @Test fun importantPageHasNoDailySummaryOrCounters() {
         compose.setContent { MaterialTheme { Box(Modifier.fillMaxSize().background(Bg)) { DigestScreen({}) } } }
+        compose.onNodeWithText("История").assertIsDisplayed()
         compose.onNodeWithText("Всё спокойно").assertIsDisplayed()
         compose.onAllNodes(hasText("Итог дня", substring = true)).assertCountEquals(0)
         compose.onAllNodes(hasText("Сегодня увидел", substring = true)).assertCountEquals(0)
@@ -83,6 +84,7 @@ class UiRefreshTest {
         Events.mark(ctx, setOf(important.id), mapOf(important.id to "Поддержка ответила на обращение"))
         Digests.add(ctx, "Старый итог дня не должен появляться на странице")
         compose.setContent { MaterialTheme { Box(Modifier.fillMaxSize().background(Bg)) { DigestScreen({}) } } }
+        compose.onNodeWithText("История").assertIsDisplayed()
         compose.onNodeWithText("Поддержка ответила на обращение").assertIsDisplayed()
         compose.onNodeWithText("Обычная новость").assertDoesNotExist()
         compose.onAllNodes(hasText("Старый итог дня", substring = true)).assertCountEquals(0)
