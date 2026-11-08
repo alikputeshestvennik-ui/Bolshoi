@@ -20,6 +20,13 @@ class Pal(
 
 object Th {
     val all = listOf(
+        Pal("light_minimal", "Светлая", false,
+            bg = Color(0xFFF7F8FA), card = Color.White, line = Color(0xFFE3E7EC), ink = Color(0xFF17212B), muted = Color(0xFF667381),
+            accent = Color(0xFF254C69), onAccent = Color.White, violet = Color(0xFF526579), amber = Color(0xFF7C654D), danger = Color(0xFFAA4545),
+            wall = listOf(Color(0xFFF7F8FA), Color(0xFFF7F8FA), Color(0xFFF7F8FA)),
+            dots = listOf(Color.Transparent, Color.Transparent, Color.Transparent),
+            inBubble = Color.White, outBubble = Color(0xFFE6EDF2), outInk = Color(0xFF17212B), outMeta = Color(0xFF5D7080), meta = Color(0xFF76818C),
+            glass = Color(0xF7FFFFFF), glassLine = Color(0xFFE3E7EC), online = Color(0xFF496D63)),
         Pal("cockpit", "Кабина", true,
             bg = Color(0xFF0B1422), card = Color(0xFF13233A), line = Color(0xFF243A55), ink = Color(0xFFEAF2FB), muted = Color(0xFF9DB2C8),
             accent = Color(0xFF6CC6EE), onAccent = Color(0xFF06121F), violet = Color(0xFF8B9CFF), amber = Color(0xFFF2C58A), danger = Color(0xFFFF9A8F),
@@ -86,10 +93,10 @@ object Th {
             glass = Color(0x99121212), glassLine = Color(0xFF2E2E2E), online = Color(0xFFF2F2F0), square = true),
     )
 
-    private var base by mutableStateOf(all[0])
+    private var base by mutableStateOf(all.first { it.id == "light_minimal" })
     /** В кабине задачи (полёт) — всегда тёмная «Кабина», какая бы тема ни стояла. */
     var forceCockpit by mutableStateOf(false)
-    val c: Pal get() = if (forceCockpit) all[0] else base
+    val c: Pal get() = if (forceCockpit) all.first { it.id == "cockpit" } else base
 
     /** Тема для авто-режима: днём и вечером — свои (Алим выбирает в «Оформлении»). */
     private fun dayId() = Prefs.autoDay.ifBlank { "dawn" }
@@ -104,7 +111,8 @@ object Th {
         if (!Prefs.cockpitTheme) { Prefs.cockpitTheme = true; Prefs.theme = "cockpit" }
         // приборная панель: «Рассвет» днём, «Ночной рейс» вечером — один раз переводим на авто
         if (!Prefs.dashTheme) { Prefs.dashTheme = true; Prefs.theme = "auto" }
-        base = if (Prefs.theme == "auto") autoPal() else all.firstOrNull { it.id == Prefs.theme } ?: all[0]
+        if (!Prefs.lightMinimalApplied) { Prefs.lightMinimalApplied = true; Prefs.theme = "light_minimal" }
+        base = if (Prefs.theme == "auto") autoPal() else all.firstOrNull { it.id == Prefs.theme } ?: all.first { it.id == "light_minimal" }
     }
     /** Авто: с 7:00 до 19:00 «Рассвет», иначе «Ночной рейс». */
     private fun autoPal(): Pal {

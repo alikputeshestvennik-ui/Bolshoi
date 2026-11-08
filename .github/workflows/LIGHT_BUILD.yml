@@ -1,0 +1,58 @@
+name: Build light design
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'codex/light-design' ]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - name: Prepare signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -eu
+          test -n "$KEYSTORE" || { echo 'Signing key is unavailable'; exit 1; }
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/agent-release.keystore"
+      - name: Test and build signed APKs
+        working-directory: agent_android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/agent-release.keystore
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANYMODEL_KEY: ${{ secrets.ANYMODEL_KEY }}
+          YOOMONEY_CLIENT_ID: ${{ secrets.YOOMONEY_CLIENT_ID }}
+          YANDEX_SEARCH_KEY: ${{ secrets.YANDEX_SEARCH_KEY }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          QWEN_MODEL: ${{ secrets.QWEN_MODEL }}
+          GOOGLE_API: ${{ secrets.GOOGLE_API }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          VK_APP_ID: ${{ secrets.VK_APP_ID }}
+          VK_SECURE_KEY: ${{ secrets.VK_SECURE_KEY }}
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :home:assembleRelease
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ten-light-signed
+          path: |
+            agent_android/app/build/outputs/apk/release/*.apk
+            agent_android/home/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14

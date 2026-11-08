@@ -339,16 +339,16 @@ fun CardBox(modifier: Modifier = Modifier, border: Color? = null, bg: Color = Ca
     val shape = shp(16.dp)
     Column(modifier.fillMaxWidth().clip(shape).background(bg)
         .let { if (border != null) it.border(BorderStroke(1.dp, border), shape) else it }
-        .padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
+        .padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
 }
 
 @Composable
 fun BigButton(text: String, onClick: () -> Unit, bg: Color = Teal, fg: Color = Bg, border: Color? = null, modifier: Modifier = Modifier) {
-    val shape = shp(16.dp)
+    val shape = shp(14.dp)
     Box(modifier.fillMaxWidth().height(52.dp).clip(shape).background(bg)
         .let { if (border != null) it.border(1.dp, border, shape) else it }
         .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Text(text, style = body(16, FontWeight.Bold, fg))
+        Text(text, style = body(15, FontWeight.SemiBold, fg))
     }
 }
 

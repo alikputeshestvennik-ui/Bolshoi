@@ -95,7 +95,8 @@ object Prefs {
     var lastDigest: String get() = s("ld", ""); set(v) = put("ld", v)
     var monitorStatus: String get() = s("ms", ""); set(v) = put("ms", v)
     // ——— Оформление и характер ———
-    var theme: String get() = s("theme", "cockpit"); set(v) = put("theme", v)
+    var theme: String get() = s("theme", "light_minimal"); set(v) = put("theme", v)
+    var lightMinimalApplied: Boolean get() = b("light_minimal_applied", false); set(v) = putB("light_minimal_applied", v)
     /** Последний показанный id сообщения по каждому личному чату Telegram: {"chatId": msgId}. */
     var tgShown: String get() = s("tg_shown", "{}"); set(v) = put("tg_shown", v)
     /** Ссылки на рейсы из последнего поиска Авиасейлса — для «открой второй рейс». */
