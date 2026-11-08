@@ -497,7 +497,7 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
     val stamp = stampRe.find(m.text)?.groupValues?.get(2)?.trim().orEmpty()
     val text = m.text.replace(stampRe, "").trim()
     // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия; точка после номера списка («1.») — не конец фразы
-    val colon = Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s|\\n)").find(text)?.range?.first?.takeIf { it in 8..160 }
+    val colon = Regex(":(?:[ \\t]+(?:\\d{1,2}[.)]\\s|[•–—-]\\s)|[ \\t]*\\n)").find(text)?.range?.first?.takeIf { it in 8..160 }
     val cut = colon?.plus(1) ?: (Regex("(?<![\\s:]\\d)(?<![\\s:]\\d\\d)(?<!^\\d)[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1)
     val title = if (cut > 0) text.take(cut).replace("**", "").trim().trimEnd('.', ':') else ""
     val rest = if (cut > 0) text.drop(cut).trim() else text
@@ -507,11 +507,11 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
             .combinedClickable(onClick = {}, onLongClick = { ChatSel.toggle(m.id) }).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("ЛИСТ · ГОТОВО", style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.4.sp), modifier = Modifier.weight(1f))
+                Text("ОТВЕТ", style = body(11, FontWeight.SemiBold, Muted).copy(letterSpacing = 0.8.sp), modifier = Modifier.weight(1f))
                 Text(hhmm.format(Date(m.ts)), style = body(12, color = Th.c.meta))
             }
-            if (title.isNotBlank()) Text(title, style = androidx.compose.ui.text.TextStyle(fontFamily = Fonts.display, fontSize = 18.sp, lineHeight = 25.sp, color = Ink))
-            if (rest.isNotBlank()) Text(md(rest), style = body(14, color = Ink.copy(alpha = 0.86f)), lineHeight = 20.sp)
+            if (title.isNotBlank()) Text(title, style = body(16, FontWeight.SemiBold, Ink), lineHeight = 23.sp)
+            if (rest.isNotBlank()) Text(md(rest), style = body(15, color = Ink), lineHeight = 23.sp)
             if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
             if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('\n').filter { it.isNotBlank() })
             if (m.ytVideos.isNotBlank()) YtGrid(m.ytVideos.split('\n').filter { it.isNotBlank() })

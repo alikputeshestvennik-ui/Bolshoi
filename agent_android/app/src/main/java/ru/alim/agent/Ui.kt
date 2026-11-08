@@ -242,8 +242,10 @@ fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "", haze
                 Spacer(Modifier.width(8.dp))
             }
         }
-        Row(Modifier.weight(1f).height(56.dp).gl(shp(28.dp)).padding(start = 6.dp, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(44.dp)
+        Row(Modifier.weight(1f).height(56.dp).gl(shp(16.dp)).padding(start = 10.dp, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(38.dp).clip(shp(11.dp)).background(Teal), contentAlignment = Alignment.Center) {
+                Text("Т", style = body(17, FontWeight.SemiBold, OnAccent))
+            }
             Spacer(Modifier.width(10.dp))
             Text(title, style = body(17, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (trailing.isNotBlank()) Text(trailing, style = body(12, color = Muted), maxLines = 1)
