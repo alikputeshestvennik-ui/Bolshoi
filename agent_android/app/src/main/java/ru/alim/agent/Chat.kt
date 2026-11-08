@@ -509,6 +509,7 @@ class ChatStore(val fid: String) {
     // ——— друг отвечает ———
 
     private fun onAgentDone(r: Agent.Done) {
+        val notifyScenario = if (fid == Friends.MAIN) Scenarios.shouldNotify(Chat.app, r) else true
         val meta = buildString {
             val steps = r.steps.filterNot { it.startsWith("Подключаю") }.take(3).joinToString(" · ") { it.replaceFirstChar { c -> c.lowercase() } }
             if (steps.isNotBlank()) append(steps).append(" · ").append(r.secs).append(" сек")
@@ -519,7 +520,7 @@ class ChatStore(val fid: String) {
             files = if (r.files.isEmpty()) "" else JSONArray().also { a -> r.files.forEach { f -> a.put(JSONObject().put("n", f.name).put("u", f.uri.toString()).put("m", f.mime)) } }.toString(),
             note = true))
         val heavy = r.products.isNotEmpty() || r.files.isNotEmpty() || r.photos.isNotEmpty() || r.tgPhotos.isNotEmpty() || r.ytVideos.isNotEmpty()
-        val wantVoice = forFid == null && Prefs.voiceReplies && r.ok && VoiceMsg.canSpeak && !heavy && r.text.length < 400 &&
+        val wantVoice = notifyScenario && forFid == null && Prefs.voiceReplies && r.ok && VoiceMsg.canSpeak && !heavy && r.text.length < 400 &&
             (lastUserVoice || (voiceCount < 3 && Math.random() < 0.18 && r.text.length < 220))
         lastUserVoice = false
         val base = Msg(newId(), false, r.text, System.currentTimeMillis(),
@@ -530,17 +531,17 @@ class ChatStore(val fid: String) {
             val v = runCatching { VoiceMsg.speakToFile(Chat.app, r.text, friend) }.getOrNull()
             withContext(Dispatchers.Main) {
                 if (v != null) voiceCount++
-                post(if (v != null) base.copy(voice = v.first, dur = v.second) else base)
+                post(if (v != null) base.copy(voice = v.first, dur = v.second) else base, notifyScenario)
             }
         } else {
-            post(base)
-            if (r.ok && Prefs.speak && forFid == null) Agent.onSpeak?.invoke(r.text)
+            post(base, notifyScenario)
+            if (notifyScenario && r.ok && Prefs.speak && forFid == null) Agent.onSpeak?.invoke(r.text)
         }
     }
 
-    private fun post(m: Msg) {
+    private fun post(m: Msg, notify: Boolean = true) {
         add(m)
-        notifyIfAway(m)
+        if (notify) notifyIfAway(m)
         main.postDelayed({
             val next = queue.firstOrNull() ?: return@postDelayed
             queue.removeAt(0)
