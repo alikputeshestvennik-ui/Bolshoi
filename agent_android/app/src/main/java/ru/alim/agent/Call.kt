@@ -64,7 +64,7 @@ object Call {
     var caption by mutableStateOf(""); private set
 
     val key: String get() = BuildConfig.GOOGLE_API.trim()
-    val ready: Boolean get() = key.isNotBlank()
+    val ready: Boolean get() = Prefs.developerModels && key.isNotBlank()
 
     private val MODELS = listOf("gemini-3.8-live", "gemini-2.5-flash-native-audio-preview-12-2025")
     private const val IN_RATE = 16000
@@ -106,7 +106,7 @@ object Call {
         app = ctx.applicationContext
         fid = friendId; error = ""; muted = false; doing = ""; caption = ""; talking = false; level = 0f
         log.clear(); curIn.clear(); curOut.clear()
-        if (!ready) { error = "Нет ключа Google (секрет GOOGLE_API)"; state = St.ENDED; return }
+        if (!ready) { error = if (!Prefs.developerModels) "Голосовая модель Google отключена в настройках разработчика" else "Нет ключа Google (секрет GOOGLE_API)"; state = St.ENDED; return }
         state = St.CONNECTING; modelIdx = 0; startedAt = 0L; dropping = false
         dialAt = System.currentTimeMillis(); ringMin = (1800..5500).random().toLong()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

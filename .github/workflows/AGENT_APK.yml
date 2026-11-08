@@ -6,6 +6,7 @@ on:
     branches-ignore:
       - 'codex/chatgpt-signin'
       - 'codex/light-design'
+      - 'codex/request-redesign'
     paths:
       - 'agent_android/**'
       - '.github/workflows/AGENT_APK.yml'

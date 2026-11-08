@@ -2,7 +2,7 @@ name: Build light design
 on:
   workflow_dispatch:
   push:
-    branches: [ 'codex/light-design' ]
+    branches: [ 'codex/light-design', 'codex/request-redesign' ]
 permissions:
   contents: read
 jobs:

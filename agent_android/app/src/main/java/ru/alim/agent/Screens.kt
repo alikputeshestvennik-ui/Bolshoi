@@ -704,6 +704,15 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Для разработчика", "модели · расходы", Muted) {
+                var developerModels by remember { mutableStateOf(Prefs.developerModels) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Сторонние модели", style = body(15, FontWeight.SemiBold))
+                        Text("Разрешить модели других провайдеров и настройку ролей", style = body(12, color = Muted))
+                    }
+                    Toggle(developerModels) { developerModels = it; Prefs.developerModels = it }
+                }
+                if (developerModels) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
                 Text("Модель для каждой роли. Яндекс — бесплатно и без VPN; AnyModel — платно: ${"%.2f".format(AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов баланса × коэффициент модели, расход в рублях — в «Истории».",
                     style = body(12, color = Muted), lineHeight = 16.sp)
@@ -760,6 +769,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                 }, bg = Card, fg = Ink, border = Line)
                 check?.let { Text(it, style = body(13, color = Muted), lineHeight = 18.sp) }
+                }
             }
             }
 

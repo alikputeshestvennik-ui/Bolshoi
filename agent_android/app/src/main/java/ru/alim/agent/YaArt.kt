@@ -42,6 +42,7 @@ object YaArt {
 
     /** Alice AI ART через Images API (синхронно, ответ — base64 в data[0].b64_json). Старый YandexART — запасной путь. */
     fun generate(ctx: Context, prompt: String, aspect: String): Long {
+        check(Prefs.developerModels) { "Модель изображений Яндекса отключена в настройках разработчика" }
         if (YaCloud.folder.isBlank() || keys.isEmpty()) error("нет ключа или каталога Yandex Cloud")
         val errs = ArrayList<String>()
         for (sz in listOf(size(aspect), "1024x1024").distinct()) for (k in keys) {

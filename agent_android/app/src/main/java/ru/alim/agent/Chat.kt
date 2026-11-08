@@ -96,10 +96,12 @@ object Friends {
         // переименование: «Пилот» → «Тень» (один раз; если Алим потом даст своё имя — оставим его)
         if (!Prefs.renamedTen) { Prefs.renamedTen = true
             list.firstOrNull { it.main && it.name.equals("Пилот", true) }?.let { f -> save(f.copy(name = "Тень")) } }
+        if (!Prefs.tenNameMigrated) { Prefs.tenNameMigrated = true
+            list.firstOrNull { it.main && it.name.equals("Артур", true) }?.let { f -> save(f.copy(name = "Тень")) } }
         current = MAIN
     }
 
-    fun get(id: String): Friend = list.firstOrNull { it.id == id } ?: list.firstOrNull { it.main } ?: Friend(MAIN, "Артур", true, "buddy")
+    fun get(id: String): Friend = list.firstOrNull { it.id == id } ?: list.firstOrNull { it.main } ?: Friend(MAIN, "Тень", true, "buddy")
     val main: Friend get() = get(MAIN)
 
     fun save(f: Friend) {

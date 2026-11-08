@@ -254,6 +254,7 @@ object Llm {
     /** Любой вызов модели: успех — Артур «в сети», обрыв связи — «был(а) в…». */
     fun chat(model: String, messages: JSONArray, maxTokens: Int = 1200, json: Boolean = true, patient: Boolean = false,
              onPart: ((content: String, reasoning: String) -> Unit)? = null): Reply {
+        check(Prefs.developerModels || isChatGpt(model)) { "Сторонние модели отключены в настройках разработчика" }
         if (isGoogle(model)) {
             // фон может подождать окно до 20 с, переписка — не больше 3 с, задача агента — до минуты на своей модели
             val wait = if (patient) 65_000L else if (model == Prefs.bg && model != Prefs.fastModel) 20_000L else 3_000L
@@ -274,6 +275,7 @@ object Llm {
      * Возвращает полный собранный текст. Бросает исключение при ошибке сети/провайдера — вызывающий откатится на агента.
      */
     fun stream(model: String, messages: JSONArray, maxTokens: Int, onDelta: (String) -> Unit): String {
+        check(Prefs.developerModels || isChatGpt(model)) { "Сторонние модели отключены в настройках разработчика" }
         return when {
             isChatGpt(model) -> {
                 val r = ChatGptResponses.chat(ChatGptAccount.access(), model.removePrefix("chatgpt:"), messages, onDelta)

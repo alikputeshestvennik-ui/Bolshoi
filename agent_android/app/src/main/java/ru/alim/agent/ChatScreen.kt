@@ -252,13 +252,15 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 }
             } else {
                 val hap = androidx.compose.ui.platform.LocalHapticFeedback.current
-                Row(Modifier.fillMaxWidth().height(56.dp).glass(haze, shp(28.dp))
+                Row(Modifier.fillMaxWidth().height(56.dp).glass(haze, shp(16.dp))
                     // долгий тап по шапке — поиск по переписке (бабл превращается в поле поиска)
                     .combinedClickable(onClickLabel = null, onLongClickLabel = "Поиск по переписке", onClick = {},
                         onLongClick = { hap.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); search = "" })
                     .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(44.dp, f = f)
-                    HGap(10)
+                    Box(Modifier.size(40.dp).clip(shp(12.dp)).background(Teal), contentAlignment = Alignment.Center) {
+                        Text("Т", style = body(18, FontWeight.SemiBold, OnAccent))
+                    }
+                    HGap(12)
                     Column(Modifier.weight(1f)) {
                         Text(f.name, style = body(17, FontWeight.Bold), maxLines = 1)
                         // «в сети» не пишем — Пилот на телефоне всегда рядом; статус только когда занят или нет связи
@@ -292,6 +294,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 if (fid == Friends.MAIN) {
                     if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
                     NavBar(haze, Scr.Home, go); Spacer(Modifier.height(10.dp))
+                    RequestControls(); Spacer(Modifier.height(8.dp))
                 }
                 Composer(haze, chat, f)
             }

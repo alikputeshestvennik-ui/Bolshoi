@@ -26,7 +26,13 @@ object Prefs {
         "cx/gpt-6-astra", "cx/gpt-6.1-sol", "cx/gpt-6.1-terra", "cc/claude-sonnet-5", "ds/deepseek-v4-pro", "ds/deepseek-v4-flash-vision")
     val BG_MODELS = listOf("yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
     private fun pick(v: String, allowed: List<String>, def: String) = if (Llm.isChatGpt(v)) v.trim() else allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
-    var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, CHAT_MODELS[0]); set(v) = put("fm", v.trim())
+    var developerModels: Boolean get() = b("developer_models", false); set(v) = putB("developer_models", v)
+    var reasoningLevel: String get() = s("chatgpt_reasoning", "medium"); set(v) = put("chatgpt_reasoning", v)
+    var chatGptModel: String get() = s("chatgpt_selected", "chatgpt:gpt-6.1-terra"); set(v) = put("chatgpt_selected", v)
+    var usageInput: Long get() = sp.getLong("chatgpt_usage_in", 0); set(v) { sp.edit().putLong("chatgpt_usage_in", v).apply() }
+    var usageOutput: Long get() = sp.getLong("chatgpt_usage_out", 0); set(v) { sp.edit().putLong("chatgpt_usage_out", v).apply() }
+    @Synchronized fun addChatGptUsage(input: Int, output: Int) { usageInput += input; usageOutput += output }
+    var fastModel: String get() = if (!developerModels) chatGptModel else pick(s("fm", ""), CHAT_MODELS, CHAT_MODELS[0]); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
     var fastLane: Boolean get() = b("fastlane", true); set(v) = putB("fastlane", v)
     /** Модель для быстрой полосы (по умолчанию — Alice AI Flash Яндекса: бесплатно, без VPN, хорошо по-русски). */
@@ -46,12 +52,12 @@ object Prefs {
     /** Страховка: ставится перед запуском 3D и снимается, когда сцена готова. Осталась после падения — 3D отключается. */
     var flight3dStarting: Boolean get() = b("f3d_start", false); set(v) = sp.edit().putBoolean("f3d_start", v).commit().let {}
     /** Модель независимой проверки важных задач ("" — как «Руки»). Лучше другой «породы», чем главная. */
-    var checkModel: String get() = s("chk", ""); set(v) = put("chk", v.trim())
+    var checkModel: String get() = if (!developerModels) chatGptModel else s("chk", ""); set(v) = put("chk", v.trim())
     /** Большая задача из нескольких независимых вариантов — по частям, копиями Тени одновременно. */
     var split: Boolean get() = b("split", true); set(v) = putB("split", v)
     /** Проверять каждую большую задачу, а не только важные. */
     var checkAll: Boolean get() = b("chkAll", false); set(v) = putB("chkAll", v)
-    var smartModel: String get() = pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())
+    var smartModel: String get() = if (!developerModels) chatGptModel else pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())
     /** Глубина рассуждений у моделей AnyModel для «рук»: low / medium / high. high думает минутами на каждом шаге. */
     var effort: String get() = s("eff", "medium"); set(v) = put("eff", v)
     /** Авто-тема: какая днём и какая вечером. */
@@ -82,7 +88,7 @@ object Prefs {
     /** Голос Google для главного друга («» — по полу автоматически). */
     var gVoice: String get() = s("gvoice", ""); set(v) = put("gvoice", v)
     /** Фоновая модель: уведомления, сводки, сам пишет, поиск фото. Пусто — как «Чат». */
-    var bgModel: String get() = pick(s("bgm", ""), BG_MODELS, BG_MODELS[0]); set(v) = put("bgm", v.trim())
+    var bgModel: String get() = if (!developerModels) chatGptModel else pick(s("bgm", ""), BG_MODELS, BG_MODELS[0]); set(v) = put("bgm", v.trim())
     val bg: String get() = bgModel.ifBlank { fastModel }
     /** Счётчики бесплатных запросов Google за сутки (JSON). */
     fun initCount(fid: String, day: String) = if (sp.getString("icd_$fid", "") == day) sp.getInt("icn_$fid", 0) else 0
@@ -109,7 +115,8 @@ object Prefs {
     /** Подложка: "pattern" — узор темы, "photo" — картинка из файла wallpaper.jpg. */
     var wallpaper: String get() = s("wall", "pattern"); set(v) = put("wall", v)
     var wallDim: Int get() = sp.getInt("wdim", 25); set(v) = sp.edit().putInt("wdim", v).apply()
-    var botName: String get() = s("bname", "Артур").ifBlank { "Артур" }; set(v) = put("bname", v.trim())
+    var botName: String get() = s("bname", "Тень").ifBlank { "Тень" }; set(v) = put("bname", v.trim())
+    var tenNameMigrated: Boolean get() = b("ten_name_migrated", false); set(v) = putB("ten_name_migrated", v)
     var botMale: Boolean get() = b("bmale", true); set(v) = putB("bmale", v)
     /** Манера: "buddy" — кореш, "secretary" — секретарь, "short" — коротко. */
     var botStyle: String get() = s("bstyle", "buddy"); set(v) = put("bstyle", v)
