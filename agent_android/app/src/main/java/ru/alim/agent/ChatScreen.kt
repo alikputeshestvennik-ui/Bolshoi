@@ -260,7 +260,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().background(Card).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 10.dp)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().background(Card).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp)
             .onSizeChanged { composerH = it.height }) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
@@ -638,12 +638,12 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
     hint?.let { Text(it, style = body(13, color = Amber), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
     if (busyStt) Text("Распознаю голосовое…", style = body(13, color = Muted), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
     AttachChips()
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(2.dp))
 
     Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
         // поле — растёт вместе с текстом (до 6 строк)
-        Row(Modifier.fillMaxWidth().padding(end = 58.dp).heightIn(min = 52.dp).clip(shp(26.dp)).background(Card).border(1.dp, Line, shp(26.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+        Row(Modifier.fillMaxWidth().padding(end = 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
                 var blink by remember { mutableStateOf(true) }
@@ -657,7 +657,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
                 BasicTextField(text, { text = it; hint = null }, Modifier.weight(1f).onFocusChanged { onInputFocusChange(it.isFocused) }, textStyle = body(16), cursorBrush = SolidColor(Teal), maxLines = 6,
                     decorationBox = { inner -> if (text.isEmpty()) Text("Сообщение", style = body(16, color = Muted)); inner() })
                 HGap(8)
-                Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(40.dp).clickable { attach() }.padding(8.dp))
+                Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(36.dp).clickable { attach() }.padding(6.dp))
             }
         }
         // кнопка: отправить / микрофон
@@ -672,7 +672,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.BottomEnd).size(52.dp).scale(sc).clip(circ).background(Teal)
+        Box(Modifier.align(Alignment.BottomEnd).size(48.dp).scale(sc).clip(circ).background(Teal)
             .then(
                 if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }

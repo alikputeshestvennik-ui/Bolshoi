@@ -489,7 +489,7 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
         else -> here
     }
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
-    Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         items.forEach { (ic, label, to) ->
             NavDot(haze, ic, label, Modifier.weight(1f), to == cur, active && to == Scr.Active, if (to == Scr.Home) onSearch else null) { go(to) }
         }
@@ -508,7 +508,7 @@ private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.Imag
             animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "task-pulse")
         scale
     } else 1f
-    Column(modifier.height(52.dp).clip(shape).background(if (on) AccentSoft else Color.Transparent)
+    Column(modifier.height(48.dp).clip(shape).background(if (on) AccentSoft else Color.Transparent)
         .combinedClickable(onClickLabel = label, onClick = onClick, onLongClickLabel = if (onLongClick != null) "Поиск по переписке" else null, onLongClick = onLongClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(contentAlignment = Alignment.Center) {
             Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), if (active) "$label · есть активные задачи" else label,
@@ -749,7 +749,7 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
     var composerFocused by remember { mutableStateOf(false) }
     val n0 = remember { chat.msgs.size }
     LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
-    Column(modifier.fillMaxWidth().background(Card).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 10.dp)) {
+    Column(modifier.fillMaxWidth().background(Card).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp)) {
         BottomBarContent(haze, here, go, chat, chat.friend, composerFocused, { composerFocused = it })
     }
 }
@@ -758,7 +758,7 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
 fun BottomBarContent(haze: HazeState, here: Scr, go: (Scr) -> Unit, chat: ChatStore, friend: Friend,
                      composerFocused: Boolean, onFocusChange: (Boolean) -> Unit, onSearch: (() -> Unit)? = null) {
     NavBar(haze, here, go, onSearch = onSearch)
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(4.dp))
     if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {
         ChatControls(go); Spacer(Modifier.height(8.dp))
     }
