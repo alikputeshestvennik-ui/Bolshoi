@@ -294,9 +294,13 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 if (fid == Friends.MAIN) {
                     if (search == null) { ActiveButton(go); Spacer(Modifier.height(10.dp)) }
                     NavBar(haze, Scr.Home, go); Spacer(Modifier.height(10.dp))
-                    RequestControls(); Spacer(Modifier.height(8.dp))
                 }
-                Composer(haze, chat, f)
+                if (fid == Friends.MAIN) {
+                    Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).padding(6.dp)) {
+                        RequestControls()
+                        Composer(haze, chat, f)
+                    }
+                } else Composer(haze, chat, f)
             }
         }
 
@@ -353,10 +357,11 @@ private fun DateChip(ts: Long) {
 @Composable
 private fun Hello(f: Friend) {
     Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Avatar(84.dp, online = Online.online, f = f)
-        Text(f.name, style = body(20, FontWeight.Bold))
-        Text("Напиши или запиши голосовое — найду, напишу, напомню, или просто поболтаем.", style = body(14, color = Muted),
-            modifier = Modifier.clip(shp(14.dp)).background(Th.c.inBubble.copy(alpha = 0.8f)).padding(12.dp))
+        Box(Modifier.size(56.dp).clip(shp(16.dp)).background(Teal), contentAlignment = Alignment.Center) {
+            Text("Т", style = body(24, FontWeight.SemiBold, OnAccent))
+        }
+        Text(f.name, style = body(22, FontWeight.SemiBold))
+        Text("Чем помочь? Напиши задачу или запиши голосовое сообщение.", style = body(14, color = Muted), modifier = Modifier.padding(12.dp))
     }
 }
 
