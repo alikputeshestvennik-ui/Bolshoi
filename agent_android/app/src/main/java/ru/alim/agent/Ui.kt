@@ -76,6 +76,9 @@ fun neededPerms(): Array<String> {
 
 @Composable
 fun App(voice: Voice) {
+    val pageState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var scr by remember { mutableStateOf(Scr.Home) }
     var taskBack by remember { mutableStateOf(Scr.Home) }
     var subFrom by remember { mutableStateOf(Scr.Home) }
@@ -169,11 +172,16 @@ fun App(voice: Voice) {
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
         Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task) Modifier else Modifier.navigationBarsPadding().imePadding())) {
-            val go: (Scr) -> Unit = { scr = it }
+            val go: (Scr) -> Unit = { destination ->
+                focus.clearFocus(); keyboard?.hide()
+                if (VoiceMsg.recording) tgScope.launch { VoiceMsg.stop(true); scr = destination }
+                else scr = destination
+            }
             val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
             // Only the chat owns a composer. Secondary pages use the same compact navigation.
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalBarPad provides 24.dp, LocalBarHaze provides null, LocalNavigate provides go) {
+            pageState.SaveableStateProvider(if (scr == Scr.Journal) Scr.Home.name else scr.name) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
                 Scr.Active -> ActiveScreen(go)
@@ -190,6 +198,7 @@ fun App(voice: Voice) {
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
                 Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)
+            }
             }
             }
             if (Panel.open) Panel.open = false

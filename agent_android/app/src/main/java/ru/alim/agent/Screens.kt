@@ -387,8 +387,8 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
     val ctx = LocalContext.current
     val go = LocalNavigate.current
-    var period by remember { mutableStateOf(0) }
-    var showBg by remember { mutableStateOf(false) }
+    var period by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    var showBg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val jv = Journal.version.intValue
     var clock by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); clock = System.currentTimeMillis() } }

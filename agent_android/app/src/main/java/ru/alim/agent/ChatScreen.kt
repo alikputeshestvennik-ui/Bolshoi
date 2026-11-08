@@ -600,7 +600,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    var text by remember { mutableStateOf("") }
+    var text by androidx.compose.runtime.saveable.rememberSaveable(f.id) { mutableStateOf("") }
     var hint by remember { mutableStateOf<String?>(null) }
     var locked by remember { mutableStateOf(false) }
     var dragX by remember { mutableFloatStateOf(0f) }

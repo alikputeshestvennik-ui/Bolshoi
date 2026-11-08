@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,7 +28,7 @@ fun PageNavigation(title: String, modifier: Modifier = Modifier, search: (() -> 
         Box {
             Row(Modifier.clickable(onClickLabel = "Открыть разделы") { expanded = true }
                 .padding(vertical = 12.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("☰", style = body(22, color = Teal))
+                Icon(Icons.Filled.Menu, "Разделы", tint = Teal, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(14.dp))
                 Text(title, style = body(18, FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
