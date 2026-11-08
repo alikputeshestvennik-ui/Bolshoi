@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,6 +84,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -122,6 +124,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     val haze = remember { HazeState() }
     val list = rememberLazyListState()
     var search by remember { mutableStateOf<String?>(null) }
+    val draft = remember(fid) { mutableStateOf("") }
     val msgs = chat.msgs
     val shown = remember(msgs.size, search, msgs.lastOrNull()) {
         val q = search?.trim().orEmpty()
@@ -162,9 +165,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         ChatJump.target = 0L
         delay(2200); ChatJump.glow = 0L
     }
-    var tick by remember { mutableStateOf(0) }
     var composerH by remember { mutableStateOf(220) }
-    LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
     // в кабине без фото-обоев фон рисует общая сцена полёта под экраном (Ui) — здесь прозрачно
@@ -176,8 +177,23 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
             val bars = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = top + 80.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
+            LazyColumn(Modifier.fillMaxSize().pointerInput(fid, search, ChatSel.on) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var zoom = 1f
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (search == null && !ChatSel.on && !VoiceMsg.recording && event.changes.count { it.pressed } >= 2) {
+                            zoom *= event.calculateZoom()
+                            if (zoom < 0.88f || zoom > 1.12f) {
+                                event.changes.forEach { it.consume() }
+                                search = ""
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }, state = list, reverseLayout = true,
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = top + if (ChatSel.on) 76.dp else 12.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
                 if (core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
@@ -198,13 +214,16 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     if (prev == null || !sameDay(prev.ts, m.ts)) item(key = "d${m.id}") { DateChip(m.ts) }
                 }
                 if (msgs.isEmpty()) item(key = "hello") { Hello(f) }
+                if (search != null && search!!.isNotBlank() && shown.isEmpty()) item(key = "no-search-results") {
+                    Text("Ничего не найдено", style = body(14, color = Muted), modifier = Modifier.fillMaxWidth().padding(20.dp))
+                }
             }
         }
 
         // ——— затемнение сверху и снизу: лента плавно уходит в фон под плашками ———
         val fade = Th.c.wall.first()
         val fadeBottom = Th.c.wall.last()
-        val topH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 96.dp
+        val topH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + if (ChatSel.on) 76.dp else 12.dp
         val botH = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
             with(LocalDensity.current) { composerH.toDp() } + 34.dp
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topH)
@@ -232,51 +251,27 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     chat.delete(ChatSel.ids.toList()); ChatSel.ids.clear()
                 }.padding(10.dp))
             }
-        } else Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            // поиск выезжает на место шапки Пилота и уезжает обратно
-            androidx.compose.animation.AnimatedContent(search != null, Modifier.weight(1f), label = "head",
-                transitionSpec = {
-                    val dir = if (targetState) 1 else -1
-                    (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280)) { it * dir } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(280)) { -it * dir / 2 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)))
-                }) { searching ->
-            if (searching) {
-                val fr = remember { androidx.compose.ui.focus.FocusRequester() }
-                LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
-                Row(Modifier.fillMaxWidth().height(52.dp).glass(haze, shp(26.dp)).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Search, null, tint = Muted, modifier = Modifier.size(20.dp)); HGap(10)
-                    BasicTextField(search.orEmpty(), { search = it }, Modifier.weight(1f).focusRequester(fr), singleLine = true,
-                        textStyle = body(16), cursorBrush = SolidColor(Teal),
-                        decorationBox = { inner -> if (search.isNullOrEmpty()) Text("Поиск по переписке", style = body(16, color = Muted)); inner() })
-                    Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(22.dp).clickable { search = null })
-                }
-            } else {
-                val hap = androidx.compose.ui.platform.LocalHapticFeedback.current
-                Row(Modifier.fillMaxWidth().height(56.dp).glass(haze, shp(16.dp))
-                    // долгий тап по шапке — поиск по переписке (бабл превращается в поле поиска)
-                    .combinedClickable(onClickLabel = null, onLongClickLabel = "Поиск по переписке", onClick = {},
-                        onLongClick = { hap.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); search = "" })
-                    .padding(start = 6.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(40.dp).clip(shp(12.dp)).background(Teal), contentAlignment = Alignment.Center) {
-                        Text("Т", style = body(18, FontWeight.SemiBold, OnAccent))
-                    }
-                    HGap(12)
-                    Column(Modifier.weight(1f)) {
-                        Text(f.name, style = body(17, FontWeight.Bold), maxLines = 1)
-                        // «в сети» не пишем — Пилот на телефоне всегда рядом; статус только когда занят или нет связи
-                        val st = Online.status(core, f)
-                        if (core.busy || !Online.online || tick < 0) Text(if (core.busy) shortStatus(st) else st, style = body(if (core.busy) 12 else 13, color = Muted),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-            }
         }
 
         // ——— ввод ———
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 10.dp).padding(bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
-            if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            androidx.compose.animation.AnimatedContent(targetState = search != null && !ChatSel.on, label = "search-composer",
+                transitionSpec = { (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 3 }) togetherWith
+                    (androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)) +
+                    androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(150)) { it / 3 }) }) { searching ->
+            if (searching) {
+                val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                LaunchedEffect(Unit) { delay(150); runCatching { focus.requestFocus() } }
+                Row(Modifier.fillMaxWidth().height(58.dp).clip(shp(18.dp)).background(Card).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Search, null, tint = Muted, modifier = Modifier.size(20.dp)); HGap(10)
+                    BasicTextField(search.orEmpty(), { search = it }, Modifier.weight(1f).focusRequester(focus), singleLine = true,
+                        textStyle = body(16), cursorBrush = SolidColor(Teal),
+                        decorationBox = { inner -> if (search.isNullOrEmpty()) Text("Поиск по переписке", style = body(16, color = Muted)); inner() })
+                    Icon(Icons.Filled.Close, "Закрыть поиск", tint = Muted, modifier = Modifier.size(42.dp).clickable { search = null }.padding(10.dp))
+                }
+            } else if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
                 Row(Modifier.weight(1f).height(52.dp).glass(haze, shp(26.dp))
                     .clickable(enabled = one) { chat.replyTo = ChatSel.picked(chat).firstOrNull(); ChatSel.ids.clear() },
@@ -298,9 +293,10 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 if (fid == Friends.MAIN) {
                     Column(Modifier.fillMaxWidth().clip(shp(20.dp)).background(Card).padding(6.dp)) {
                         RequestControls()
-                        Composer(haze, chat, f)
+                        Composer(haze, chat, f, draft)
                     }
-                } else Composer(haze, chat, f)
+                } else Composer(haze, chat, f, draft)
+            }
             }
         }
 
@@ -618,11 +614,12 @@ fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
 // ———————————————— ввод и голосовое ————————————————
 
 @Composable
-fun Composer(haze: HazeState, chat: ChatStore, f: Friend) {
+fun Composer(haze: HazeState, chat: ChatStore, f: Friend, draft: androidx.compose.runtime.MutableState<String>? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    var text by remember { mutableStateOf("") }
+    val ownDraft = remember(chat) { mutableStateOf("") }
+    var text by (draft ?: ownDraft)
     var hint by remember { mutableStateOf<String?>(null) }
     var locked by remember { mutableStateOf(false) }
     var dragX by remember { mutableFloatStateOf(0f) }

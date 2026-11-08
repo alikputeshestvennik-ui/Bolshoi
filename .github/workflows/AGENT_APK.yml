@@ -7,6 +7,7 @@ on:
       - 'codex/chatgpt-signin'
       - 'codex/light-design'
       - 'codex/request-redesign'
+      - 'codex/pinch-search'
     paths:
       - 'agent_android/**'
       - '.github/workflows/AGENT_APK.yml'
