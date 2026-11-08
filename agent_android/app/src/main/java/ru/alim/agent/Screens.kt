@@ -413,7 +413,7 @@ fun HistoryTaskScreen(record: TaskRec, back: () -> Unit) {
             item {
                 CardBox {
                     Label("Ответ")
-                    Text(if (record.result.isNotBlank()) md(record.result) else "Подробный ответ не сохранился.", style = body(15), lineHeight = 22.sp)
+                    Text(md(record.result.ifBlank { "Подробный ответ не сохранился." }), style = body(15), lineHeight = 22.sp)
                 }
             }
             if (steps.isNotEmpty()) item {
