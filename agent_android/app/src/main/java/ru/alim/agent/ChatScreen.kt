@@ -172,8 +172,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     Box(Modifier.fillMaxSize().then(if (skyBehind) Modifier else Modifier.background(Th.c.bg))) {
         // ——— фон и лента (под стеклом) ———
         Box(Modifier.fillMaxSize().haze(haze, HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
-            // A quiet surface keeps long answers readable.
-            Box(Modifier.fillMaxSize().background(Bg))
+            // Keep a chosen photo; the default surface is deliberately quiet.
+            if (Prefs.wallpaper == "photo") Wallpaper() else Box(Modifier.fillMaxSize().background(Bg))
             // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
             val bars = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()

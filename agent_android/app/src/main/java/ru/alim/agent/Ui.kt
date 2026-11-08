@@ -117,7 +117,7 @@ fun App(voice: Voice) {
         onDispose { life.lifecycle.removeObserver(obs) }
     }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); Th.tick() } }
-    // кабина задачи — всегда в цветах «Кабины» (небо, полёт), панель и журнал — в выбранной теме
+    // Все страницы, включая подробности задачи, используют выбранную тему.
     androidx.compose.runtime.SideEffect { Th.forceCockpit = false }
     val phase = Agent.phase
     val open = Nav.open

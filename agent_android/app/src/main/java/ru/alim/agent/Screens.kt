@@ -416,7 +416,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
                 CardBox(bg = AccentSoft) {
                     Text("ИСПОЛЬЗОВАНО ЗА ПЕРИОД", style = body(10, FontWeight.Bold, Muted).copy(letterSpacing = 1.sp))
                     Text(tok(input + output), modifier = Modifier.testTag("usage-total"), style = body(30, FontWeight.SemiBold))
-                    Text("Вход ${tok(input)} · выход ${tok(output)}", style = body(12, color = Muted))
+                    Text("Общий расход: чат, задачи и фон", style = body(12, color = Muted))
                     Text("${recs.count { !it.background }} запросов · ${recs.count { it.background }} фоновых записей", style = body(12, color = Muted))
                     if (recs.any { it.tokIn + it.tokOut == 0L }) Text("У части записей расход не сохранён. Они не включены в сумму токенов.", style = body(11, color = Muted))
                 }

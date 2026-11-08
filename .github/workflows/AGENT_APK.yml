@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: apk-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -26,9 +30,9 @@ jobs:
         run: |
           # Шрифты из макетов (OFL, с кириллицей). Не скачались — приложение возьмёт системный.
           mkdir -p agent_android/app/src/main/assets/fonts
-          curl -fsSL --retry 3 -o agent_android/app/src/main/assets/fonts/manrope.ttf \
+          curl -fsSL --connect-timeout 10 --max-time 20 --retry 1 -o agent_android/app/src/main/assets/fonts/manrope.ttf \
             "https://github.com/google/fonts/raw/main/ofl/manrope/Manrope%5Bwght%5D.ttf" || rm -f agent_android/app/src/main/assets/fonts/manrope.ttf
-          curl -fsSL --retry 3 -o agent_android/app/src/main/assets/fonts/unbounded.ttf \
+          curl -fsSL --connect-timeout 10 --max-time 20 --retry 1 -o agent_android/app/src/main/assets/fonts/unbounded.ttf \
             "https://github.com/google/fonts/raw/main/ofl/unbounded/Unbounded%5Bwght%5D.ttf" || rm -f agent_android/app/src/main/assets/fonts/unbounded.ttf
           ls -la agent_android/app/src/main/assets/fonts || true
           # те же шрифты — лаунчеру «Тень · Дом»
