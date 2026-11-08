@@ -69,6 +69,8 @@ fun MemoryScreen(back: () -> Unit) {
     val v = Memory.version.intValue
     val facts = remember(v) { Memory.all(ctx).reversed() }
     var input by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<Memory.Fact?>(null) }
+    var editText by remember { mutableStateOf("") }
     val add: () -> Unit = { if (input.isNotBlank()) { Memory.add(ctx, input, "ты"); input = "" } }
 
     Screen("Память", back) {
@@ -96,12 +98,14 @@ fun MemoryScreen(back: () -> Unit) {
                     }
                     if (f.source == "авто") Box(Modifier.size(44.dp).clickable(onClickLabel = "Подтвердить") { Memory.confirm(ctx, f.id) },
                         contentAlignment = Alignment.Center) { Icon(Icons.Filled.Check, "Подтвердить", tint = Teal, modifier = Modifier.size(20.dp)) }
+                    Text("Изменить", style = body(12, color = Teal), modifier = Modifier.clickable { editing = f; editText = f.text }.padding(8.dp))
                     Box(Modifier.size(44.dp).clickable(onClickLabel = "Удалить") { Memory.remove(ctx, f.id) },
                         contentAlignment = Alignment.Center) { Icon(Icons.Filled.Delete, "Удалить", tint = Muted, modifier = Modifier.size(20.dp)) }
                 }
             }
         }
     }
+    editing?.let { f -> androidx.compose.material3.AlertDialog(onDismissRequest = { editing = null }, title = { Text("Изменить запись") }, text = { OutlinedTextField(editText, { editText = it }, label = { Text("Что помнить") }) }, confirmButton = { androidx.compose.material3.TextButton(onClick = { Memory.edit(ctx, f.id, editText); editing = null }) { Text("Сохранить") } }, dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = null }) { Text("Отмена") } }) }
 }
 
 // ————————————————— Сводка —————————————————

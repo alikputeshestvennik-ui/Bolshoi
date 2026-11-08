@@ -253,6 +253,7 @@ fun ReportCard(m: Msg, p: JSONObject, lit: Boolean, showButtons: Boolean, chat: 
                     Icon(rememberVectorPainter(icShareUp), "Поделиться", tint = Muted, modifier = Modifier.size(40.dp).clickable { shareText(ctx, m.text) }.padding(9.dp))
                 }
                 if (r.optString("lead").isNotBlank()) Text(r.optString("lead"), style = body(14, color = Ink.copy(alpha = 0.86f)), lineHeight = 20.sp)
+                SourceBadges(m.text, m.best)
             }
 
             // ——— маршрут ———

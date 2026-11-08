@@ -387,6 +387,8 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 fun HistoryTaskScreen(record: TaskRec, back: () -> Unit) {
     val steps = remember(record) { record.log.lines().filter { it.isNotBlank() } }
     val products = remember(record.items) { Shop.fromJson(record.items) }
+    val candidates = remember(record, Chat.main.msgs.size) { Chat.main.msgs.filter { !it.me && it.best.isNotBlank() && record.result.isNotBlank() && it.text.take(2500) == record.result && kotlin.math.abs(it.ts - (record.ts + record.dur)) < 10_000 && Rich.parse(it.best)?.optJSONObject("report") != null } }
+    val reportMessage = candidates.singleOrNull()
     Screen("История", back) {
         LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -410,7 +412,8 @@ fun HistoryTaskScreen(record: TaskRec, back: () -> Unit) {
                     }
                 }
             }
-            item {
+            if (reportMessage != null) item { ReportCard(reportMessage, Rich.parse(reportMessage.best)!!, false, false, Chat.main) }
+            else item {
                 CardBox {
                     Label("Ответ")
                     Text(md(record.result.ifBlank { "Подробный ответ не сохранился." }), style = body(15), lineHeight = 22.sp)
@@ -616,8 +619,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 }
                 group("Аккаунты и подключения", listOf(
                     "ChatGPT" to if (ChatGptAccount.connected) ChatGptAccount.email.ifBlank { "подключён" } else "не подключён",
-                    "Telegram" to Tg.statusText, "Почта Gmail" to "почтовые ящики", "ЮMoney" to "платежи",
-                    "Яндекс Музыка" to "музыка", "YouTube" to "подписки и плейлисты"))
+                    "Telegram" to Tg.statusText, "Почта Gmail" to "почтовые ящики"))
                 group("Модели и расход", listOf("Модели и использование" to "чат · задачи · фон · проверка", "Лимит расходов" to "платные сервисы"))
                 SetGroup("Поведение Тени") {
                     listOf(Triple("Что Тень помнит", "память", Scr.Memory), Triple("Сам пишет первым", "инициатива и расписание", Scr.Initiative), Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules)).forEachIndexed { i, (name, sub, destination) ->
@@ -709,28 +711,10 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
             Section("Почта Gmail", if (mails > 0) "подключено ящиков: $mails" else "не подключена",
                 statusColor = if (mails > 0) Muted else Amber) { MailSettings() }
 
-            val yc = Yoo.connected(ctx) && tick >= 0
-            Section("ЮMoney", if (yc) "подключено · переводы с отпечатком" else "не подключено", Violet) {
-                Text("${Friends.main.name} видит баланс и историю. Переводит только по твоей просьбе в чате и после отпечатка пальца.", style = body(12, color = Muted))
-                if (yc) BigButton("Отключить", { Yoo.disconnect(ctx); tick++ }, bg = Card, fg = Ink, border = Line)
-                else BigButton("Подключить ЮMoney", openYoo, bg = Violet, fg = Bg)
-            }
-
             Section("Telegram", Tg.statusText,
                 statusColor = if (Tg.state == Tg.St.READY) Muted else Amber) {
                 Text("Твой личный Telegram: «что нового», «что писал Егор», поиск по переписке. Писать — только по твоей просьбе.", style = body(12, color = Muted))
                 BigButton(if (Tg.state == Tg.St.READY) "Открыть" else "Открыть Telegram", openTg, bg = if (Tg.state == Tg.St.READY) Card else Teal, fg = if (Tg.state == Tg.St.READY) Ink else Bg, border = if (Tg.state == Tg.St.READY) Line else null)
-            }
-
-            Section("Яндекс Музыка", if (YaMusic.ready) "подключена" else "не подключена", statusColor = if (YaMusic.ready) Muted else Amber) {
-                Text("Поиск, плейлисты и воспроизведение в приложении Яндекс Музыки.", style = body(12, color = Muted))
-                BigButton(if (YaMusic.ready) "Открыть" else "Подключить Музыку", openMusic, bg = if (YaMusic.ready) Card else Teal, fg = if (YaMusic.ready) Ink else Bg, border = if (YaMusic.ready) Line else null)
-            }
-
-            Section("YouTube", if (YtMe.ready) (YtMe.me.ifBlank { "подключён" }) else if (YtMe.configured) "не подключён" else "нет ключей",
-                statusColor = if (YtMe.ready) Muted else Amber) {
-                Text("Новое из подписок, твои лайки и добавление в плейлисты — прямо в чате, без ухода в приложение YouTube. Нужен VPN.", style = body(12, color = Muted))
-                BigButton(if (YtMe.ready) "Открыть" else "Подключить YouTube", openYt, bg = if (YtMe.ready) Card else Teal, fg = if (YtMe.ready) Ink else Bg, border = if (YtMe.ready) Line else null)
             }
 
             }

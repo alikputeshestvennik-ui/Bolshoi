@@ -27,7 +27,7 @@ object Watch {
         var nextAt: Long = 0, var runs: Int = 0, var changes: Int = 0,
         var status: String = "active", var err: String = "",
         /** "state" — состояние темы; "feed" — новые посты Telegram-канала/группы. */
-        val mode: String = "state", val chatId: Long = 0, var lastMsg: Long = 0,
+        val mode: String = "state", val chatId: Long = 0, var lastMsg: Long = 0, var lastAt: Long = 0, val product: String = "",
     ) { val title get() = (if (mode == "feed") "Лента #" else "Слежка #") + "${id % 1000}: $topic" }
 
     val items = androidx.compose.runtime.mutableStateListOf<Item>()
@@ -49,7 +49,7 @@ object Watch {
                 val src = o.optJSONArray("src")?.let { s -> (0 until s.length()).map { s.optString(it) } }.orEmpty()
                 items += Item(o.getLong("id"), o.optString("topic"), o.optString("what"), src, o.optInt("every", 60), o.optLong("until"),
                     o.optString("state"), o.optString("key"), o.optString("from"), o.optLong("next"), o.optInt("runs"), o.optInt("chg"),
-                    o.optString("st", "active"), o.optString("err"), o.optString("mode", "state"), o.optLong("chat"), o.optLong("lastMsg"))
+                    o.optString("st", "active"), o.optString("err"), o.optString("mode", "state"), o.optLong("chat"), o.optLong("lastMsg"), o.optLong("lastAt"), o.optString("product"))
             }
         }
     }
@@ -60,11 +60,25 @@ object Watch {
         val a = JSONArray()
         for (it in keep) a.put(JSONObject().put("id", it.id).put("topic", it.topic).put("what", it.what).put("src", JSONArray(it.sources))
             .put("every", it.everyMin).put("until", it.until).put("state", it.state).put("key", it.key).put("from", it.src)
-            .put("next", it.nextAt).put("runs", it.runs).put("chg", it.changes).put("st", it.status).put("err", it.err).put("mode", it.mode).put("chat", it.chatId).put("lastMsg", it.lastMsg))
+            .put("next", it.nextAt).put("runs", it.runs).put("chg", it.changes).put("st", it.status).put("err", it.err).put("mode", it.mode).put("chat", it.chatId).put("lastMsg", it.lastMsg).put("lastAt", it.lastAt).put("product", it.product))
         runCatching { file(ctx).writeText(a.toString()) }
     }
 
     fun nextDue(): Long = items.filter { it.status == "active" }.map { minOf(it.nextAt, it.until.takeIf { u -> u > 0 } ?: Long.MAX_VALUE) }.filter { it > 0 }.minOrNull() ?: 0L
+
+    fun startProduct(ctx: Context, product: Shop.Item, size: String, limit: Int): String {
+        init(ctx)
+        val uri = android.net.Uri.parse(product.url)
+        if (product.store != "Ozon" || uri.scheme != "https" || uri.host !in setOf("ozon.ru", "www.ozon.ru") || !uri.path.orEmpty().startsWith("/product/")) return "Для наблюдения нужна карточка товара Ozon из последнего поиска"
+        if (items.count { it.status == "active" } >= 5) return "Уже идут пять наблюдений — останови одно"
+        if (items.any { it.status == "active" && it.mode == "product" && it.sources.firstOrNull() == product.url }) return "За этим товаром уже слежу"
+        val now = System.currentTimeMillis()
+        val details = JSONObject().put("title", product.title).put("url", product.url).put("img", product.img).put("size", size).put("limit", limit).toString()
+        val w = Item(now, product.title, size, listOf(product.url), 60, now + 7 * 86_400_000L, mode = "product", product = details)
+        w.nextAt = now + 60 * 60_000L; items += w; save(); Planner.plan(ctx)
+        scope.launch { check(w, true) }
+        return "Начал следить за товаром в Ozon на 7 дней, примерно раз в час. Если магазин не покажет данные, сообщу об ошибке проверки."
+    }
 
     fun start(ctx: Context, topic: String, what: String, sources: List<String>, everyMin: Int, until: Long): String {
         init(ctx)
@@ -173,7 +187,9 @@ object Watch {
 
     private suspend fun check(it: Item, first: Boolean) = lock.withLock {
         val ctx = app ?: return@withLock
+        it.lastAt = System.currentTimeMillis(); save()
         if (it.mode == "feed") { checkFeed(it, first); return@withLock }
+        if (it.mode == "product") { checkProduct(ctx, it, first); return@withLock }
         val got = gather(ctx, it)
         it.runs++
         if (got.isBlank()) {
@@ -214,6 +230,29 @@ object Watch {
             changed -> { it.changes++; save()
                 tell(it, "🔔 ${it.topic}: $line" + srcTail(line, src) + (if (prev.isNotBlank()) "\nБыло: $prev" else ""), line) }
         }
+    }
+
+    private suspend fun checkProduct(ctx: Context, item: Item, first: Boolean) {
+        val p = runCatching { JSONObject(item.product) }.getOrNull() ?: return
+        val info = runCatching { Shop.ozonInfo(ctx, p.optString("url")) }.getOrNull()
+        val size = p.optString("size")
+        val status = if (size.isBlank()) "" else Shop.ozonSize(info, size)
+        val available = when { status.contains("В НАЛИЧИИ") -> "есть"; status.contains("РАСКУПИЛИ") -> "нет"; size.isBlank() -> "не запрошен"; else -> "неизвестно" }
+        val price = info?.price.orEmpty()
+        item.runs++
+        if (price.isBlank() || available == "неизвестно") { item.err = "Ozon не показал цену или наличие размера"; save(); if (first) tell(item, "Не удалось проверить товар: ${item.err}", "не удалось проверить"); return }
+        val key = "$price|$available"
+        val old = item.key
+        item.key = key; item.state = "Цена: $price" + if (size.isBlank()) "" else " · размер $size: $available"
+        item.err = ""; save()
+        if (first || old.isBlank() || old != key) {
+            if (!first && old.isNotBlank()) item.changes++
+            save(); tell(item, "${item.topic}\n${item.state}\n${p.optString("url")}", item.state)
+        }
+    }
+
+    fun checkNow(item: Item) {
+        if (item.status == "active") scope.launch { check(item, first = false) }
     }
 
     private fun srcTail(line: String, src: String): String {

@@ -50,6 +50,11 @@ object Memory {
 
     @Synchronized fun remove(ctx: Context, id: Long) = save(ctx, all(ctx).filterNot { it.id == id })
     @Synchronized fun confirm(ctx: Context, id: Long) = save(ctx, all(ctx).map { if (it.id == id) it.copy(source = "ты") else it })
+    @Synchronized fun edit(ctx: Context, id: Long, text: String) {
+        val value = text.trim().take(300)
+        if (value.length < 3 || NotifStore.sensitive(value)) return
+        save(ctx, all(ctx).map { if (it.id == id) it.copy(text = value, source = "ты") else it })
+    }
 
     /** Поиск по словам: чем больше совпало, тем выше. */
     fun search(ctx: Context, q: String, limit: Int = 12): List<Fact> {

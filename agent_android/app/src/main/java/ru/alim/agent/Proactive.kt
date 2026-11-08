@@ -171,10 +171,10 @@ class ArturService : Service() {
         Deleg.init(this); Watch.init(this)   // поручения переживают закрытие приложения и перезагрузку
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel("artur_bg") == null)
-            nm.createNotificationChannel(NotificationChannel("artur_bg", "${Persona.name} рядом (фон)", NotificationManager.IMPORTANCE_MIN))
+            nm.createNotificationChannel(NotificationChannel("artur_bg", "Тень рядом (фон)", NotificationManager.IMPORTANCE_MIN))
         val pi = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val n: Notification = NotificationCompat.Builder(this, "artur_bg").setSmallIcon(R.drawable.ic_launcher_mono)
-            .setContentTitle("${Persona.name} рядом").setContentText("Следит за сообщениями и пишет, когда нужно")
+            .setContentTitle("Тень рядом").setContentText("Следит за сообщениями и пишет, когда нужно")
             .setOngoing(true).setSilent(true).setContentIntent(pi).setPriority(NotificationCompat.PRIORITY_MIN).build()
         runCatching {
             ServiceCompat.startForeground(this, 4242, n,

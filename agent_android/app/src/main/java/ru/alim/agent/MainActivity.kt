@@ -28,8 +28,6 @@ class MainActivity : ComponentActivity() {
         CrashLog.report(this)
         Scenarios.init(this); Deleg.init(this); Watch.init(this)
         Online.init(this)
-        YaMusic.init(this)
-        YtMe.init(this)
         Fonts.load(assets)
         voice = Voice(this)
         Agent.onSpeak = { voice.say(it) }

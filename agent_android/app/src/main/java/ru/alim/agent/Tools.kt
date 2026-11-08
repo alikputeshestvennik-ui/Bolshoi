@@ -56,6 +56,9 @@ object Tools {
     val lastPhotos = ArrayList<Long>()
     /** Товары из последнего поиска — «открой второй». */
     val lastShop = ArrayList<Shop.Item>()
+    private var lastShopQuery = ""
+    private var lastShopStore = ""
+    private var lastShopMaxPrice: Int? = null
     /** Ролики из последнего поиска YouTube. */
     val lastVideos = ArrayList<YouTube.Video>()
     /** Все поиски YouTube за текущую задачу — в конце на экране оставляем только выбранные ролики. */
@@ -230,6 +233,52 @@ object Tools {
                 .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             a.optString("label").takeIf { it.isNotBlank() }?.let { i.putExtra(AlarmClock.EXTRA_MESSAGE, it) }
             if (launch(ctx, i)) "таймер запущен" else "часы не открылись"
+        },
+
+        Tool("sea_weather", "{\"place\": \"Ялта\"} — модельный прогноз температуры поверхности моря и высоты волн у указанного города") { _, a ->
+            val place = a.optString("place").trim().ifBlank { Prefs.homeCity }
+            runCatching {
+                val geo = JSONObject(httpGet("https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name=" + URLEncoder.encode(place, "UTF-8"))).optJSONArray("results")?.optJSONObject(0) ?: error("город не найден")
+                val lat = geo.getDouble("latitude"); val lon = geo.getDouble("longitude")
+                val j = JSONObject(httpGet("https://marine-api.open-meteo.com/v1/marine?latitude=$lat&longitude=$lon&current=wave_height,sea_surface_temperature&cell_selection=sea&timezone=auto"))
+                val current = j.optJSONObject("current") ?: error("прогноз моря недоступен")
+                val temp = if (current.isNull("sea_surface_temperature")) "нет данных" else "${current.optDouble("sea_surface_temperature")} °C"
+                val waves = if (current.isNull("wave_height")) "нет данных" else "${current.optDouble("wave_height")} м"
+                if (temp == "нет данных" && waves == "нет данных") error("источник не предоставил данные для этого места")
+                "Модельный прогноз у ближайшей морской ячейки к $place: температура поверхности воды $temp, высота волн $waves. Время прогноза: ${current.optString("time", "не указано")}; ближайшая ячейка ${j.optDouble("latitude")}, ${j.optDouble("longitude")}. Это не измерение на пляже. Источник: Open-Meteo Marine, https://open-meteo.com/en/docs/marine-weather-api"
+            }.getOrElse { "Не удалось получить прогноз моря для $place: ${it.message.orEmpty().take(120)}" }
+        },
+
+        Tool("currency_cbr", "{\"currency\": \"USD\", \"amount\": 100, \"date\": \"ГГГГ-ММ-ДД\"} — официальный курс ЦБ РФ и перевод указанной суммы в рубли; дату можно не указывать") { _, a ->
+            val code = a.optString("currency").trim().uppercase(Locale.ROOT)
+            val amount = a.optDouble("amount", 1.0)
+            val date = a.optString("date").trim()
+            if (!Regex("[A-Z]{3}").matches(code) || !amount.isFinite() || amount < 0) "Укажи код валюты и положительную сумму"
+            else {
+                val day = if (date.isBlank()) null else runCatching { java.time.LocalDate.parse(date) }.getOrNull()
+                if (date.isNotBlank() && day == null) "Дата должна быть в формате ГГГГ-ММ-ДД"
+                else runCatching {
+                    val suffix = day?.let { "?date_req=" + it.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) }.orEmpty()
+                    val xml = httpGet("https://www.cbr.ru/scripts/XML_daily.asp" + suffix)
+                    val parser = android.util.Xml.newPullParser().apply { setInput(java.io.StringReader(xml)) }
+                    var event = parser.eventType; var tag = ""; var foundCode = ""; var nominal = 1.0; var value = 0.0; var rateDate = ""
+                    while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                        if (event == org.xmlpull.v1.XmlPullParser.START_TAG) {
+                            tag = parser.name
+                            if (tag == "ValCurs") rateDate = parser.getAttributeValue(null, "Date").orEmpty()
+                            if (tag == "Valute") { foundCode = ""; nominal = 1.0; value = 0.0 }
+                        } else if (event == org.xmlpull.v1.XmlPullParser.TEXT) {
+                            when (tag) { "CharCode" -> foundCode = parser.text.trim(); "Nominal" -> nominal = parser.text.trim().toDoubleOrNull() ?: 1.0; "Value" -> value = parser.text.trim().replace(',', '.').toDoubleOrNull() ?: 0.0 }
+                        } else if (event == org.xmlpull.v1.XmlPullParser.END_TAG) {
+                            if (parser.name == "Valute" && foundCode == code && value > 0 && nominal > 0) break
+                            tag = ""
+                        }
+                        event = parser.next()
+                    }
+                    if (foundCode != code || value <= 0 || nominal <= 0) "Официальный курс $code не найден"
+                    else "ЦБ РФ на $rateDate: $nominal $code = $value ₽; $amount $code = ${"%.2f".format(Locale.US, amount * value / nominal)} ₽. Это официальный курс, не курс обменника. Источник: https://www.cbr.ru/currency_base/daily/"
+                }.getOrElse { "Не удалось получить курс ЦБ: ${it.message.orEmpty().take(100)}" }
+            }
         },
 
         Tool("weather", "{\"place\": \"Ялта\" или \"Казань, Петербург\", \"from\": \"ГГГГ-ММ-ДД\", \"to\": \"ГГГГ-ММ-ДД\"} — погода: прогноз на 16 дней; даты дальше — ориентир по тем же дням трёх прошлых лет. Несколько городов — через запятую в одном вызове. from/to необязательны") { _, a ->
@@ -425,21 +474,6 @@ object Tools {
                     }
                 } ?: "оператор не ответил за 40 секунд"
             }
-        },
-
-        Tool("music_search", "{\"query\": \"Баста\"} — найти треки/альбом в Яндекс Музыке") t@{ _, a ->
-            if (!YaMusic.ready) return@t "Яндекс Музыка не подключена — ⋮ → Настройки → Яндекс Музыка"
-            val q = a.optString("query").trim(); if (q.isEmpty()) return@t "что искать?"
-            YaMusic.search(q)
-        },
-        Tool("music_play", "{\"query\": \"Баста - Сансара\"} — поставить трек: найдёт и откроет в приложении Яндекс Музыки") t@{ ctx, a ->
-            if (!YaMusic.ready) return@t "Яндекс Музыка не подключена"
-            val q = a.optString("query").trim(); if (q.isEmpty()) return@t "что поставить?"
-            YaMusic.play(ctx, q)
-        },
-        Tool("music_my", "{} — твои плейлисты в Яндекс Музыке") t@{ _, _ ->
-            if (!YaMusic.ready) return@t "Яндекс Музыка не подключена"
-            YaMusic.myPlaylists()
         },
 
         Tool("event_create", "{\"title\": \"встреча с Егором\", \"when\": \"ГГГГ-ММ-ДД ЧЧ:ММ\" (или «завтра 15:00»), \"duration_min\": 60, \"place\": \"\"} — создать событие в календаре Алима. Дату пиши полностью: 2026-12-01 10:00",
@@ -676,45 +710,6 @@ object Tools {
             Avia.open(ctx, a.optInt("n", 1))
         },
 
-        Tool("yt_new", "{\"days\": 7, \"favs\": true} — ПОКАЗАТЬ новые видео из подписок YouTube Алима за N дней (по умолчанию 7). favs=true — только любимые каналы (если выбраны), иначе по всем подпискам. Видео играют прямо в чате. Нужен его Google-аккаунт и VPN") t@{ _, a ->
-            if (!YtMe.ready) return@t "YouTube не подключён — открой настройки → YouTube и войди в Google-аккаунт"
-            val vids = withContext(Dispatchers.IO) { runCatching { YtMe.newFromSubs(a.optInt("days", 7), a.optBoolean("favs", true)) }.getOrElse { return@withContext null } }
-                ?: return@t "не вышло получить видео (проверь VPN)"
-            if (vids.isEmpty()) return@t "новых видео за этот период не нашёл"
-            withContext(Dispatchers.Main) { Agent.cur().ytVideos.clear(); Agent.cur().ytVideos.addAll(vids.map { "${it.id}\t${it.title}\t${it.channel}" }) }
-            "нашёл ${vids.size} видео из подписок:\n" + vids.joinToString("\n") { "• ${it.channel}: ${it.title}" }
-        },
-
-        Tool("yt_liked", "{\"count\": 20} — ПОКАЗАТЬ видео, которые Алим лайкнул на YouTube. Играют прямо в чате") t@{ _, a ->
-            if (!YtMe.ready) return@t "YouTube не подключён — открой настройки → YouTube и войди"
-            val vids = withContext(Dispatchers.IO) { runCatching { YtMe.liked(a.optInt("count", 20)) }.getOrElse { return@withContext null } }
-                ?: return@t "не вышло получить лайкнутые (проверь VPN)"
-            if (vids.isEmpty()) return@t "лайкнутых видео не нашёл"
-            withContext(Dispatchers.Main) { Agent.cur().ytVideos.clear(); Agent.cur().ytVideos.addAll(vids.map { "${it.id}\t${it.title}\t${it.channel}" }) }
-            "твои лайкнутые видео (${vids.size}):\n" + vids.joinToString("\n") { "• ${it.channel}: ${it.title}" }
-        },
-
-        Tool("yt_playlists", "{} — показать названия плейлистов Алима на YouTube") t@{ _, _ ->
-            if (!YtMe.ready) return@t "YouTube не подключён"
-            val pl = withContext(Dispatchers.IO) { runCatching { YtMe.playlists() }.getOrElse { return@withContext null } } ?: return@t "не вышло (проверь VPN)"
-            if (pl.isEmpty()) return@t "плейлистов нет" else "Твои плейлисты:\n" + pl.joinToString("\n") { "• ${it.title}" }
-        },
-
-        Tool("yt_playlist_add", "{\"video\": \"ID_или_название\", \"playlist\": \"Посмотреть позже\"} — добавить видео в плейлист Алима на YouTube. Если видео недавно показывали в чате — бери его ID из списка; иначе спроси, какое именно") t@{ _, a ->
-            if (!YtMe.ready) return@t "YouTube не подключён"
-            var video = a.optString("video").trim()
-            val pl = a.optString("playlist").trim(); if (pl.isEmpty()) return@t "в какой плейлист добавить?"
-            if (video.isEmpty()) return@t "какое видео добавить? назови или дай ссылку"
-            // если дали ссылку — вытащим id
-            Regex("(?:v=|youtu\\.be/|embed/)([\\w-]{11})").find(video)?.let { video = it.groupValues[1] }
-            // если это не 11-символьный id, попробуем найти среди показанных видео по названию
-            if (!Regex("^[\\w-]{11}$").matches(video)) {
-                val found = Agent.cur().ytVideos.map { it.split('\t') }.firstOrNull { it.getOrNull(1)?.contains(video, true) == true }?.getOrNull(0)
-                if (found != null) video = found else return@t "не понял, какое видео — дай ссылку или точное название из показанных"
-            }
-            withContext(Dispatchers.IO) { runCatching { YtMe.addToPlaylist(pl, video) }.getOrElse { "не вышло: ${it.message}" } }
-        },
-
         Tool("tg_channel", "{\"username\": \"ник_канала\"} — последние посты ОТКРЫТОГО Telegram-канала (ник без @). Ник не знаешь — найди через web_search") t@{ _, a ->
             val u = a.optString("username").trim().removePrefix("@").removePrefix("https://").removePrefix("t.me/").substringBefore('/').substringBefore('?')
             if (u.isEmpty()) return@t "нужен ник канала"
@@ -747,15 +742,10 @@ object Tools {
             if (!url.startsWith("http")) return@t "нужна ссылка"
             val html = httpGet(url)
             val pub = SrcTime.fromHtml(html); SrcTime.note(pub)
+            Agent.noteSource(url, SrcTime.rawPublication(html).orEmpty())
             val body = html.replace(Regex("<(script|style|noscript)[^>]*>.*?</\\1>", RegexOption.DOT_MATCHES_ALL), " ")
             (pub?.let { "[Опубликовано: ${SrcTime.label(it)}]\n" } ?: "[Дата публикации не указана]\n") +
                 clean(body).replace(Regex("\\s{2,}"), " ").take(9000).ifBlank { "страница пустая" }
-        },
-
-        Tool("yoomoney_balance", "{} — баланс кошелька ЮMoney") { ctx, _ -> Yoo.balance(ctx) },
-
-        Tool("yoomoney_history", "{\"days\": 7, \"limit\": 30} — операции ЮMoney за последние дни: приходы и расходы") { ctx, a ->
-            Yoo.history(ctx, a.optInt("days", 7).coerceIn(1, 90), a.optInt("limit", 30))
         },
 
         Tool("memory_save", "{\"text\": \"Денис — брат Алима\"} — запомнить факт об Алиме надолго") { ctx, a ->
@@ -815,17 +805,19 @@ object Tools {
             if (ok) "открыл отправку ${list.size} файл(ов) — Алим выберет чат" else "не получилось открыть отправку"
         },
 
-        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics gel-kayano мужские\", \"max_price\": 8000, \"seller\": \"Ozon Россия\", \"original\": true} — найти товары. seller — только у этого продавца, original=true — ТОЛЬКО если Алим сам сказал «оригинал» (у техники отметки нет). Подделки (−90%, «осталось N ед», слишком дёшево для бренда) скрываются; Алим сказал «пусть не оригинал», «любые», «подешевле» — all=true") t@{ ctx, a ->
+        Tool("shop_search", "{\"store\": \"ozon|wb|both\", \"query\": \"кроссовки asics gel-kayano мужские\", \"max_price\": 8000, \"seller\": \"Ozon Россия\", \"original\": true} — найти товары; size — нужный размер отдельным параметром для расширенного поиска. seller — только у этого продавца, original=true — ТОЛЬКО если Алим сам сказал «оригинал» (у техники отметки нет). Подделки (−90%, «осталось N ед», слишком дёшево для бренда) скрываются; Алим сказал «пусть не оригинал», «любые», «подешевле» — all=true") t@{ ctx, a ->
             val q = a.optString("query").trim()
             if (q.isEmpty()) return@t "нужен запрос"
             val maxP = a.optInt("max_price", 0).takeIf { it > 0 }
             val store = a.optString("store", "both").lowercase()
+            val requestedSize = a.optString("size").trim()
+            lastShopQuery = q; lastShopStore = store; lastShopMaxPrice = maxP
             val seller = a.optString("seller").trim()
             val orig = a.optBoolean("original", false)
             val found = ArrayList<Shop.Item>(); val notes = StringBuilder()
             if (store != "ozon") runCatching { Shop.wb(q, maxP) }.onSuccess { found += it }.onFailure { notes.append("Wildberries: ${it.message}\n") }
             if (store != "wb") {
-                val pages = if (seller.isNotBlank() || orig) listOf(1, 2) else listOf(1)
+                val pages = if (seller.isNotBlank() || orig || requestedSize.isNotBlank()) listOf(1, 2) else listOf(1)
                 val res = coroutineScope { pages.map { pg -> async { runCatching { Shop.ozon(ctx, q, maxP, pg) } } }.map { it.await() } }
                 res.forEach { r -> r.onSuccess { l -> l.forEach { x -> if (found.none { it.url == x.url }) found += x } } }
                 if (res.all { it.isFailure }) notes.append("Ozon: ${res.first().exceptionOrNull()?.message}\n")
@@ -881,15 +873,15 @@ object Tools {
                 }
                 if (fresh.size >= 2) { if (fresh.size < list.size) notes.append("Уже показанные Алиму товары убрал — это новые варианты.\n"); list = fresh }
             }
-            lastShop.clear(); lastShop += list.take(8)
-            withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(lastShop) }
+            lastShop.clear(); lastShop += list.take(if (requestedSize.isBlank()) 8 else 24)
+            withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(lastShop.take(8)) }
             val out = StringBuilder(notes)
             if (lastShop.isEmpty()) out.append(when {
                 seller.isNotBlank() -> "У продавца «$seller» не нашёл (проверил $checkedN карточек Ozon). Попробуй другой запрос (модель, без лишних слов) или shop_open с store и query."
                 orig -> "С отметкой «Оригинал» не нашёл среди $checkedN карточек."
                 else -> "Ozon/WB ничего не показали. Попробуй запрос короче: бренд + тип вещи (без цвета и деталей)."
             }) else {
-                out.append("Найдено ${lastShop.size}:\n")
+                out.append("Получено карточек: ${found.size}; отобрано для дальнейшей работы: ${lastShop.size}; пока показано карточек: ${minOf(lastShop.size, 8)}. Это не количество всех товаров магазина.\n")
                 lastShop.forEachIndexed { i, x ->
                     out.append("${i + 1}. [${x.store}] ${x.title} — ${x.price.ifBlank { "цена ?" }}")
                     if (x.seller.isNotBlank()) out.append(" — продавец ${x.seller}")
@@ -900,6 +892,11 @@ object Tools {
             if (hidden > 0) out.append("\nСкрыл $hidden подозрительных (кричащие скидки −70…−95%, «осталось N ед», цена ниже реальной для бренда) — скорее всего подделки. Скажи Алиму об этом одной фразой.")
             out.append("\nРазмер — shop_check. Открыть товар — shop_open с номером.")
             out.toString()
+        },
+
+        Tool("watch_product", "{\"n\": 1, \"size\": \"46\", \"max_price\": 10000} — следить за ценой и размером выбранного товара Ozon из последнего поиска") { ctx, a ->
+            val product = lastShop.getOrNull(a.optInt("n", 0) - 1)
+            if (product == null) "Сначала выбери номер товара из последнего поиска" else Watch.startProduct(ctx, product, a.optString("size").trim(), a.optInt("max_price", 0).coerceAtLeast(0))
         },
 
         Tool("shop_open", "{\"n\": 2} или {\"url\": \"…\"} или {\"store\": \"ozon\", \"query\": \"…\"} — открыть товар или поиск в приложении магазина") t@{ ctx, a ->
@@ -916,11 +913,16 @@ object Tools {
 
         Tool("shop_check", "{\"n\": \"1,2,3\", \"size\": \"43\"} — проверить у найденных товаров размер, продавца и отметку «Оригинал»") t@{ ctx, a ->
             val size = a.optString("size").trim()
-            val ns = a.optString("n").ifBlank { (1..lastShop.size.coerceAtMost(8)).joinToString(",") }.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.take(8)
+            if (size.isNotBlank() && a.optString("n").isBlank() && lastShopQuery.isNotBlank() && lastShopStore == "ozon" && lastShop.size <= 8) {
+                for (page in listOf(1, 2)) runCatching { Shop.ozon(ctx, lastShopQuery, lastShopMaxPrice, page) }.getOrNull()?.forEach { item ->
+                    if (lastShop.size < 24 && lastShop.none { it.url == item.url } && Shop.suspect(item, lastShopQuery).isEmpty()) lastShop.add(item)
+                }
+            }
+            val ns = a.optString("n").ifBlank { (1..lastShop.size.coerceAtMost(24)).joinToString(",") }.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.take(24)
             val pick = ns.mapNotNull { n -> lastShop.getOrNull(n - 1)?.let { n to it } }
             if (pick.isEmpty()) return@t "сначала shop_search"
-            val res = coroutineScope {
-                pick.map { (n, it) -> async {
+            val res = pick.chunked(4).flatMap { chunk -> coroutineScope {
+                chunk.map { (n, it) -> async {
                     runCatching {
                         if (it.store == "WB") {
                             val r = if (size.isNotBlank()) Shop.wbSize(it.url, size) else ""
@@ -936,9 +938,10 @@ object Tools {
                         }
                     }.getOrElse { e -> "$n. не проверил: ${e.message}" }
                 } }.map { it.await() }
-            }
-            withContext(Dispatchers.Main) { val cp = Agent.cur().products.toList(); Agent.cur().products.clear(); Agent.cur().products.addAll(cp) }
-            res.joinToString("\n")
+            } }
+            val selected = if (size.isBlank()) pick.map { it.second }.take(8) else pick.map { it.second }.filter { it.size.contains("в наличии") || it.size.contains("есть") }.take(8)
+            withContext(Dispatchers.Main) { Agent.cur().products.clear(); Agent.cur().products.addAll(selected) }
+            "Проверено попыток: ${pick.size}; показано подтверждённых вариантов: ${selected.size}. Ошибки и размерная сетка без подтверждения наличия не считаются наличием.\n" + res.joinToString("\n")
         },
 
         Tool("youtube_search", "{\"query\": \"обзор asics gel-kayano 33\", \"period\": \"\" | \"today\" | \"week\" | \"month\"} — найти ролики на YouTube (карточки с превью, нажатие открывает YouTube)") t@{ _, a ->
@@ -1163,25 +1166,6 @@ object Tools {
             val task = a.optString("task").trim().ifBlank { return@t "что передать?" }
             Chat.main.delegate(core.fid, task)
             "передал ${Friends.main.name}; он сделает и отпишется сюда заметкой"
-        },
-
-        Tool("yoomoney_transfer", "{\"to\": \"+79219990099\", \"amount\": 500, \"comment\": \"за обед\"} — подготовить перевод с кошелька ЮMoney на кошелёк ЮMoney по номеру телефона (СБП в банки не поддерживается). Только если Алим сам в чате написал, кому и сколько. Номер — через contacts_find") t@{ ctx, a ->
-            val core = Agent.cur()
-            if (!core.isMain || core.delegated) return@t "переводы — только по прямой просьбе Алима в чате с ${Friends.main.name}"
-            val amount = a.optDouble("amount", 0.0)
-            if (amount <= 0) return@t "нужна сумма"
-            val whole = amount.toLong().toString()
-            if (!core.task.replace(Regex("[\\s  ]"), "").contains(whole))
-                return@t "сумму $whole Алим в сообщении не называл — спроси у него сумму, сам не придумывай"
-            val to = a.optString("to").trim().ifBlank { return@t "кому? нужен номер телефона" }
-            Yoo.prepare(ctx, to, amount, a.optString("comment"), contactName(ctx, to))
-        },
-
-        Tool("yoomoney_send", "{} — отправить подготовленный перевод (приложение покажет карточку с получателем и суммой и спросит отпечаток пальца)",
-            confirm = { _ -> Yoo.pendingText() }, secure = true) t@{ ctx, _ ->
-            val core = Agent.cur()
-            if (!core.isMain || core.delegated) return@t "нельзя"
-            Yoo.send(ctx)
         },
 
         Tool("hotels", "{\"city\": \"Нижний Новгород\", \"checkin\": \"2026-12-17\", \"checkout\": \"2026-12-20\", \"guests\": 1} — отели на даты сразу на двух сайтах: Островок и Яндекс Путешествия — с ценами и ссылками. Один и тот же отель на разных сайтах стоит по-разному — сравни и назови, где дешевле") t@{ ctx, a ->
@@ -1696,6 +1680,10 @@ object SrcTime {
     fun reset() { newest = 0 }
     private val fmt get() = java.text.SimpleDateFormat("d.MM HH:mm", java.util.Locale.US)
     fun label(ms: Long): String = fmt.format(java.util.Date(ms))
+    fun rawPublication(html: String): String? {
+        val pats = listOf("property=[\"'](?:article:published_time|og:published_time)[\"'][^>]*content=[\"']([^\"']+)", "content=[\"']([^\"']+)[\"'][^>]*property=[\"'](?:article:published_time|og:published_time)", "itemprop=[\"']datePublished[\"'][^>]*(?:content|datetime)=[\"']([^\"']+)", "\"datePublished\"\\s*:\\s*\"([^\"]+)\"")
+        return pats.firstNotNullOfOrNull { Regex(it, RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.trim()?.takeIf { t -> iso(t) != null } }
+    }
     fun note(ms: Long?) { if (ms != null && ms > 0 && ms <= System.currentTimeMillis() + 3_600_000) { if (ms > newest) newest = ms } }
     /** ISO-8601 («2026-10-27T15:20:00+00:00», «…Z», «2026-10-27») → мс. */
     fun iso(s: String?): Long? {

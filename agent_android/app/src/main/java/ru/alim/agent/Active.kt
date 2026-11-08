@@ -161,6 +161,13 @@ fun ActiveScreen(go: (Scr) -> Unit) {
             }
             if (watches.isNotEmpty()) Block("Слежка", watches.size) {
                 watches.forEach { w ->
+                    if (w.mode == "product") {
+                        val p = remember(w.product) { runCatching { org.json.JSONObject(w.product) }.getOrNull() }
+                        if (p != null) {
+                            ProductCards(listOf(Shop.Item(p.optString("title"), "", p.optString("url"), p.optString("img"), "Ozon")))
+                            Text("Размер: ${p.optString("size").ifBlank { "любой" }}" + if (p.optInt("limit") > 0) " · желаемая цена до ${p.optInt("limit")} ₽" else "", style = body(12, color = Muted))
+                        }
+                    }
                     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).border(1.dp, Line, shp(18.dp))
                         .clickable { ChatJump.to(ChatJump.find(Chat.main, w.topic)); go(Scr.Home) }.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -172,6 +179,12 @@ fun ActiveScreen(go: (Scr) -> Unit) {
                             Text(w.topic, style = body(14, FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text((if (w.mode == "feed") "лента канала" else "проверяю") + " · до " + Deleg.whenText(w.until).substringAfter(" в "), style = body(12, color = Muted))
                             Text(w.state.ifBlank { if (w.mode == "feed") "смотрю ленту" else "первая проверка" }, style = body(12, color = Ink.copy(alpha = 0.86f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(if (w.lastAt > 0) "Последняя попытка: ${Deleg.whenText(w.lastAt)}" else "Проверок ещё не было", style = body(11, color = Muted))
+                            if (w.nextAt > 0) Text("Следующая примерно: ${Deleg.whenText(w.nextAt)}", style = body(11, color = Muted))
+                            if (w.sources.isNotEmpty()) Text("Источники: ${w.sources.joinToString()}", style = body(11, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (w.err.isNotBlank()) Text("Не удалось проверить: ${w.err}", style = body(11, color = Amber))
+                            Text("Проверить сейчас", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { Watch.checkNow(w) }.padding(vertical = 6.dp))
+                            Text("Остановить наблюдение", style = body(12, color = Muted), modifier = Modifier.clickable { Watch.stop(ctx, w.id) }.padding(vertical = 6.dp))
                         }
                     }
                 }

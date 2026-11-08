@@ -442,6 +442,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
                 val text = m.text
                 if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(16, color = if (m.failed) Danger else ink), lineHeight = 24.sp,
                     modifier = Modifier.padding(horizontal = if (hasCards) 4.dp else 2.dp))
+                if (!m.me) SourceBadges(text, m.best)
                 if (m.voice.isNotBlank() && m.me && text.isNotBlank())
                     Text(text, style = body(13, color = meta), modifier = Modifier.padding(horizontal = 2.dp))
                 if (m.att.isNotBlank()) Text("📎 ${m.att}", style = body(13, color = meta), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -494,6 +495,7 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
             }
             if (title.isNotBlank()) Text(title, style = androidx.compose.ui.text.TextStyle(fontFamily = Fonts.display, fontSize = 17.sp, lineHeight = 25.sp, color = Ink))
             if (rest.isNotBlank()) Text(md(rest), style = body(16, color = Ink), lineHeight = 24.sp)
+            SourceBadges(m.text, m.best)
             if (m.photos.isNotBlank()) PhotoGrid(m.photos.split(',').mapNotNull { it.trim().toLongOrNull() })
             if (m.tgPhotos.isNotBlank()) TgPhotoGrid(m.tgPhotos.split('\n').filter { it.isNotBlank() })
             if (m.ytVideos.isNotBlank()) YtGrid(m.ytVideos.split('\n').filter { it.isNotBlank() })
