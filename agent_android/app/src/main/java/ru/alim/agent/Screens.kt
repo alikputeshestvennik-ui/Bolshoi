@@ -382,6 +382,56 @@ fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
     }
 }
 
+/** An archived record is rendered independently of the currently running agent. */
+@Composable
+fun HistoryTaskScreen(record: TaskRec, back: () -> Unit) {
+    val steps = remember(record) { record.log.lines().filter { it.isNotBlank() } }
+    val products = remember(record.items) { Shop.fromJson(record.items) }
+    Screen("История", back) {
+        LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = LocalTopPad.current, bottom = LocalBarPad.current),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item {
+                Text(if (record.ok) "ЗАДАЧА ВЫПОЛНЕНА" else "ЗАДАЧА НЕ ЗАВЕРШЕНА", style = body(11, FontWeight.Bold, Muted).copy(letterSpacing = 1.sp))
+                Gap(8)
+                Text(record.title, style = body(22, FontWeight.SemiBold), lineHeight = 29.sp)
+                Gap(4)
+                Text(SimpleDateFormat("d MMMM · HH:mm", Locale("ru")).format(Date(record.ts)), style = body(12, color = Muted))
+            }
+            item {
+                CardBox {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Модель" to record.model.ifBlank { "—" }, "Время" to (if (record.dur > 0) "${record.dur / 1000} сек" else "—"),
+                            "Расход" to (if (record.tokIn + record.tokOut > 0) tok(record.tokIn + record.tokOut) else "Нет данных")).forEach { (label, value) ->
+                            Column(Modifier.weight(1f)) {
+                                Text(label, style = body(11, color = Muted))
+                                Text(value, style = body(13, FontWeight.SemiBold), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                CardBox {
+                    Label("Ответ")
+                    Text(if (record.result.isNotBlank()) md(record.result) else "Подробный ответ не сохранился.", style = body(15), lineHeight = 22.sp)
+                }
+            }
+            if (steps.isNotEmpty()) item {
+                CardBox {
+                    Label("Шаги задачи")
+                    steps.forEach { line ->
+                        val title = line.substringBefore('\t')
+                        val detail = line.substringAfter('\t', "").replace("⏎", "\n")
+                        Text("✓  $title", style = body(14, FontWeight.Medium))
+                        if (detail.isNotBlank()) Text(detail, style = body(12, color = Muted), lineHeight = 17.sp)
+                    }
+                }
+            }
+            if (products.isNotEmpty()) item { ProductCards(products) }
+        }
+    }
+}
+
 // ————————————————— История и расходы —————————————————
 
 @Composable

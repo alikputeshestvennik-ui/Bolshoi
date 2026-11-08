@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,7 +88,7 @@ private fun stepIcon(s: Agent.Step): ImageVector {
 @Composable
 fun ThinkPanel(core: Agent.Core) {
     // окно втрое меньше прежнего; прозрачный бабл вырастает из центра своей области
-    val h = (LocalConfiguration.current.screenHeightDp * 0.21f).dp
+    val h = (LocalConfiguration.current.screenHeightDp * 0.15f).coerceIn(96f, 132f).dp
     val born = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(Unit) { born.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 260f)) }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -107,15 +109,19 @@ fun ThinkPanel(core: Agent.Core) {
             .graphicsLayer { val v = born.value; scaleX = 0.55f + 0.45f * v; scaleY = 0.25f + 0.75f * v; alpha = v.coerceIn(0f, 1f) }
             .clip(shp(22.dp)).background(Th.c.card.copy(alpha = if (Th.c.dark) 0.30f else 0.42f))
             .border(1.dp, Th.c.line.copy(alpha = 0.7f), shp(22.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Box(Modifier.fillMaxSize().clipToBounds()
-            .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
-            .drawWithContent {
-                drawContent()
-                drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.22f to Color.Black), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
-            }) {
-            // unbounded: длинная лента не обрезается снизу — низ (самое новое) всегда виден, лишнее уходит за верх
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().wrapContentHeight(Alignment.Bottom, unbounded = true), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                val list = core.steps.toList()
+        val scroll = rememberScrollState()
+        var followLatest by remember { mutableStateOf(true) }
+        val list = core.steps.toList()
+        LaunchedEffect(scroll.isScrollInProgress, scroll.value, scroll.maxValue) {
+            if (scroll.isScrollInProgress) followLatest = scroll.value >= scroll.maxValue - 24
+        }
+        LaunchedEffect(list.size, list.lastOrNull()?.think, list.lastOrNull()?.text) {
+            if (followLatest) {
+                androidx.compose.runtime.withFrameNanos { }
+                scroll.scrollTo(scroll.maxValue)
+            }
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 list.forEachIndexed { i, s ->
                     val last = i == list.lastIndex
                     if (s.think.isNotBlank()) Row {
@@ -142,7 +148,6 @@ fun ThinkPanel(core: Agent.Core) {
                     }
                 }
                 if (list.isEmpty()) Text("Разбираюсь, с чего начать…", style = body(11, color = Muted))
-            }
         }
         }
     }

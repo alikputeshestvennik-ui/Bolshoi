@@ -1,5 +1,10 @@
 package ru.alim.agent
 
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -472,6 +477,11 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = false, onSearch: (() -> Unit)? = null) {
     // только иконки, по центру; текущий раздел подсвечен
     val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icActivity, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
+    var activityTick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(3_000); activityTick++ } }
+    val active = remember(activityTick, Agent.main.busy, Deleg.items.size, Watch.items.size) {
+        Agent.main.busy || Deleg.items.any { it.active } || Watch.items.any { it.status == "active" }
+    }
     val cur = when (here) {
         Scr.Journal -> Scr.Home
         Scr.Digest -> Scr.History
@@ -481,18 +491,30 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card).padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         items.forEach { (ic, label, to) ->
-            NavDot(haze, ic, label, Modifier.weight(1f), to == cur, if (to == Scr.Home) onSearch else null) { go(to) }
+            NavDot(haze, ic, label, Modifier.weight(1f), to == cur, active && to == Scr.Active, if (to == Scr.Home) onSearch else null) { go(to) }
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun NavDot(haze: HazeState, ic: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, on: Boolean, active: Boolean, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val shape = shp(20.dp)
+    val ctx = LocalContext.current
+    val animationsEnabled = android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+    val pulse = if (active && animationsEnabled) {
+        val transition = rememberInfiniteTransition(label = "active-task")
+        val scale by transition.animateFloat(initialValue = 1f, targetValue = 1.16f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "task-pulse")
+        scale
+    } else 1f
     Column(modifier.height(52.dp).clip(shape).background(if (on) AccentSoft else Color.Transparent)
         .combinedClickable(onClickLabel = label, onClick = onClick, onLongClickLabel = if (onLongClick != null) "Поиск по переписке" else null, onLongClick = onLongClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), label, tint = if (on) Teal else Muted, modifier = Modifier.size(19.dp))
+        Box(contentAlignment = Alignment.Center) {
+            Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(ic), if (active) "$label · есть активные задачи" else label,
+                tint = if (on || active) Teal else Muted, modifier = Modifier.size(19.dp).graphicsLayer { scaleX = pulse; scaleY = pulse })
+            if (active) Box(Modifier.align(Alignment.TopEnd).size(6.dp).clip(CircleShape).background(Teal))
+        }
         Text(label, style = body(10, FontWeight.Medium, if (on) Teal else Muted), maxLines = 1)
     }
 }
@@ -727,16 +749,18 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
     var composerFocused by remember { mutableStateOf(false) }
     val n0 = remember { chat.msgs.size }
     LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
-    // как в чате: лёгкое затемнение снизу, сквозь которое видно экран, кнопки — стекло с размытием
-    Column(modifier.fillMaxWidth().background(Card)
-        .padding(horizontal = 10.dp).padding(top = 24.dp, bottom = 10.dp)) {
-        // как в чате: пока что-то идёт — над кнопками «Активные · N» (на самой странице «Активные» не нужна)
-        if (here != Scr.Active) { ActiveButton(go); if (Activity.count() > 0) Spacer(Modifier.height(10.dp)) }
-        NavBar(haze, here, go)
-        Spacer(Modifier.height(10.dp))
-        if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {
-            ChatControls(go); Spacer(Modifier.height(8.dp))
-        }
-        Composer(haze, chat, chat.friend) { composerFocused = it }
+    Column(modifier.fillMaxWidth().background(Card).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 10.dp)) {
+        BottomBarContent(haze, here, go, chat, chat.friend, composerFocused, { composerFocused = it })
     }
+}
+
+@Composable
+fun BottomBarContent(haze: HazeState, here: Scr, go: (Scr) -> Unit, chat: ChatStore, friend: Friend,
+                     composerFocused: Boolean, onFocusChange: (Boolean) -> Unit, onSearch: (() -> Unit)? = null) {
+    NavBar(haze, here, go, onSearch = onSearch)
+    Spacer(Modifier.height(8.dp))
+    if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {
+        ChatControls(go); Spacer(Modifier.height(8.dp))
+    }
+    Composer(haze, chat, friend, onFocusChange)
 }

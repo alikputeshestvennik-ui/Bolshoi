@@ -81,6 +81,7 @@ fun App(voice: Voice) {
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var scr by remember { mutableStateOf(Scr.Home) }
     var taskBack by remember { mutableStateOf(Scr.Home) }
+    var historyRecord by remember { mutableStateOf<TaskRec?>(null) }
     var subFrom by remember { mutableStateOf(Scr.Home) }
     val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
@@ -118,7 +119,7 @@ fun App(voice: Voice) {
     }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); Th.tick() } }
     // Все страницы, включая подробности задачи, используют выбранную тему.
-    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task }
+    androidx.compose.runtime.SideEffect { Th.forceCockpit = scr == Scr.Task && historyRecord == null }
     val phase = Agent.phase
     val open = Nav.open
     val uiCtx = androidx.compose.ui.platform.LocalContext.current
@@ -140,14 +141,14 @@ fun App(voice: Voice) {
         if (open.startsWith("chat:")) { scr = Scr.Home; Nav.open = "" }
         if (open == "yt") {
             Nav.open = ""
-            Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
+            Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { historyRecord = null; Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
         }
     }
 
     // из чата «назад» — выход; остальные экраны — в чат
     BackHandler(enabled = scr != Scr.Home) {
         when (scr) {
-            Scr.Task -> { Agent.close(); scr = taskBack; taskBack = Scr.Home }
+            Scr.Task -> { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home }
             Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look -> { scr = subFrom; subFrom = Scr.Home }
             Scr.Tg, Scr.Music, Scr.Yt, Scr.YooMoney -> scr = Scr.Settings
             else -> scr = Scr.Home
@@ -166,19 +167,20 @@ fun App(voice: Voice) {
                 if (w.attributes.layoutInDisplayCutoutMode != mode) w.attributes = w.attributes.apply { layoutInDisplayCutoutMode = mode }
             }
             androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).apply {
-                isAppearanceLightStatusBars = !Th.c.dark && scr != Scr.Task; isAppearanceLightNavigationBars = !Th.c.dark && scr != Scr.Task
+                isAppearanceLightStatusBars = !Th.c.dark && (scr != Scr.Task || historyRecord != null); isAppearanceLightNavigationBars = !Th.c.dark && (scr != Scr.Task || historyRecord != null)
             }
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || scr == Scr.Task) Modifier else Modifier.navigationBarsPadding().imePadding())) {
+        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || (scr == Scr.Task && historyRecord == null)) Modifier else Modifier.navigationBarsPadding().imePadding())) {
             val go: (Scr) -> Unit = { destination ->
                 focus.clearFocus(); keyboard?.hide()
+                if (destination != Scr.Task) historyRecord = null
                 if (VoiceMsg.recording) tgScope.launch { VoiceMsg.stop(true); scr = destination }
                 else scr = destination
             }
-            val home: () -> Unit = { if (scr == Scr.Task) { Agent.close(); scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
-            val withBar = scr != Scr.Home && scr != Scr.Journal && scr != Scr.Task
+            val home: () -> Unit = { if (scr == Scr.Task) { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
+            val withBar = scr != Scr.Home && scr != Scr.Journal && (scr != Scr.Task || historyRecord != null)
             var barH by remember { mutableStateOf(0) }
             val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
             val barHaze = remember { dev.chrisbanes.haze.HazeState() }
@@ -194,8 +196,8 @@ fun App(voice: Voice) {
                 Scr.Music -> MusicScreen { scr = Scr.Settings }
                 Scr.Yt -> YtScreen { scr = Scr.Settings }
                 Scr.Initiative -> InitiativeScreen { scr = subFrom; subFrom = Scr.Home }
-                Scr.Task -> TaskScreen(voice, home)
-                Scr.History -> HistoryScreen(home) { r -> Agent.showPast(r); taskBack = Scr.History; scr = Scr.Task }
+                Scr.Task -> if (historyRecord != null) HistoryTaskScreen(historyRecord!!, home) else TaskScreen(voice, home)
+                Scr.History -> HistoryScreen(home) { r -> historyRecord = r; taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt }) { s -> subFrom = Scr.Settings; scr = s }
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
@@ -204,7 +206,7 @@ fun App(voice: Voice) {
             }
             }
             }
-            if (withBar) GlobalBar(scr, go, barHaze, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
+            if (withBar) GlobalBar(if (scr == Scr.Task && historyRecord != null) Scr.History else scr, go, barHaze, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
             if (Panel.open) Panel.open = false
         }
     }

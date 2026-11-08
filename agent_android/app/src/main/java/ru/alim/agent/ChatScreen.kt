@@ -277,12 +277,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
             } else {
-                if (fid == Friends.MAIN) {
-                    if (search == null && Activity.count() > 0) { ActiveButton(go); Spacer(Modifier.height(8.dp)) }
-                    NavBar(haze, Scr.Home, go, onSearch = { search = "" }); Spacer(Modifier.height(8.dp))
-                    if (composerFocused && WindowInsets.ime.getBottom(LocalDensity.current) > 0) { ChatControls(go); Spacer(Modifier.height(8.dp)) }
-                }
-                Composer(haze, chat, f) { composerFocused = it }
+                if (fid == Friends.MAIN) BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
+                else Composer(haze, chat, f) { composerFocused = it }
             }
         }
 
