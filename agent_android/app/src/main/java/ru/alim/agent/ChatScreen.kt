@@ -439,7 +439,7 @@ private fun MsgRow(m: Msg, showButtons: Boolean, chat: ChatStore, f: Friend) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (m.replyText.isNotBlank()) Quote(if (m.replyMe) "Алим" else f.name, m.replyText, m.me)
                 if (m.voice.isNotBlank()) VoiceRow(m, meta)
-                val text = m.text
+                val text = if (m.me) m.text else answerWithoutSourceLines(m.text, m.best)
                 if (text.isNotBlank() && !(m.voice.isNotBlank() && m.me)) Text(md(text), style = body(16, color = if (m.failed) Danger else ink), lineHeight = 24.sp,
                     modifier = Modifier.padding(horizontal = if (hasCards) 4.dp else 2.dp))
                 if (!m.me) SourceBadges(text, m.best)
@@ -478,7 +478,7 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
     // «🕓 данные от 27.10 19:13» — не заголовок: уходит мелко в подпись внизу
     val stampRe = Regex("(?m)^\\s*(🕓|🕐|⏰)\\s*([^\\n]+)\\n?")
     val stamp = stampRe.find(m.text)?.groupValues?.get(2)?.trim().orEmpty()
-    val text = m.text.replace(stampRe, "").trim()
+    val text = answerWithoutSourceLines(m.text, m.best).replace(stampRe, "").trim()
     // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия; точка после номера списка («1.») — не конец фразы
     val colon = Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s|\\n)").find(text)?.range?.first?.takeIf { it in 8..160 }
     val cut = colon?.plus(1) ?: (Regex("(?<![\\s:]\\d)(?<![\\s:]\\d\\d)(?<!^\\d)[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1)

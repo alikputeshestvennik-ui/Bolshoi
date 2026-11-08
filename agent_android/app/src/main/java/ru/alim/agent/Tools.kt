@@ -245,6 +245,7 @@ object Tools {
                 val temp = if (current.isNull("sea_surface_temperature")) "нет данных" else "${current.optDouble("sea_surface_temperature")} °C"
                 val waves = if (current.isNull("wave_height")) "нет данных" else "${current.optDouble("wave_height")} м"
                 if (temp == "нет данных" && waves == "нет данных") error("источник не предоставил данные для этого места")
+                Agent.noteSource("https://open-meteo.com/en/docs/marine-weather-api", "")
                 "Модельный прогноз у ближайшей морской ячейки к $place: температура поверхности воды $temp, высота волн $waves. Время прогноза: ${current.optString("time", "не указано")}; ближайшая ячейка ${j.optDouble("latitude")}, ${j.optDouble("longitude")}. Это не измерение на пляже. Источник: Open-Meteo Marine, https://open-meteo.com/en/docs/marine-weather-api"
             }.getOrElse { "Не удалось получить прогноз моря для $place: ${it.message.orEmpty().take(120)}" }
         },
@@ -732,7 +733,10 @@ object Tools {
             val errs = ArrayList<String>()
             for (engine in listOf(YaSearch::search, ::ddgHtml, ::ddgLite, ::bing)) {
                 val r = runCatching { engine(q) }.onFailure { errs += it.message ?: "ошибка" }.getOrNull()
-                if (!r.isNullOrEmpty()) return@t r.take(8).joinToString("\n\n")
+                if (!r.isNullOrEmpty()) {
+                    r.take(8).forEach { result -> Regex("https?://[^\\s<>\\\"()]+", RegexOption.IGNORE_CASE).find(result)?.value?.trimEnd('.', ',', ';', ']')?.let { Agent.noteSearchSource(it) } }
+                    return@t r.take(8).joinToString("\n\n")
+                }
             }
             "поиск ничего не дал" + if (errs.isNotEmpty()) " (${errs.joinToString("; ").take(300)})" else ""
         },
@@ -1681,7 +1685,7 @@ object SrcTime {
     private val fmt get() = java.text.SimpleDateFormat("d.MM HH:mm", java.util.Locale.US)
     fun label(ms: Long): String = fmt.format(java.util.Date(ms))
     fun rawPublication(html: String): String? {
-        val pats = listOf("property=[\"'](?:article:published_time|og:published_time)[\"'][^>]*content=[\"']([^\"']+)", "content=[\"']([^\"']+)[\"'][^>]*property=[\"'](?:article:published_time|og:published_time)", "itemprop=[\"']datePublished[\"'][^>]*(?:content|datetime)=[\"']([^\"']+)", "\"datePublished\"\\s*:\\s*\"([^\"]+)\"")
+        val pats = listOf("property=[\"'](?:article:published_time|og:published_time)[\"'][^>]*content=[\"']([^\"']+)", "content=[\"']([^\"']+)[\"'][^>]*property=[\"'](?:article:published_time|og:published_time)", "itemprop=[\"']datePublished[\"'][^>]*(?:content|datetime)=[\"']([^\"']+)", "\"datePublished\"\\s*:\\s*\"([^\"]+)\"", "name=[\"'](?:pubdate|publish-date|date)[\"'][^>]*content=[\"']([^\"']+)", "<time[^>]*datetime=[\"']([^\"']+)")
         return pats.firstNotNullOfOrNull { Regex(it, RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.trim()?.takeIf { t -> iso(t) != null } }
     }
     fun note(ms: Long?) { if (ms != null && ms > 0 && ms <= System.currentTimeMillis() + 3_600_000) { if (ms > newest) newest = ms } }

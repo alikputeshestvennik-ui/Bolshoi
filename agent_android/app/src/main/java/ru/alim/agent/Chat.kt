@@ -564,10 +564,10 @@ class ChatStore(val fid: String) {
             nm.createNotificationChannel(NotificationChannel("artur_msg", "Сообщения от друзей", NotificationManager.IMPORTANCE_HIGH))
         val pi = PendingIntent.getActivity(app, 77 + (fid.hashCode() and 0xfff), Intent(app, MainActivity::class.java).putExtra("open", "chat:$fid")
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val bot = Person.Builder().setName(friend.name).build()
+        val bot = Person.Builder().setName(if (fid == Friends.MAIN) "Тень" else friend.name).build()
         val style = NotificationCompat.MessagingStyle(Person.Builder().setName("Алим").build())
         msgs.takeLast(4).filter { !it.me && System.currentTimeMillis() - it.ts < 3600_000L }.forEach {
-            style.addMessage(it.text.ifBlank { "🎤 Голосовое" }.take(300), it.ts, bot)
+            style.addMessage(notificationText(it.text.ifBlank { "🎤 Голосовое" }).take(300), it.ts, bot)
         }
         runCatching {
             NotificationManagerCompat.from(app).notify(notifId(), NotificationCompat.Builder(app, "artur_msg")

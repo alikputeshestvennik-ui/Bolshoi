@@ -88,6 +88,7 @@ object Agent {
     /** Агент, в чьей задаче сейчас выполняется инструмент. */
     suspend fun cur(): Core = coroutineContext[RunCtx]?.core ?: main
     suspend fun noteSource(url: String, publication: String) { coroutineContext[RunCtx]?.core?.readSources?.put(url, publication) }
+    suspend fun noteSearchSource(url: String) { coroutineContext[RunCtx]?.core?.searchSources?.add(url) }
 
     // ——— главный (для старых экранов: история, задача) ———
     val phase get() = main.phase
@@ -148,6 +149,7 @@ object Agent {
         /** Лучший вариант сравнения (JSON) — карточка «Лучший выбор» под таблицей. */
         var lastBest: String = ""; private set
         val readSources = java.util.Collections.synchronizedMap(LinkedHashMap<String, String>())
+        val searchSources = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
         /** Исходная задача, к которой относятся уточнения («а если вдвоём?») — для проверки полноты. */
         private var rootTask = ""
 
@@ -185,7 +187,7 @@ object Agent {
         fun start(text: String) {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения и коротко скажи, что в них" else "" }
             if (t.isEmpty() || busy) return
-            readSources.clear()
+            readSources.clear(); searchSources.clear()
             task = t; steps.clear(); result = ""; failed = false; cost = 0.0; tokIn = 0L; tokOut = 0L; pending = null; lastButtons = emptyList(); lastBest = ""
             startedAt = System.currentTimeMillis(); endedAt = 0L; rootTask = t; stopped = false; paused = false; refused = false
             Shop.shown.clear()
@@ -199,7 +201,7 @@ object Agent {
         fun followUp(text: String) {
             val t = text.trim().ifEmpty { if (Attach.pending.isNotEmpty()) "Посмотри вложения" else "" }
             if (t.isEmpty() || busy) return
-            readSources.clear()
+            readSources.clear(); searchSources.clear()
             val base = lastMsgs
             // новая большая задача (или тот же промпт ещё раз) — с чистого листа: старые ответы и цифры из прошлой переписки не тянем
             val resume = t.contains("Собрать итог из найденного") || Regex("^\\s*(продолж|доделай|дальше|давай дальше)", RegexOption.IGNORE_CASE).containsMatchIn(t)
@@ -976,7 +978,10 @@ object Agent {
             }
             // мысли и шаги — к сообщению, чтобы потом раскрыть «Думал N мин ›»
             val payload = if (steps.isEmpty()) lastBest else runCatching {
-                (Rich.parse(lastBest) ?: JSONObject()).put("sources", JSONArray().also { a -> readSources.forEach { (url, date) -> a.put(JSONObject().put("url", url).put("published", date)) } }).put("log", JSONArray().also { a ->
+                (Rich.parse(lastBest) ?: JSONObject()).put("sources", JSONArray().also { a ->
+                    readSources.forEach { (url, date) -> a.put(JSONObject().put("url", url).put("published", date)) }
+                    searchSources.filter { url -> text.contains(url) && !readSources.containsKey(url) }.forEach { url -> a.put(JSONObject().put("url", url).put("published", "")) }
+                }).put("log", JSONArray().also { a ->
                     steps.forEach { s -> a.put(JSONObject().put("t", s.think).put("s", s.text).put("d", s.detail.lines().firstOrNull { it.isNotBlank() }.orEmpty().take(140))) }
                 }).put("secs", (endedAt - startedAt) / 1000).toString()
             }.getOrDefault(lastBest)
