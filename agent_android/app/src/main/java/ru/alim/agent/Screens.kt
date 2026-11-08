@@ -64,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -414,7 +415,7 @@ fun HistoryScreen(back: () -> Unit, open: (TaskRec) -> Unit) {
             item {
                 CardBox(bg = AccentSoft) {
                     Text("ИСПОЛЬЗОВАНО ЗА ПЕРИОД", style = body(10, FontWeight.Bold, Muted).copy(letterSpacing = 1.sp))
-                    Text(tok(input + output), style = body(30, FontWeight.SemiBold))
+                    Text(tok(input + output), modifier = Modifier.testTag("usage-total"), style = body(30, FontWeight.SemiBold))
                     Text("Вход ${tok(input)} · выход ${tok(output)}", style = body(12, color = Muted))
                     Text("${recs.count { !it.background }} запросов · ${recs.count { it.background }} фоновых записей", style = body(12, color = Muted))
                     if (recs.any { it.tokIn + it.tokOut == 0L }) Text("У части записей расход не сохранён. Они не включены в сумму токенов.", style = body(11, color = Muted))

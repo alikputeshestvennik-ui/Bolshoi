@@ -222,7 +222,7 @@ val LocalBarHaze = androidx.compose.runtime.compositionLocalOf<dev.chrisbanes.ha
 
 /** Compact back navigation for nested pages. */
 @Composable
-fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "", haze: dev.chrisbanes.haze.HazeState? = null) {
+fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "") {
     Row(Modifier.fillMaxWidth().background(Bg).statusBarsPadding().padding(horizontal = 16.dp)
         .height(56.dp), verticalAlignment = Alignment.CenterVertically) {
         if (back != null) {
@@ -236,21 +236,14 @@ fun ScreenHeader(title: String, back: (() -> Unit)?, trailing: String = "", haze
     }
 }
 
-/** Страница с общей шапкой: содержимое идёт под строку состояния и шапку, сверху мягкое затемнение, как в чате. */
+/** Shared spacing and navigation for full-height secondary pages. */
 @Composable
 fun Screen(title: String, back: () -> Unit, showBack: Boolean = true, trailing: String = "", content: @Composable ColumnScope.() -> Unit) {
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    // своё размытие у страницы: шапка лежит ВНЕ размываемого слоя (иначе размывается она сама), под ней — содержимое
-    val haze = remember { dev.chrisbanes.haze.HazeState() }
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Th.c.bg).haze(haze, dev.chrisbanes.haze.HazeStyle(tint = Th.c.glass, blurRadius = 24.dp, noiseFactor = 0.05f))) {
-            androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 68.dp) {
-                Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
-            }
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalTopPad provides top + 68.dp) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
         }
-        // затемнение сверху вместе со строкой состояния: лента уходит под шапку плавно, как в чате
-        Box(Modifier.fillMaxWidth().height(top + 96.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(
-            listOf(Th.c.bg.copy(alpha = 0.95f), Th.c.bg.copy(alpha = 0.75f), Th.c.bg.copy(alpha = 0f)))))
         if (showBack) ScreenHeader(title, back, trailing) else PageNavigation(title)
     }
 }
