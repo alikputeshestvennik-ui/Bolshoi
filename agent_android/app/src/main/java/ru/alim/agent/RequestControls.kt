@@ -30,7 +30,8 @@ internal fun RequestControls() {
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
-                Text(model.removePrefix("chatgpt:") + "  ▾", modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                val activeModel = if (Prefs.developerModels) Prefs.fastModel else model
+                Text(activeModel.removePrefix("chatgpt:") + "  ▾", modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                     .background(Bg).clickable { modelsOpen = true }.padding(10.dp), style = body(13, FontWeight.SemiBold))
                 DropdownMenu(expanded = modelsOpen, onDismissRequest = { modelsOpen = false }) {
                     if (models.isEmpty()) DropdownMenuItem(text = { Text("Подключите ChatGPT в настройках") }, onClick = { modelsOpen = false })
@@ -56,7 +57,7 @@ internal fun RequestControls() {
             Text("Расход ▾", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { usageOpen = !usageOpen })
         }
         if (usageOpen) {
-            Text("Токены в Тени с момента обновления: вход ${Prefs.usageInput}, выход ${Prefs.usageOutput}.", style = body(12, color = Muted))
+            Text("Токены завершённых запросов в Тени с момента обновления: вход ${Prefs.usageInput}, выход ${Prefs.usageOutput}.", style = body(12, color = Muted))
             Text("Остаток общего лимита проверь в ChatGPT", style = body(12, FontWeight.SemiBold, Teal),
                 modifier = Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/#settings/usage"))) })
         }
