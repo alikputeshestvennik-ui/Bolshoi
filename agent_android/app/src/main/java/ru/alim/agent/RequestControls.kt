@@ -59,7 +59,7 @@ internal fun RequestControls() {
         if (usageOpen) {
             Text("Токены завершённых запросов в Тени с момента обновления: вход ${Prefs.usageInput}, выход ${Prefs.usageOutput}.", style = body(12, color = Muted))
             Text("Остаток общего лимита проверь в ChatGPT", style = body(12, FontWeight.SemiBold, Teal),
-                modifier = Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/#settings/usage"))) })
+                modifier = Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/settings/usage"))) })
         }
     }
 }
