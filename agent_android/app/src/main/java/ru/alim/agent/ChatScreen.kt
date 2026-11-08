@@ -480,7 +480,7 @@ private fun SheetCard(m: Msg, lit: Boolean, showButtons: Boolean, chat: ChatStor
     val stamp = stampRe.find(m.text)?.groupValues?.get(2)?.trim().orEmpty()
     val text = answerWithoutSourceLines(m.text, m.best).replace(stampRe, "").trim()
     // «Вот что нашёл: 1. …; 2. …» — заголовок до двоеточия; точка после номера списка («1.») — не конец фразы
-    val colon = Regex(":\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s|\\n)").find(text)?.range?.first?.takeIf { it in 8..160 }
+    val colon = Regex("(?<!\\d):\\s*(\\d{1,2}[.)]\\s|[•–—-]\\s|\\n)").find(text)?.range?.first?.takeIf { it in 8..160 }
     val cut = colon?.plus(1) ?: (Regex("(?<![\\s:]\\d)(?<![\\s:]\\d\\d)(?<!^\\d)[.!?](\\s|$)|\\n").find(text)?.range?.last?.plus(1)?.takeIf { it in 12..160 } ?: -1)
     val title = if (cut > 0) text.take(cut).replace("**", "").trim().trimEnd('.', ':') else ""
     val rest = if (cut > 0) text.drop(cut).trim() else text
