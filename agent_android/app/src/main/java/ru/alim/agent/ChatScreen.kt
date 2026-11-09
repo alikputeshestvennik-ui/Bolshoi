@@ -76,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -115,6 +116,7 @@ private val hhmm = SimpleDateFormat("HH:mm", Locale("ru"))
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 fun ChatScreen(fid: String, go: (Scr) -> Unit) {
+    val flex = LocalFlexActive.current
     val chat = remember(fid) { Chat.of(fid) }
     val core = chat.core
     val f = chat.friend
@@ -149,8 +151,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         if (id == 0L) return@LaunchedEffect
         delay(120)
         var idx = 0
-        if (core.pending != null) idx++
-        if (core.busy && core.pending == null) idx++
+        if (core.pending != null && !flex) idx++
+        if (core.busy && core.pending == null && !flex) idx++
         val rev = msgs.toList().asReversed()
         var found = -1
         for ((i, m) in rev.withIndex()) {
@@ -177,13 +179,13 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             // Keep a chosen photo; the default surface is deliberately quiet.
             if (Prefs.wallpaper == "photo") Wallpaper() else Box(Modifier.fillMaxSize().background(Bg))
             // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
-            val bars = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
+            val bars = if (flex) 0.dp else WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 20.dp, bottom = bars + with(LocalDensity.current) { composerH.toDp() } + 18.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 20.dp, bottom = bars + (if (flex) 0.dp else with(LocalDensity.current) { composerH.toDp() }) + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
-                if (core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
+                if (!flex) core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
+                if (!flex && core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
                 val rev = shown.asReversed()
                 rev.forEachIndexed { i, m ->
                     item(key = m.id) {
@@ -208,7 +210,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         val fade = Th.c.bg
         val fadeBottom = Th.c.bg
         val topH = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 96.dp
-        val botH = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
+        val botH = if (flex) 16.dp else WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
             with(LocalDensity.current) { composerH.toDp() } + 34.dp
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topH)
             .background(Brush.verticalGradient(listOf(fade.copy(alpha = 0.95f), fade.copy(alpha = 0.75f), fade.copy(alpha = 0f)))))
@@ -260,7 +262,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding().background(Card).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(if (flex) Modifier.height(0.dp).then(Modifier.clipToBounds()) else Modifier.navigationBarsPadding().imePadding()).background(Card).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp)
             .onSizeChanged { composerH = it.height }) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
@@ -284,7 +286,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
 
         // ——— кнопка «вниз»: над микрофоном, того же размера ———
         val farFromBottom by remember { androidx.compose.runtime.derivedStateOf { list.firstVisibleItemIndex > 1 } }
-        if (farFromBottom && !ChatSel.on) {
+        if (farFromBottom && !ChatSel.on && !flex) {
             val scope = rememberCoroutineScope()
             val lift = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding() +
                 with(LocalDensity.current) { composerH.toDp() } + 18.dp

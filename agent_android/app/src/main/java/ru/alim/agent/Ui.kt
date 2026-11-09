@@ -16,6 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -63,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class Scr { Home, Journal, Active, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
+
+val LocalFlexActive = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 fun neededPerms(): Array<String> {
     val l = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
@@ -172,7 +176,14 @@ fun App(voice: Voice) {
         }
     }
     MaterialTheme(colorScheme = if (Th.c.dark) darkColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink) else androidx.compose.material3.lightColorScheme(primary = Teal, onPrimary = OnAccent, background = Bg, surface = Card, onSurface = Ink)) {
-        Box(Modifier.fillMaxSize().background(Bg).then(if (scr == Scr.Home || scr == Scr.Journal || (scr == Scr.Task && historyRecord == null)) Modifier else Modifier.navigationBarsPadding().imePadding())) {
+        val fold = rememberTabletopFold(act)
+        BoxWithConstraints(Modifier.fillMaxSize().background(Bg)) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val totalPx = with(density) { maxHeight.toPx() }
+            val flex = Agent.busy && fold != null && fold.top > 0 && fold.bottom < totalPx && fold.top < totalPx * 0.8f && fold.bottom > totalPx * 0.2f
+            val topHeight = if (flex) with(density) { fold!!.top.toDp() } else maxHeight
+            val bottomHeight = if (flex) with(density) { (totalPx - fold!!.bottom).toDp() } else 0.dp
+            LaunchedEffect(flex) { if (flex) { focus.clearFocus(); keyboard?.hide() } }
             val go: (Scr) -> Unit = { destination ->
                 focus.clearFocus(); keyboard?.hide()
                 if (destination != Scr.Task) historyRecord = null
@@ -180,12 +191,13 @@ fun App(voice: Voice) {
                 else scr = destination
             }
             val home: () -> Unit = { if (scr == Scr.Task) { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
-            val withBar = scr != Scr.Home && scr != Scr.Journal && (scr != Scr.Task || historyRecord != null)
+            val withBar = !flex && scr != Scr.Home && scr != Scr.Journal && (scr != Scr.Task || historyRecord != null)
             var barH by remember { mutableStateOf(0) }
             val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
             val barHaze = remember { dev.chrisbanes.haze.HazeState() }
+            Box(Modifier.fillMaxWidth().height(topHeight).then(if (flex) Modifier.clipToBounds() else if (scr != Scr.Home && scr != Scr.Journal && (scr != Scr.Task || historyRecord != null)) Modifier.navigationBarsPadding().imePadding() else Modifier)) {
             androidx.compose.runtime.CompositionLocalProvider(
-                LocalBarPad provides (if (withBar) barDp + 12.dp else 24.dp), LocalBarHaze provides null, LocalNavigate provides go) {
+                LocalFlexActive provides flex, LocalBarPad provides (if (flex) 12.dp else if (withBar) barDp + 12.dp else 24.dp), LocalBarHaze provides null, LocalNavigate provides go) {
             pageState.SaveableStateProvider(if (scr == Scr.Journal) Scr.Home.name else scr.name) {
             when (scr) {
                 Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
@@ -206,7 +218,10 @@ fun App(voice: Voice) {
             }
             }
             }
-            if (withBar) GlobalBar(if (scr == Scr.Task && historyRecord != null) Scr.History else scr, go, barHaze, Modifier.align(Alignment.BottomCenter).onSizeChanged { barH = it.height })
+            }
+            if (withBar) GlobalBar(if (scr == Scr.Task && historyRecord != null) Scr.History else scr, go, barHaze, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().onSizeChanged { barH = it.height })
+            if (flex) FlexTaskPanel(Agent.main, if (scr == Scr.Task && historyRecord != null) Scr.History else scr, go,
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottomHeight))
             if (Panel.open) Panel.open = false
         }
     }
