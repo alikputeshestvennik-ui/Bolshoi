@@ -29,7 +29,9 @@ private fun recordedSources(metadata: String): LinkedHashMap<String, String> {
 
 /** Убираем текстовую строку источника только если та же ссылка доступна кнопкой. */
 fun answerWithoutSourceLines(text: String, metadata: String): String {
-    val urls = recordedSources(metadata).keys
+    // Кнопки отображаются только для первых восьми источников.
+    val sources = recordedSources(metadata).entries.take(8)
+    val urls = sources.map { it.key }
     if (urls.isEmpty()) return text
     val lines = text.lines().toMutableList()
     val drop = mutableSetOf<Int>()
@@ -42,7 +44,25 @@ fun answerWithoutSourceLines(text: String, metadata: String): String {
             }
         }
     }
-    return lines.filterIndexed { i, _ -> i !in drop }.joinToString("\n").trim()
+    var result = lines.filterIndexed { i, _ -> i !in drop }.joinToString("\n")
+    for ((url, publication) in sources) {
+        val citation = Regex("Источник\\s*:\\s*[^\\n]{0,150}?" + Regex.escape(url) + "(?![\\p{L}\\p{N}/?&#=_-])", RegexOption.IGNORE_CASE)
+        val cited = citation.find(result) ?: continue
+        val before = result.substring(0, cited.range.first)
+        val after = result.substring(cited.range.last + 1)
+        val date = runCatching { java.time.OffsetDateTime.parse(publication).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime() }
+            .getOrElse { runCatching { java.time.LocalDateTime.parse(publication) }.getOrNull() }
+        val cleaned = if (date != null) {
+            val duplicate = Regex("(?:🕓|🕐|🕒|⏰|🕰️?)?[ \\t]*Данные опубликованы\\s+(\\d{1,2})[.](\\d{1,2})(?:[.](\\d{4}))?\\s+в\\s+(\\d{1,2}):(\\d{2})[.]?\\s*$", RegexOption.IGNORE_CASE)
+            duplicate.replace(before) { m ->
+                val g = m.groupValues
+                if (g[1].toIntOrNull() == date.dayOfMonth && g[2].toIntOrNull() == date.monthValue &&
+                    (g[3].isEmpty() || g[3].toIntOrNull() == date.year) && g[4].toIntOrNull() == date.hour && g[5].toIntOrNull() == date.minute) "" else m.value
+            }
+        } else before
+        result = cleaned + after
+    }
+    return result.trim()
 }
 
 /** Используем подтверждённые ссылки и данные, сохранённые при поиске. */
