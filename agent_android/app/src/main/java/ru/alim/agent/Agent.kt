@@ -452,6 +452,7 @@ object Agent {
             var noMoneyAlt: String? = null   // AnyModel пуст — дальше вся задача на этой модели, без повторных попыток
             var announced = ""
             var junkRetry = 0
+            var unfinishedWebRetry = 0
             var conclRetry = 0
             var bestRetry = 0
             var lazyRetry = if (assemble) 2 else 0
@@ -713,6 +714,15 @@ object Agent {
                     if (!hard0) shrinkOld(msgs) else squeezeOld(msgs)   // в тяжёлой задаче старые страницы сжимаем до строк с цифрами: цены и время остаются, проза уходит
                 }
                 // добросовестность: перед ответом сверяем каждый пункт просьбы; не доделано — доделываем (один заход)
+                if (final != null && !assemble && unfinishedWebAction(final!!)) {
+                    if (!wrap && unfinishedWebRetry < 2 && i < cap - 2) {
+                        unfinishedWebRetry++
+                        steps.add(Step("Проверяю публикацию").also { it.done = true })
+                        msgs.put(msg("user", "В ответе ты обещаешь открыть или проверить источник, но ещё не завершил проверку. Сейчас сам прочитай нужную публикацию через web_read или web_page и ответь по её содержимому. Если прочитать не удаётся, прямо скажи, что проверить не удалось, не обещай сделать это позже."))
+                        final = null; continue
+                    }
+                    final = withoutUnfinishedWebAction(final!!)
+                }
                 // честность: «отправил/создал/поставил» — только если инструмент реально отработал
                 // часть ответила, ничего не поискав (отказ, «не моя задача») — не гоняем её повторами: сразу сдаём как «не справилась»
                 if (isPart && final != null && calls.values.sum() == 0) {
