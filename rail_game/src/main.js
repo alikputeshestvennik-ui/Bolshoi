@@ -37,6 +37,7 @@ function route(value){if(s.mode!=='play')return;if(setRoute(s,value)){toast(valu
 $('north').onclick=()=>route('north');$('south').onclick=()=>route('south');
 addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();if(e.key==='Escape')window.railBack();if(s.mode!=='play')return;if(e.key==='ArrowUp'){s.throttle=Math.min(100,s.throttle+10);s.brake=0;}if(e.key==='ArrowDown'){s.throttle=Math.max(0,s.throttle-10);}if(e.key===' ')$('brake').click();if(e.key.toLowerCase()==='h')horn();updateUI();});
 function updateUI(){
+ if(cab.visible)cab.userData.update(s.speed*3.6,s.brake,s.throttle);
  const c=contracts[Math.min(s.delivered,5)],locked=!canSwitch(s),dist=targetDistance(s),speed=Math.round(s.speed*3.6);
  $('speed').textContent=speed;$('speed').style.color=s.overspeed>0?'#ff9b73':'';$('power-value').textContent=s.throttle+'%';$('power').value=s.throttle;$('limit').textContent=limitAt(s);$('safety').style.width=s.safety+'%';$('safety').style.background=s.safety<35?'#e68a69':'#acd39b';
  $('brake').classList.toggle('active',s.brake===65);$('emergency').classList.toggle('active',s.brake===100);$('coast').classList.toggle('active',s.brake===0&&s.throttle===0);

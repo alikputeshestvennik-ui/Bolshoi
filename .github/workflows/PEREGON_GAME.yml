@@ -67,6 +67,7 @@ jobs:
         run: |
           gh release create "peregon-v1-${GITHUB_RUN_NUMBER}" \
             rail_game/delivery/PEREGON.apk \
+            rail_game/delivery/02-train.png \
             rail_game/delivery/PEREGON-presentation.pdf \
             rail_game/delivery/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \

@@ -99,5 +99,20 @@ for(const [y,mat] of [[3.95,redMat],[3.4,greenMat]]){const m=new T.Mesh(new T.Sp
 export function signalState(locked){redMat.emissiveIntensity=locked?2:0;greenMat.emissiveIntensity=locked?0:2;}
 // Smoke is instanced and stays bounded, even on a long free ride.
 const smokeMaterial=new T.MeshBasicMaterial({color:0xb8b7aa,transparent:true,opacity:.12,depthWrite:false});const smoke=new T.InstancedMesh(new T.IcosahedronGeometry(1,1),smokeMaterial,18);smoke.frustumCulled=false;scene.add(smoke);const dummy=new T.Object3D();
-export function animateWorld(time,route,distance,speed,throttle){water.material.color.setHSL(.49,.22,.47+Math.sin(time*.5)*.025);const {p,t}=sample(route,distance-1.5);for(let i=0;i<18;i++){const age=(time*.55+i/18)%1;dummy.position.copy(p).addScaledVector(t,-age*speed*1.6).add(V(age*3,4+age*8,age*2));dummy.scale.setScalar((.24+age*1.9)*(throttle>0?1:.35));dummy.updateMatrix();smoke.setMatrixAt(i,dummy.matrix);}smoke.instanceMatrix.needsUpdate=true;}
-export function createCab(){const cab=new T.Group();const panelMat=new T.MeshStandardMaterial({color:0x263d3d,roughness:.8});const panel=new T.Mesh(new T.BoxGeometry(2.15,.22,.7),panelMat);panel.position.set(0,-.35,-1.7);cab.add(panel);const c=document.createElement('canvas');c.width=512;c.height=128;const g=c.getContext('2d');g.fillStyle='#203334';g.fillRect(0,0,512,128);for(let i=0;i<5;i++){const x=55+i*100;g.fillStyle='#172529';g.beginPath();g.arc(x,60,39,0,Math.PI*2);g.fill();g.strokeStyle='#d9cc9a';g.lineWidth=3;g.stroke();g.beginPath();g.moveTo(x,60);g.lineTo(x+18,38);g.stroke();g.fillStyle='#e6dcb1';g.font='12px Arial';g.fillText(i===0?'км/ч':i===1?'бар':'V',x-14,87);}const tex=new T.CanvasTexture(c);tex.colorSpace=T.SRGBColorSpace;const face=new T.Mesh(new T.PlaneGeometry(1.8,.24),new T.MeshBasicMaterial({map:tex}));face.position.set(0,-.17,-1.34);face.rotation.x=-.12;cab.add(face);for(const x of [-1.13,1.13]){const frame=new T.Mesh(new T.BoxGeometry(.09,1.9,.12),panelMat);frame.position.set(x,.15,-1.35);cab.add(frame);}return cab;}
+export function animateWorld(time,route,distance,speed,throttle){water.material.color.setHSL(.49,.22,.35+Math.sin(time*.5)*.025);const {p,t}=sample(route,distance-1.5);for(let i=0;i<18;i++){const age=(time*.55+i/18)%1;dummy.position.copy(p).addScaledVector(t,-age*speed*1.6).add(V(age*3,4+age*8,age*2));dummy.scale.setScalar((.24+age*1.9)*(throttle>0?1:.35));dummy.updateMatrix();smoke.setMatrixAt(i,dummy.matrix);}smoke.instanceMatrix.needsUpdate=true;}
+export function createCab(){
+ const cab=new T.Group(),panelMat=new T.MeshStandardMaterial({color:0x263d3d,roughness:.8});
+ const panel=new T.Mesh(new T.BoxGeometry(2.15,.55,.8),panelMat);panel.position.set(0,-.5,-2.6);cab.add(panel);
+ const c=document.createElement('canvas');c.width=1024;c.height=256;const g=c.getContext('2d'),tex=new T.CanvasTexture(c);tex.colorSpace=T.SRGBColorSpace;
+ cab.userData.update=(speed,brake,throttle)=>{
+  g.fillStyle='#203334';g.fillRect(0,0,1024,256);
+  const values=[speed,5-brake*.04,throttle,72,2+throttle*.04],max=[90,6,100,100,8],units=['км/ч','бар','тяга %','вольт','масло'];
+  for(let i=0;i<5;i++){const x=110+i*200,y=112,r=76;g.fillStyle='#132328';g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fill();g.strokeStyle='#d9cc9a';g.lineWidth=3;g.stroke();
+   for(let j=0;j<=10;j++){const a=Math.PI*.75+j/10*Math.PI*1.5;g.strokeStyle=j>8?'#bd7751':'#b9c4af';g.lineWidth=2;g.beginPath();g.moveTo(x+Math.cos(a)*61,y+Math.sin(a)*61);g.lineTo(x+Math.cos(a)*69,y+Math.sin(a)*69);g.stroke();}
+   const angle=Math.PI*.75+Math.min(1,values[i]/max[i])*Math.PI*1.5;g.strokeStyle='#e9bc70';g.lineWidth=4;g.beginPath();g.moveTo(x,y);g.lineTo(x+Math.cos(angle)*55,y+Math.sin(angle)*55);g.stroke();g.fillStyle='#e6dcb1';g.textAlign='center';g.font='20px Arial';g.fillText(units[i],x,160);g.font='22px monospace';g.fillText(Math.round(values[i]),x,224);
+  }tex.needsUpdate=true;
+ };
+ cab.userData.update(0,0,0);
+ const face=new T.Mesh(new T.PlaneGeometry(1.8,.45),new T.MeshBasicMaterial({map:tex}));face.position.set(0,-.15,-2.17);face.rotation.x=-.12;cab.add(face);
+ for(const x of [-1.13,1.13]){const frame=new T.Mesh(new T.BoxGeometry(.09,1.9,.12),panelMat);frame.position.set(x,.15,-1.35);cab.add(frame);}return cab;
+}
