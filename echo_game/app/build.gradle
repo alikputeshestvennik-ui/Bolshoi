@@ -1,0 +1,21 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'ru.alim.echo'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'ru.alim.echo'
+        minSdk 26
+        targetSdk 34
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+        versionName '1.0'
+    }
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('ANDROID_KEYSTORE_PATH') ?: 'unused.keystore')
+            storePassword System.getenv('ANDROID_STORE_PASSWORD')
+            keyAlias System.getenv('ANDROID_KEY_ALIAS')
+            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release } }
+}

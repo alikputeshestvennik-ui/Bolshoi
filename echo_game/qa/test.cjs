@@ -1,0 +1,52 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const http=require('node:http');
+const root=path.resolve(__dirname,'../app/src/main/assets');
+const out=path.resolve(__dirname,'../delivery');fs.mkdirSync(out,{recursive:true});
+const server=http.createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname;const file=path.join(root,name==='/'?'index.html':name);if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}fs.readFile(file,(err,body)=>{if(err){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(body);});});
+(async()=>{
+await new Promise(r=>server.listen(4173,'127.0.0.1',r));
+const browser=await chromium.launch({headless:true});
+const context=await browser.newContext({viewport:{width:412,height:892},deviceScaleFactor:2,isMobile:true,hasTouch:true});
+const page=await context.newPage();const errors=[];const checks=[];
+page.on('pageerror',e=>errors.push(e.message));
+const check=(name,value)=>{assert.ok(value,name);checks.push(name);};
+try {
+await page.goto('http://127.0.0.1:4173/?qa');await page.waitForTimeout(400);
+await page.screenshot({path:path.join(out,'01-title.png')});
+await page.click('#how');check('Instructions open',await page.locator('#title').textContent()==='Сохрани свет.');await page.click('#continue');
+await page.click('#start');check('New game has full beacon',await page.evaluate(()=>echoQA.state().hp===100));
+await page.mouse.move(200,550);await page.mouse.down();await page.mouse.move(320,470);await page.waitForTimeout(400);await page.mouse.up();
+check('Pointer moves ship',await page.evaluate(()=>echoQA.state().player.x>260));
+await page.evaluate(()=>{const s=echoQA.state();s.enemies.length=0;s.enemies.push({x:220,y:300,hp:1,maxHp:1,type:'normal',speed:0,r:11,phase:0});echoQA.pulse();});
+check('Echo spends charge and destroys enemy',await page.evaluate(()=>echoQA.state().energy<10&&echoQA.state().score>=35));
+const score=await page.evaluate(()=>echoQA.state().score);await page.evaluate(()=>echoQA.pulse());check('Echo cannot fire without charge',await page.evaluate(()=>echoQA.state().score)===score);
+await page.evaluate(()=>{const s=echoQA.state(),p=s.player;s.enemies.length=0;s.enemies.push({x:p.x+80,y:p.y,hp:1,maxHp:1,type:'normal',speed:0,r:11,phase:0});});await page.waitForTimeout(800);
+check('Automatic shots hit enemies',await page.evaluate(()=>echoQA.state().score)>score);
+await page.evaluate(()=>{const s=echoQA.state();s.enemies.length=0;s.enemies.push({x:innerWidth/2,y:innerHeight*.49,hp:3,maxHp:3,type:'normal',speed:0,r:11,phase:0});echoQA.step(.01);});
+check('Enemy impact damages beacon',await page.evaluate(()=>echoQA.state().hp===90));
+await page.click('#pause');const pausedTime=await page.evaluate(()=>echoQA.state().total);await page.waitForTimeout(180);check('Pause freezes simulation',await page.evaluate(()=>echoQA.state().total)===pausedTime);await page.click('#continue');
+await page.evaluate(()=>{echoQA.clear();echoQA.step(.01);});check('Cleared sector opens upgrade',await page.evaluate(()=>echoQA.state().mode==='upgrade'));
+await page.screenshot({path:path.join(out,'03-upgrade.png')});await page.locator('.choice').first().click();check('Upgrade advances sector and repairs beacon',await page.evaluate(()=>echoQA.state().wave===2&&echoQA.state().hp===100));
+await page.evaluate(()=>{const s=echoQA.state();s.enemies.length=0;for(let i=0;i<8;i++){const a=i*Math.PI/4;s.enemies.push({x:206+Math.cos(a)*155,y:437+Math.sin(a)*205,hp:4,maxHp:4,type:i%3===0?'heavy':i%2?'fast':'normal',speed:0,r:i%3===0?15:10,phase:i});}echoQA.set({score:1240,wave:5,spawned:15,energy:100});});
+await page.waitForTimeout(120);await page.screenshot({path:path.join(out,'02-flight.png')});
+await page.evaluate(()=>{echoQA.set({hp:0});echoQA.step(.01);});check('Zero health ends run',await page.evaluate(()=>echoQA.state().mode==='lost'));
+await page.reload();check('Best score survives reload',Number(await page.locator('#record').textContent())>=1240);
+await page.click('#start');
+for(let i=1;i<8;i++){await page.evaluate(()=>{echoQA.clear();echoQA.step(.01);});check('Sector '+i+' completes',await page.evaluate(()=>echoQA.state().mode==='upgrade'));await page.locator('.choice').first().click();}
+check('Campaign reaches sector eight',await page.evaluate(()=>echoQA.state().wave===8));
+await page.evaluate(()=>{echoQA.set({waveTime:4});echoQA.step(.01);});check('Final boss spawns',await page.evaluate(()=>echoQA.state().enemies.some(e=>e.type==='boss')));
+await page.evaluate(()=>{echoQA.clear();echoQA.step(.01);});check('Final sector produces victory',await page.evaluate(()=>echoQA.state().mode==='win'));
+await page.screenshot({path:path.join(out,'04-victory.png')});await page.click('#home');
+await page.setViewportSize({width:360,height:640});check('Menu fits small screen',await page.locator('#start').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>0&&r.bottom<innerHeight;}));
+await page.click('#start');check('Echo button fits small screen',await page.locator('#pulse').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>0&&r.bottom<innerHeight;}));
+await page.evaluate(()=>window.echoPause());check('Lifecycle hook pauses game',await page.evaluate(()=>echoQA.state().mode==='pause'));
+check('No JavaScript runtime errors',errors.length===0);
+fs.writeFileSync(path.join(out,'test-results.json'),JSON.stringify({passed:checks.length,checks,errors,scope:'Chromium mobile viewport; native Android device not tested'},null,2));
+const deck=await context.newPage();await deck.goto('file://'+path.resolve(__dirname,'../presentation/index.html'));await deck.evaluate(()=>Promise.all([...document.images].map(img=>img.decode())));
+await deck.pdf({path:path.join(out,'ECHO-presentation.pdf'),width:'1280px',height:'720px',printBackground:true,preferCSSPageSize:true});
+console.log(JSON.stringify({passed:checks.length,errors}));
+}finally{await browser.close();server.close();}
+})().catch(e=>{console.error(e);server.close();process.exitCode=1;});

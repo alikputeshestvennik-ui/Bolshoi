@@ -1,0 +1,68 @@
+name: ECHO game · APK and presentation
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/echo-game']
+    paths: ['echo_game/**', '.github/workflows/ECHO_GAME.yml']
+permissions:
+  contents: write
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser tests, screenshots and PDF
+        working-directory: echo_game/qa
+        run: |
+          npm install --ignore-scripts
+          npx playwright install --with-deps chromium
+          npm test
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - name: Prepare existing signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -eu
+          test -n "$KEYSTORE"
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/echo-release.keystore"
+      - name: Build and lint signed Android APK
+        working-directory: echo_game
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/echo-release.keystore
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          gradle --no-daemon :app:lintRelease :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk delivery/ECHO.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify delivery/ECHO.apk
+          cd delivery
+          sha256sum ECHO.apk ECHO-presentation.pdf > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: echo-delivery
+          path: echo_game/delivery/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish game APK and presentation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "echo-v1-${GITHUB_RUN_NUMBER}" \
+            echo_game/delivery/ECHO.apk \
+            echo_game/delivery/ECHO-presentation.pdf \
+            echo_game/delivery/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title 'ЭХО · Последний маяк 1.0' \
+            --notes-file echo_game/RELEASE.md \
+            --latest=false

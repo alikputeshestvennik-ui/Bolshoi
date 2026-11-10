@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches-ignore:
+      - 'codex/echo-game'
       - 'codex/chatgpt-signin'
       - 'codex/light-design'
       - 'codex/request-redesign'
