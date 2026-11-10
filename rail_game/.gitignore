@@ -1,0 +1,10 @@
+.gradle/
+**/build/
+qa/node_modules/
+delivery/
+local.properties
+node_modules/
+app/src/main/assets/game.js
+app/src/main/assets/index.html
+app/src/main/assets/style.css
+app/src/main/assets/THREE-LICENSE.txt

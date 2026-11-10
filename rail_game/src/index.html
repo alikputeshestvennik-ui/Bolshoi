@@ -1,0 +1,17 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#16252b"><title>Перегон · Долина сосен</title><link rel="stylesheet" href="style.css"></head><body>
+<div id="world"></div><div id="vignette"></div>
+<header><div class="brand"><span class="railmark">Ⅱ</span> ПЕРЕГОН <small>ДОЛИНА СОСЕН</small></div><nav><button id="sound" aria-label="Звук">Звук выкл.</button><button id="quality">Графика: высокая</button><button id="light">Закат</button><button id="pause" hidden>Ⅱ Пауза</button></nav></header>
+<main id="menu"><div class="kicker">ЖЕЛЕЗНОДОРОЖНАЯ СМЕНА / 01</div><h1>Дорога<br>имеет <em>характер.</em></h1><p>Тяжёлый состав. Длинный тормозной путь.<br>И целая долина, которая ждёт тебя.</p><button id="start" class="primary">Принять смену <span>↗</span></button><button id="free" class="quiet">Свободный рейс</button><div class="menu-footer">3 СТАНЦИИ <i></i> 2 ВЕТКИ <i></i> ТВОЙ ЛОКОМОТИВ</div></main>
+<div id="dashboard" hidden>
+ <div class="topline"><div class="pill"><span class="live"></span> <span id="station-label">СОСНОВАЯ → НАГОРНАЯ</span></div><div class="pill"><span id="clock">06:00</span><span class="divider">/</span><span id="progress">РЕЙС 1 / 6</span></div></div>
+ <aside class="camera"><button id="cam-follow" class="active">Состав</button><button id="cam-cab">Кабина</button><button id="cam-map">Долина</button><button id="horn">Гудок</button></aside>
+ <div id="toast" hidden></div>
+ <div class="bottom">
+  <section class="order panel"><div class="label">ПУТЕВОЙ ЛИСТ <span id="timer">03:00</span></div><h2 id="destination">Нагорная</h2><p id="cargo">42 пассажира</p><div class="distance"><b id="distance">120</b><span id="distance-unit">м до платформы</span></div><div class="stationbar"><i id="dwell"></i></div><small id="instruction">Остановись у знака станции на 3 секунды</small></section>
+  <section class="driving panel"><div class="drive-top"><div><span class="label">ТЯГА</span><b id="power-value">0%</b></div><div class="speed"><strong id="speed">0</strong><small>км/ч</small></div><div class="limit"><span id="limit">64</span><small>ЛИМИТ</small></div></div><input id="power" type="range" min="0" max="100" value="0" step="5" aria-label="Тяга"><div class="drive-buttons"><button id="coast">Накат</button><button id="brake">Тормоз</button><button id="emergency">Экстренный</button></div><div class="safety"><i id="safety"></i></div></section>
+  <section class="route panel"><div class="label">СТРЕЛКА № 04 <span id="lock">ДОСТУПНА</span></div><svg viewBox="0 0 220 58"><path d="M5 29H60M60 29Q80 29 96 9H195M60 29Q80 29 96 49H195"/><path id="route-line" d="M5 29H60Q80 29 96 9H195"/></svg><div class="route-buttons"><button id="north" class="active">↗ Нагорная</button><button id="south">↘ Порт</button></div><div class="route-note" id="route-note">Горная ветка · через мост</div></section>
+ </div>
+</div>
+<section id="modal" hidden><div class="modal-card"><div class="kicker" id="modal-label">БРИФИНГ</div><h2 id="modal-title">Сначала — плавно.</h2><p id="modal-text"></p><button class="primary" id="modal-primary">В путь</button><button class="quiet" id="modal-home">Завершить смену</button></div></section>
+<div id="loading"><span>ПЕРЕГОН</span><p>Готовим состав и долину…</p></div><div id="rotate">Поверни телефон горизонтально<br><small>Так видно состав и пульт машиниста</small></div>
+<script src="game.js"></script></body></html>

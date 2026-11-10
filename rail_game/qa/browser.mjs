@@ -1,0 +1,34 @@
+import {chromium} from 'playwright';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import http from 'node:http';
+const root=path.resolve('app/src/main/assets'),out=path.resolve('delivery');fs.mkdirSync(out,{recursive:true});
+const server=http.createServer((req,res)=>{const p=new URL(req.url,'http://localhost').pathname;const file=path.join(root,p==='/'?'index.html':p);if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}fs.readFile(file,(err,data)=>{if(err){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(data);});});
+await new Promise(r=>server.listen(4173,'127.0.0.1',r));
+const browser=await chromium.launch({args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-dev-shm-usage']});
+const ctx=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1,hasTouch:true});const page=await ctx.newPage();page.setDefaultTimeout(60000);const errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
+const check=(name,value)=>{assert.ok(value,name);checks.push(name);};
+try{
+await page.goto('http://127.0.0.1:4173/?qa');await page.waitForFunction(()=>window.__railRendered===true);
+await page.screenshot({path:path.join(out,'01-menu.png')});
+check('3D geometry rendered',await page.evaluate(()=>railQA.renderInfo().triangles>50000));
+await page.click('#start');check('Briefing opens',await page.locator('#modal').isVisible());await page.click('#modal-primary');
+check('Shift begins',await page.evaluate(()=>railQA.state().mode==='play'));
+await page.locator('#power').evaluate(e=>{e.value=75;e.dispatchEvent(new Event('input',{bubbles:true}));});check('Throttle changes from actual control',await page.evaluate(()=>railQA.state().throttle===75));
+await page.click('#brake');check('Brake cuts power',await page.evaluate(()=>railQA.state().throttle===0&&railQA.state().brake===65));
+await page.click('#south');check('Turnout selects south branch',await page.evaluate(()=>railQA.state().route==='south'));
+await page.click('#north');
+await page.evaluate(()=>{railQA.set({position:railQA.lengths.north.split-3,speed:0,throttle:0,brake:100});railQA.tick(0);});check('Occupied turnout disables buttons',await page.locator('#south').isDisabled());
+await page.evaluate(()=>{railQA.set({position:railQA.lengths.north.station-20});railQA.camera('follow');});await page.waitForTimeout(600);await page.screenshot({path:path.join(out,'02-train.png')});
+await page.click('#cam-cab');await page.waitForTimeout(500);await page.screenshot({path:path.join(out,'03-cab.png')});check('Cab button selects cab view',await page.locator('#cam-cab').getAttribute('class')==='active');
+await page.click('#cam-map');await page.waitForTimeout(500);await page.screenshot({path:path.join(out,'04-valley.png')});
+await page.click('#light');check('Time of day changes',await page.locator('#light').textContent()==='Утро');await page.click('#light');
+await page.click('#pause');const pos=await page.evaluate(()=>railQA.state().position);await page.waitForTimeout(300);check('Pause preserves train position',await page.evaluate(()=>railQA.state().position)===pos);await page.click('#modal-primary');
+await page.evaluate(()=>{railQA.set({position:railQA.station(),speed:0,throttle:0,brake:100});for(let i=0;i<32;i++)railQA.tick(.1);});check('Station dwell completes contract',await page.evaluate(()=>railQA.state().delivered===1));
+await page.click('#quality');check('Light graphics mode available',await page.locator('#quality').textContent()==='Графика: лёгкая');
+await page.setViewportSize({width:844,height:390});await page.waitForTimeout(300);
+for(const id of ['power','brake','north','south','cam-cab'])check('Mobile landscape control fits: '+id,await page.locator('#'+id).evaluate(el=>{const r=el.getBoundingClientRect();return r.x>=0&&r.y>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
+await page.screenshot({path:path.join(out,'05-mobile.png')});
+await page.evaluate(()=>window.railPause());check('Android pause hook works',await page.evaluate(()=>railQA.state().mode==='pause'));await page.click('#modal-home');await page.click('#free');await page.click('#modal-primary');check('Free drive has no contracts',await page.evaluate(()=>railQA.state().free===true));
+const contiguous=await page.evaluate(()=>{for(const r of ['north','south']){const l=railQA.lengths[r];for(const d of [l.split,l.merge,l.total]){const a=railQA.sample(r,d-.001).p,b=railQA.sample(r,d+.001).p;if(Math.hypot(...a.map((v,i)=>v-b[i]))>.1)return false;}}return true;});check('All track joins are continuous',contiguous);
+check('No runtime errors',errors.length===0);fs.writeFileSync(path.join(out,'test-results.json'),JSON.stringify({passed:checks.length,checks,errors,graphics:await page.evaluate(()=>railQA.renderInfo()),scope:'Chromium WebGL/SwiftShader, desktop and mobile landscape; no physical Android test'},null,2));
+const pdf=await ctx.newPage();await pdf.goto('file://'+path.resolve('presentation/index.html'));await pdf.evaluate(()=>Promise.all([...document.images].map(i=>i.decode())));await pdf.pdf({path:path.join(out,'PEREGON-presentation.pdf'),width:'1280px',height:'720px',printBackground:true,preferCSSPageSize:true});await pdf.screenshot({path:path.join(out,'06-presentation.png')});
+console.log(JSON.stringify({checks:checks.length,errors}));
+}finally{await browser.close();server.close();}
