@@ -6,7 +6,7 @@ android {
         applicationId 'ru.alim.echo'
         minSdk 26
         targetSdk 34
-        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+        versionCode = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
         versionName '1.0'
     }
     signingConfigs {

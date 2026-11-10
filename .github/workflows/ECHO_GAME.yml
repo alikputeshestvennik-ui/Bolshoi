@@ -21,6 +21,11 @@ jobs:
           npm install --ignore-scripts
           npx playwright install --with-deps chromium
           npm test
+      - uses: actions/upload-artifact@v7
+        with:
+          name: echo-preview
+          path: echo_game/delivery/
+          retention-days: 7
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
