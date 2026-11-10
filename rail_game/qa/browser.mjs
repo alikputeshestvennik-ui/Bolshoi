@@ -16,7 +16,7 @@ await page.click('#brake');check('Brake cuts power',await page.evaluate(()=>rail
 await page.click('#south');check('Turnout selects south branch',await page.evaluate(()=>railQA.state().route==='south'));
 await page.click('#north');
 await page.evaluate(()=>{railQA.set({position:railQA.lengths.north.split-3,speed:0,throttle:0,brake:100});railQA.tick(0);});check('Occupied turnout disables buttons',await page.locator('#south').isDisabled());
-await page.evaluate(()=>{railQA.set({position:railQA.lengths.north.station-20});railQA.camera('follow');});await page.waitForTimeout(600);await page.screenshot({path:path.join(out,'02-train.png')});
+await page.evaluate(()=>{railQA.set({position:railQA.lengths.north.station+4});railQA.camera('follow');railQA.clearToast();});await page.waitForTimeout(600);await page.screenshot({path:path.join(out,'02-train.png')});
 await page.click('#cam-cab');await page.waitForTimeout(500);await page.screenshot({path:path.join(out,'03-cab.png')});check('Cab button selects cab view',await page.locator('#cam-cab').getAttribute('class')==='active');
 await page.click('#cam-map');await page.waitForTimeout(500);await page.screenshot({path:path.join(out,'04-valley.png')});
 await page.click('#light');check('Time of day changes',await page.locator('#light').textContent()==='Утро');await page.click('#light');
