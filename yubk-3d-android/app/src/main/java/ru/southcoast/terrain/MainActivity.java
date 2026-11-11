@@ -1,6 +1,9 @@
 package ru.southcoast.terrain;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.view.Gravity;
+import android.view.View;
 import android.os.Bundle;
 import android.opengl.GLSurfaceView;
 import android.opengl.GLU;
@@ -14,6 +17,60 @@ import javax.microedition.khronos.egl.EGLConfig;
 
 public class MainActivity extends Activity {
     private TerrainView terrain;
+    private Navigation navigation;
+    private Navigation.MapView miniMap;
+    private TextView location;
+    private float mapX,mapZ,mapHeading;
+    private long lastLocationUpdate;
+    private boolean lastWalkMode;
+    private final String[] cities={"Севастополь","Балаклава","Форос","Алупка","Ялта","Алушта"};
+    private final double[][] cityCoordinates={{44.6167,33.525},{44.5,33.6},{44.391,33.788},{44.419,34.044},{44.495,34.164},{44.676,34.41}};
+    private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
+    private void teleport(float[] point){
+        if(point==null){Toast.makeText(this,"Рядом нет доступной точки. Выберите ближе к дороге.",Toast.LENGTH_LONG).show();return;}
+        terrain.queueEvent(() -> {
+            WalkScene w=terrain.render.walk;
+            if(w.blocked(point[0],point[1])){runOnUiThread(() -> Toast.makeText(this,"Точка недоступна для прогулки",Toast.LENGTH_SHORT).show());return;}
+            w.x=point[0];w.z=point[1];w.heading=point[2];w.pitch=0;w.forward=0;w.lastFrame=0;
+            terrain.render.walkMode=true;lastLocationUpdate=0;terrain.requestRender();
+        });
+    }
+    private void showMap(){
+        terrain.queueEvent(() -> terrain.render.walk.forward=0);
+        LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(12),0,dp(12),0);
+        TextView hint=new TextView(this);hint.setText("Север сверху. Нажмите на карту: переход к доступной дороге в радиусе 100 м. Голубая стрелка — ваша виртуальная позиция.");content.addView(hint);
+        final AlertDialog[] dialog=new AlertDialog[1];
+        Navigation.MapView map=new Navigation.MapView(this,navigation,terrain.render.walk,(x,z) -> {
+            float[] point=navigation.nearest(x,z);
+            if(point!=null)dialog[0].dismiss();teleport(point);
+        });
+        map.position(mapX,mapZ,mapHeading);
+        content.addView(map,new LinearLayout.LayoutParams(-1,dp(280)));
+        Button streets=new Button(this);streets.setText("Выбрать улицу по названию");
+        streets.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Ялта · доступные улицы")
+            .setItems(navigation.placeNames,(d,i) -> {dialog[0].dismiss();teleport(navigation.places[i]);}).setNegativeButton("Отмена",null).show());content.addView(streets);
+        dialog[0]=new AlertDialog.Builder(this).setTitle("Карта прогулки · Ялта").setView(content).setNegativeButton("Закрыть",null).create();dialog[0].show();
+    }
+    private void showCities(){
+        new AlertDialog.Builder(this).setTitle("Центр общего вида · города")
+            .setItems(cities,(d,i) -> terrain.queueEvent(() -> {
+                double lat=cityCoordinates[i][0],lon=cityCoordinates[i][1],phi=Math.toRadians(44.55),e=.00669437999014;
+                double n=6378137/Math.sqrt(1-e*Math.sin(phi)*Math.sin(phi));
+                double m=6378137*(1-e)/Math.pow(1-e*Math.sin(phi)*Math.sin(phi),1.5);
+                TerrainRenderer r=terrain.render;r.focusX=(float)(Math.toRadians(lon-33.925)*n*Math.cos(phi)/1000);r.focusZ=(float)(-Math.toRadians(lat-44.55)*m/1000);
+                r.overviewLabel=String.format(java.util.Locale.ROOT,"Центр обзора: %s · %.4f° N, %.4f° E\nДетальная прогулка доступна на карте района Ялты",cities[i],lat,lon);
+                r.walkMode=false;r.walk.forward=0;r.zoom=6;r.yaw=0;r.tilt=55;lastLocationUpdate=0;terrain.requestRender();
+            })).setNegativeButton("Отмена",null).show();
+    }
+    // Called on the GL thread; UI receives immutable position snapshots.
+    private void updateLocation(){
+        TerrainRenderer r=terrain.render;long now=System.nanoTime();
+        if(r.walkMode==lastWalkMode && now-lastLocationUpdate<250000000L)return;
+        lastLocationUpdate=now;lastWalkMode=r.walkMode;
+        final boolean walking=r.walkMode;final float x=r.walk.x,z=r.walk.z,h=r.walk.heading;
+        final String text=walking ? navigation.location(x,z,h) : r.overviewLabel;
+        runOnUiThread(() -> {location.setText(text);mapX=x;mapZ=z;mapHeading=h;miniMap.setVisibility(walking?View.VISIBLE:View.GONE);miniMap.position(x,z,h);});
+    }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         LinearLayout layout = new LinearLayout(this);
@@ -28,14 +85,23 @@ public class MainActivity extends Activity {
         title.setTextSize(16); title.setPadding(20,12,20,12);
         layout.addView(title);
         try {
+            navigation=new Navigation(getAssets());
             terrain = new TerrainView();
-            layout.addView(terrain,new LinearLayout.LayoutParams(-1,0,1));
+            location=new TextView(this);location.setTextSize(12);location.setPadding(dp(10),dp(4),dp(10),dp(4));layout.addView(location);
+            FrameLayout viewport=new FrameLayout(this);viewport.addView(terrain,new FrameLayout.LayoutParams(-1,-1));
+            miniMap=new Navigation.MapView(this,navigation,terrain.render.walk,null);miniMap.setOnClickListener(v -> showMap());
+            FrameLayout.LayoutParams miniParams=new FrameLayout.LayoutParams(dp(148),dp(112),Gravity.TOP|Gravity.END);miniParams.setMargins(0,dp(6),dp(6),0);viewport.addView(miniMap,miniParams);miniMap.setVisibility(View.GONE);
+            mapX=terrain.render.walk.x;mapZ=terrain.render.walk.z;mapHeading=terrain.render.walk.heading;
+            layout.addView(viewport,new LinearLayout.LayoutParams(-1,0,1));
+            LinearLayout destinations=new LinearLayout(this);
+            Button mapButton=new Button(this);mapButton.setText("Карта / телепорт");mapButton.setOnClickListener(v -> showMap());destinations.addView(mapButton,new LinearLayout.LayoutParams(0,-2,1));
+            Button cityButton=new Button(this);cityButton.setText("Города ЮБК");cityButton.setOnClickListener(v -> showCities());destinations.addView(cityButton,new LinearLayout.LayoutParams(0,-2,1));layout.addView(destinations);
             Button reset = new Button(this); reset.setText("Вернуть общий вид");
-            reset.setOnClickListener(v -> terrain.queueEvent(() -> { terrain.render.walkMode=false; terrain.render.walk.forward=0; terrain.render.yaw=0; terrain.render.tilt=55; terrain.render.zoom=1; terrain.requestRender(); }));
+            reset.setOnClickListener(v -> terrain.queueEvent(() -> { terrain.render.walkMode=false; terrain.render.walk.forward=0; terrain.render.yaw=0; terrain.render.tilt=55; terrain.render.zoom=1; terrain.render.focusX=0;terrain.render.focusZ=0;terrain.render.overviewLabel="ЮБК · общий вид · север сверху при сбросе";lastLocationUpdate=0; terrain.requestRender(); }));
             layout.addView(reset);
             LinearLayout controls = new LinearLayout(this);
             Button walk = new Button(this); walk.setText("Прогулка · Ялта");
-            walk.setOnClickListener(v -> terrain.queueEvent(() -> {terrain.render.walk.reset();terrain.render.walkMode=true;terrain.requestRender();}));
+            walk.setOnClickListener(v -> terrain.queueEvent(() -> {terrain.render.walk.reset();terrain.render.walkMode=true;lastLocationUpdate=0;terrain.requestRender();}));
             controls.addView(walk,new LinearLayout.LayoutParams(0,-2,2));
             for(int direction : new int[]{-1,1}) {
                 Button move = new Button(this);move.setText(direction==1 ? "Вперёд" : "Назад");
@@ -90,7 +156,8 @@ public class MainActivity extends Activity {
     class TerrainRenderer implements GLSurfaceView.Renderer {
         FloatBuffer vertices, colors;
         final WalkScene walk; boolean walkMode=false;
-        int count; float yaw=0,tilt=55,zoom=1,aspect=1;
+        int count; float yaw=0,tilt=55,zoom=1,aspect=1,focusX=0,focusZ=0;
+        String overviewLabel="ЮБК · общий вид · выберите город или карту прогулки";
         TerrainRenderer() throws IOException {
             walk=new WalkScene(getAssets());
             try(DataInputStream in=new DataInputStream(getAssets().open("terrain.bin"))){
@@ -121,7 +188,7 @@ public class MainActivity extends Activity {
         public void onSurfaceCreated(GL10 gl,EGLConfig config){gl.glClearColor(.035f,.065f,.09f,1);gl.glEnable(GL10.GL_DEPTH_TEST);}
         public void onSurfaceChanged(GL10 gl,int w,int h){gl.glViewport(0,0,w,h);aspect=(float)w/Math.max(1,h);}
         public void onDrawFrame(GL10 gl){
-            if(walkMode){walk.draw(gl,aspect);if(walk.forward!=0)terrain.requestRender();return;}
+            if(walkMode){walk.draw(gl,aspect);updateLocation();if(walk.forward!=0)terrain.requestRender();return;}
             gl.glClearColor(.035f,.065f,.09f,1);
             gl.glClear(GL10.GL_COLOR_BUFFER_BIT|GL10.GL_DEPTH_BUFFER_BIT);
             gl.glMatrixMode(GL10.GL_PROJECTION);gl.glLoadIdentity();
@@ -129,10 +196,11 @@ public class MainActivity extends Activity {
             gl.glOrthof(-halfY*aspect,halfY*aspect,-halfY,halfY,1,500);
             gl.glMatrixMode(GL10.GL_MODELVIEW);gl.glLoadIdentity();
             GLU.gluLookAt(gl,0,0,200,0,0,0,0,1,0);
-            gl.glRotatef(tilt,1,0,0);gl.glRotatef(yaw,0,1,0);
+            gl.glRotatef(tilt,1,0,0);gl.glRotatef(yaw,0,1,0);gl.glTranslatef(-focusX,0,-focusZ);
             gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
             gl.glVertexPointer(3,GL10.GL_FLOAT,0,vertices);gl.glColorPointer(4,GL10.GL_FLOAT,0,colors);
             gl.glDrawArrays(GL10.GL_TRIANGLES,0,count);
+            updateLocation();
         }
     }
 }

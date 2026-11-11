@@ -25,7 +25,9 @@ jobs:
         with:
           gradle-version: '8.9'
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - run: python3 tools/validate_walk.py
+      - run: |
+          python3 tools/validate_walk.py
+          python3 tools/validate_navigation.py
         working-directory: yubk-3d-android
       - run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: yubk-3d-android
