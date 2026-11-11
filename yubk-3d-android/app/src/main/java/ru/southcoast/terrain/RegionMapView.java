@@ -95,6 +95,7 @@ final class RegionMapView extends View {
             c.drawPath(path, paint);
         }
 
+        drawRoads(c);
         drawPlaces(c);
         if (selection != null) {
             paint.setStyle(Paint.Style.FILL);
@@ -109,6 +110,21 @@ final class RegionMapView extends View {
         }
         drawMarker(c);
         if (!compact) drawScale(c);
+    }
+
+    void drawRoads(Canvas c) {
+        float[] r = region.roads;
+        if (r == null || r.length < 4) return;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setColor(Color.argb(78, 226, 218, 194));
+        paint.setStrokeWidth((compact ? 0.6f : 1.1f) * density);
+        path.reset();
+        for (int i = 0; i + 3 < r.length; i += 4) {
+            path.moveTo(px(r[i]), py(r[i + 1]));
+            path.lineTo(px(r[i + 2]), py(r[i + 3]));
+        }
+        c.drawPath(path, paint);
     }
 
     void drawPlaces(Canvas c) {

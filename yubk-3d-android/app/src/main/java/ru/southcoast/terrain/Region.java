@@ -55,11 +55,25 @@ final class Region {
         }
     }
 
+    static final class Street {
+        final String name, tileId;
+        final float lx, lz, heading;
+        Street(JSONObject j) throws JSONException {
+            name = j.getString("name");
+            tileId = j.optString("tile", "tile_00");
+            lx = (float) j.getDouble("lx");
+            lz = (float) j.getDouble("lz");
+            heading = (float) j.getDouble("heading");
+        }
+    }
+
     final String name;
     final float originLat, originLon, sx, sz;
     final float worldLeft, worldTop, worldRight, worldBottom;
     final float[] route;
+    final float[] roads;
     final Place[] places;
+    final Street[] streets;
     final Tile[] tiles;
     final Bitmap map;
 
@@ -97,6 +111,20 @@ final class Region {
             JSONArray tileJson = j.getJSONArray("tiles");
             tiles = new Tile[tileJson.length()];
             for (int i = 0; i < tiles.length; i++) tiles[i] = new Tile(tileJson.getJSONObject(i));
+            JSONArray roadsJson = j.optJSONArray("roads");
+            int roadCount = roadsJson == null ? 0 : roadsJson.length();
+            roads = new float[roadCount * 4];
+            for (int i = 0; i < roadCount; i++) {
+                JSONArray seg = roadsJson.getJSONArray(i);
+                roads[i * 4] = (float) seg.getDouble(0);
+                roads[i * 4 + 1] = (float) seg.getDouble(1);
+                roads[i * 4 + 2] = (float) seg.getDouble(2);
+                roads[i * 4 + 3] = (float) seg.getDouble(3);
+            }
+            JSONArray streetJson = j.optJSONArray("streets");
+            int streetCount = streetJson == null ? 0 : streetJson.length();
+            streets = new Street[streetCount];
+            for (int i = 0; i < streetCount; i++) streets[i] = new Street(streetJson.getJSONObject(i));
             try (InputStream image = assets.open(j.getString("map"))) {
                 map = BitmapFactory.decodeStream(image);
             }
@@ -107,6 +135,11 @@ final class Region {
 
     Tile tileForRouteM(float routeM) {
         for (Tile tile : tiles) if (routeM >= tile.startM && routeM <= tile.endM) return tile;
+        return null;
+    }
+
+    Tile tileById(String id) {
+        for (Tile tile : tiles) if (tile.id.equals(id)) return tile;
         return null;
     }
 

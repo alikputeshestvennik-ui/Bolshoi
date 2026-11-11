@@ -7,7 +7,7 @@ import android.view.View;
 
 /** Compact canvas-drawn control used instead of rows of default Android buttons. */
 final class HudButton extends View {
-    static final int MAP = 1, PLACES = 2, ROUTE = 3, SPEED = 4, WALK = 5, DRIVE = 6, FORWARD = 7, BACK = 8, PLAY = 9;
+    static final int MAP = 1, PLACES = 2, ROUTE = 3, SPEED = 4, WALK = 5, DRIVE = 6, FORWARD = 7, BACK = 8, PLAY = 9, STREETS = 10;
 
     final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     final Path path = new Path();
@@ -121,6 +121,12 @@ final class HudButton extends View {
             case PLAY:
                 paint.setStyle(Paint.Style.FILL);
                 path.reset(); path.moveTo(cx - s * .45f, cy - s); path.lineTo(cx + s * .75f, cy); path.lineTo(cx - s * .45f, cy + s); path.close(); c.drawPath(path, paint);
+                break;
+            case STREETS:
+                path.reset();
+                path.moveTo(cx, cy - s); path.lineTo(cx, cy + s);
+                path.moveTo(cx - s, cy); path.lineTo(cx + s, cy);
+                c.drawPath(path, paint);
                 break;
             default:
                 c.drawCircle(cx, cy, s * .7f, paint);

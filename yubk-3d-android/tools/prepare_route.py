@@ -35,11 +35,11 @@ ROUTE_DIR = ASSETS / "route"
 
 REGION_BOUNDS = (33.35, 44.35, 34.50, 44.75)
 ORIGIN_LAT, ORIGIN_LON = 44.55, 33.95
-GRID_STEP = 25.0
-ROAD_STEP_MAIN = 3.0
-ROAD_STEP_OTHER = 6.0
+GRID_STEP = 18.0
+ROAD_STEP_MAIN = 2.0
+ROAD_STEP_OTHER = 3.5
 CORRIDOR_M = 520.0
-MAX_WINDOWS_PER_TILE = 4200
+MAX_WINDOWS_PER_TILE = 6000
 
 # WGS84 metres per degree at the latitude of the South Coast.
 _phi = math.radians(44.55)
@@ -458,6 +458,13 @@ def load_region_osm():
     return json.loads(gzip.decompress(path.read_bytes()))
 
 
+def load_water():
+    path = ROOT / "data/water_osm.json.gz"
+    if not path.exists():
+        return []
+    return json.loads(gzip.decompress(path.read_bytes())).get("elements", [])
+
+
 def load_chunks(route):
     meta_path = CACHE / "route_osm/chunks.json"
     if not meta_path.exists():
@@ -627,7 +634,7 @@ def write_png(path, width, height, rgb: bytes):
     path.write_bytes(png)
 
 
-def build_region_map(region_osm):
+def build_region_map(region_osm, water):
     """Render a hill-shaded regional backdrop and road context as a PNG."""
     try:
         from PIL import Image, ImageDraw
@@ -679,8 +686,8 @@ def build_region_map(region_osm):
         if len(pts) > 2:
             draw.polygon(pts, fill=(120, 120, 110, 52 if tags.get("landuse") == "residential" else 70))
     # Major roads; the highlighted route is drawn by Android on top.
-    road_colors = {"trunk": (216, 193, 142, 220), "primary": (207, 188, 145, 200), "secondary": (195, 188, 160, 180), "tertiary": (187, 184, 165, 150)}
-    widths = {"trunk": 4, "primary": 3, "secondary": 2, "tertiary": 1}
+    road_colors = {"trunk": (216, 193, 142, 220), "primary": (207, 188, 145, 200), "secondary": (195, 188, 160, 180), "tertiary": (187, 184, 165, 150), "residential": (168, 168, 154, 130), "living_street": (168, 168, 154, 130), "pedestrian": (172, 166, 148, 130), "unclassified": (178, 176, 158, 130), "service": (160, 162, 150, 110)}
+    widths = {"trunk": 4, "primary": 3, "secondary": 2, "tertiary": 1, "residential": 1, "living_street": 1, "pedestrian": 1, "unclassified": 1, "service": 1}
     for element in region_osm.get("elements", []):
         tags = element.get("tags", {})
         cls = tags.get("highway")
@@ -693,6 +700,20 @@ def build_region_map(region_osm):
             pts.append((px, py))
         if len(pts) > 1:
             draw.line(pts, fill=road_colors[cls], width=widths[cls], joint="curve")
+    # Water: rivers, streams, canals, drains and ponds/lakes.
+    water_px = lambda p: ((p["lon"] - west) / (east - west) * (W - 1), (north - p["lat"]) / (north - south) * (H - 1))
+    for el in water:
+        tags = el.get("tags", {})
+        pts = [water_px(p) for p in el.get("geometry", [])]
+        if len(pts) < 2:
+            continue
+        if tags.get("natural") == "water":
+            if len(pts) > 2:
+                draw.polygon(pts, fill=(66, 126, 160, 170))
+        elif tags.get("waterway") in ("river", "stream", "canal", "drain"):
+            width = {"river": 3, "stream": 1, "canal": 2, "drain": 1}.get(tags.get("waterway"), 1)
+            draw.line(pts, fill=(78, 138, 172, 210), width=width, joint="curve")
+
     # Coastline accent.
     for element in region_osm.get("elements", []):
         tags = element.get("tags", {})
@@ -722,7 +743,7 @@ def choose_spawn(rxz, cumulative, tile_start, tile_end, tile_bounds, origin_lat,
     return idx
 
 
-def build_tile(item, rxz, cumulative, headings, ways):
+def build_tile(item, rxz, cumulative, headings, ways, water):
     n, start, end, (south, west, north, east), _ = item
     origin_lat, origin_lon = (south + north) / 2, (west + east) / 2
 
@@ -736,7 +757,7 @@ def build_tile(item, rxz, cumulative, headings, ways):
     span_x = (east - west) * SX
     span_z = (north - south) * SZ
     step = GRID_STEP
-    while (span_x / step + 1) * (span_z / step + 1) > 90000:
+    while (span_x / step + 1) * (span_z / step + 1) > 130000:
         step *= 1.25
     w = max(3, int(math.ceil(span_x / step)) + 1)
     h = max(3, int(math.ceil(span_z / step)) + 1)
@@ -798,6 +819,42 @@ def build_tile(item, rxz, cumulative, headings, ways):
             c11 = terrain_color(xs[c + 1], zs[r + 1], raw_h[r + 1][c + 1], slope(c + 1, r + 1))
             mesh.tri_rgb(p00, p01, p10, c00, c01, c10)
             mesh.tri_rgb(p10, p01, p11, c10, c01, c11)
+
+    # Water: rivers, streams, canals, drains and ponds/lakes from OSM.
+    water_color = (0.10, 0.33, 0.45)
+    water_width = {"river": 13.0, "stream": 5.0, "canal": 9.0, "drain": 4.5}
+    for el in water:
+        tags = el.get("tags", {})
+        pts = [local(p["lat"], p["lon"]) for p in el.get("geometry", [])]
+        if not pts:
+            continue
+        ww = tags.get("waterway")
+        closed = len(pts) > 3 and dist(pts[0], pts[-1]) < 0.8
+        if tags.get("natural") == "water" or (ww and closed):
+            if not any(xmin - 20 <= x0 <= xmax + 20 and zmin - 20 <= z0 <= zmax + 20 for x0, z0 in pts):
+                continue
+            poly = simplify_polygon([(x0, z0) for x0, z0 in pts], 1.0)
+            if len(poly) < 3:
+                continue
+            level = min(ground_at(x0, z0) for x0, z0 in poly) + 0.08
+            for tri in triangulate(poly):
+                mesh.tri((tri[0][0], level, tri[0][1]), (tri[1][0], level, tri[1][1]), (tri[2][0], level, tri[2][1]), water_color)
+            continue
+        if ww not in water_width:
+            continue
+        for run in clip_runs(pts, tile_bounds):
+            if line_length(run) < 2.0:
+                continue
+            dense = catmull_rom(run, 6.0)
+            if len(dense) < 2:
+                continue
+            half = water_width[ww] / 2
+            for a, b in zip(dense, dense[1:]):
+                length = math.hypot(b[0] - a[0], b[1] - a[1])
+                if length < 0.1:
+                    continue
+                level = min(ground_at(a[0], a[1]), ground_at(b[0], b[1])) + 0.08
+                strip2(mesh, a, b, half, 0.0, level, level, water_color)
 
     # OSM traffic ways: clip to the tile, then draw layered road ribbons.
     roads_all = []
@@ -994,14 +1051,14 @@ def build_tile(item, rxz, cumulative, headings, ways):
 
     # Vegetation: cypress-like uprights and broad coastal crowns along the route.
     rng = random.Random(7300 + n)
-    for i in range(0, len(route_local) - 1, 8):
+    for i in range(0, len(route_local) - 1, 5):
         a, b = route_local[i], route_local[i + 1]
         length = math.hypot(b[0] - a[0], b[1] - a[1])
         if length < 0.1:
             continue
         nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
         for side in (-1, 1):
-            if rng.random() < 0.45:
+            if rng.random() < 0.6:
                 off = rng.uniform(9, 28)
                 t = rng.random()
                 x = a[0] + (b[0] - a[0]) * t + nx * side * off
@@ -1027,6 +1084,36 @@ def build_tile(item, rxz, cumulative, headings, ways):
         name = tags.get("name:ru") or tags.get("name") or "Безымянная дорога / дорожка"
         for a, b in zip(run, run[1:]):
             nav_roads.append([round(a[0], 2), round(a[1], 2), round(b[0], 2), round(b[1], 2), name])
+    streets = []
+    seen_streets = {}
+    for way_id, run, tags in roads_all:
+        cls = tags.get("highway")
+        if cls not in ("residential", "tertiary", "secondary", "primary", "unclassified", "living_street", "pedestrian"):
+            continue
+        name = (tags.get("name:ru") or tags.get("name") or "").strip()
+        if len(name) < 2 or name == "Южнобережное шоссе":
+            continue
+        length = line_length(run)
+        if length < 20:
+            continue
+        prev = seen_streets.get(name)
+        if prev is None or length > prev[0]:
+            seen_streets[name] = (length, run)
+    for name, (_, run) in sorted(seen_streets.items()):
+        total = line_length(run)
+        target = total / 2
+        acc = 0.0
+        for a, b in zip(run, run[1:]):
+            seg = dist(a, b)
+            if acc + seg >= target:
+                t = (target - acc) / seg if seg > 0 else 0
+                mx = a[0] + (b[0] - a[0]) * t
+                mz = a[1] + (b[1] - a[1]) * t
+                heading = math.degrees(math.atan2(b[0] - a[0], -(b[1] - a[1])))
+                streets.append({"name": name, "lx": round(mx, 2), "lz": round(mz, 2), "heading": round(heading, 1)})
+                break
+            acc += seg
+
     points = []
     seen_names = {}
     for i, (gx, gz) in enumerate(rxz):
@@ -1058,6 +1145,7 @@ def build_tile(item, rxz, cumulative, headings, ways):
         "heights": [[round(v, 2) for v in row] for row in ground],
         "spawn": spawn,
         "buildings": [poly for _, poly, _ in buildings if len(poly) >= 3],
+        "streets": streets,
         "counts": {"buildings": len(buildings), "road_segments": sum(1 for _ in nav_roads), "vertices": 0},
         "source": "© OpenStreetMap contributors, ODbL 1.0; Mapzen/Tilezen Skadi (SRTM)",
         "route_start_m": start * 1000.0,
@@ -1105,21 +1193,28 @@ def main():
     ROUTE_DIR.mkdir(parents=True, exist_ok=True)
     route = load_route()
     region_osm = load_region_osm()
+    water = load_water()
     chunks = load_chunks(route)
     region, rxz, cumulative, headings = build_region(route, region_osm, chunks)
-    build_region_map(region_osm)
+    build_region_map(region_osm, water)
     print(f"region: {region['length_m']/1000:.1f} km, {len(region['tiles'])} tiles, {len(region['places'])} places")
     if args.map_only:
         return
     selected = set(args.tile) if args.tile else None
     ways = merge_osm(chunks)
+    streets_all = []
     for item in chunks:
         n = item[0]
         if selected is not None and n not in selected:
             continue
         print(f"building tile {n:02d} ...", flush=True)
-        meta, nav = build_tile(item, rxz, cumulative, headings, ways)
-        print(f"  {meta['counts']['vertices']:,} vertices, {meta['counts']['buildings']} buildings, {meta['counts']['road_segments']} road segments", flush=True)
+        meta, nav = build_tile(item, rxz, cumulative, headings, ways, water)
+        streets_all.extend({"tile": f"tile_{n:02d}", "name": st["name"], "lx": st["lx"], "lz": st["lz"], "heading": st["heading"]} for st in meta.get("streets", []))
+        print(f"  {meta['counts']['vertices']:,} vertices, {meta['counts']['buildings']} buildings, {meta['counts']['road_segments']} road segments, {len(meta.get('streets', []))} streets", flush=True)
+
+    region["streets"] = streets_all
+    (ROUTE_DIR / "region.json").write_text(json.dumps(region, ensure_ascii=False, separators=(",", ":")))
+    print(f"streets total: {len(streets_all)}")
 
 
 if __name__ == "__main__":

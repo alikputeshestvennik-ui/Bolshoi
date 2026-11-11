@@ -90,24 +90,38 @@ public class MainActivity extends Activity {
     }
 
     private void openCandidate(Region.Candidate candidate, boolean showProgress) {
-        if (candidate == null || candidate.tile == null || terrain == null) return;
-        if (switchingTile) return;
+        if (candidate == null || candidate.tile == null) return;
+        openAt(candidate.tile, candidate.localX, candidate.localZ, candidate.heading, "Загрузка участка\n" + candidate.tile.name, showProgress);
+    }
+
+    private void openStreet(Region.Street street) {
+        if (street == null) return;
+        Region.Tile tile = region.tileById(street.tileId);
+        if (tile == null) {
+            Toast.makeText(this, "Участок этой улицы ещё готовится", Toast.LENGTH_LONG).show();
+            return;
+        }
+        openAt(tile, street.lx, street.lz, street.heading, "Загрузка улицы\n" + street.name, true);
+    }
+
+    private void openAt(Region.Tile tile, float localX, float localZ, float heading, String label, boolean showProgress) {
+        if (tile == null || terrain == null || switchingTile) return;
         switchingTile = true;
         if (showProgress && loading != null) {
-            loading.setText("Загрузка участка\n" + candidate.tile.name);
+            loading.setText(label);
             loading.setVisibility(View.VISIBLE);
         }
         terrain.queueEvent(() -> {
             try {
-                WalkScene scene = new WalkScene(getAssets(), "route/" + candidate.tile.id);
-                scene.x = candidate.localX;
-                scene.z = candidate.localZ;
-                scene.heading = candidate.heading;
+                WalkScene scene = new WalkScene(getAssets(), "route/" + tile.id);
+                scene.x = localX;
+                scene.z = localZ;
+                scene.heading = heading;
                 scene.pitch = 0;
                 scene.forward = 0;
                 scene.moveSpeed = SPEEDS[speedIndex];
                 terrain.setScene(scene);
-                currentTile = candidate.tile;
+                currentTile = tile;
                 runOnUiThread(() -> {
                     hasWalked = true;
                     switchingTile = false;
@@ -122,7 +136,7 @@ public class MainActivity extends Activity {
                 switchingTile = false;
                 runOnUiThread(() -> {
                     if (loading != null) loading.setVisibility(View.GONE);
-                    Toast.makeText(this, "Не удалось загрузить участок: " + candidate.tile.id, Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Не удалось загрузить участок: " + tile.id, Toast.LENGTH_LONG).show();
                 });
             }
         });
@@ -150,6 +164,24 @@ public class MainActivity extends Activity {
                 openCandidate(c, true);
             }
         }).setNegativeButton("Закрыть", null).show();
+    }
+
+    private void showStreets() {
+        Region.Street[] all = region.streets;
+        if (all == null || all.length == 0) {
+            Toast.makeText(this, "Список улиц ещё не подготовлен", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Region.Street[] sorted = all.clone();
+        java.util.Arrays.sort(sorted, (a, b) -> a.name.compareToIgnoreCase(b.name));
+        final String[] labels = new String[sorted.length];
+        for (int i = 0; i < sorted.length; i++) {
+            Region.Tile t = region.tileById(sorted[i].tileId);
+            labels[i] = sorted[i].name + "  ·  " + (t == null ? "" : t.name);
+        }
+        new AlertDialog.Builder(this).setTitle("Улицы ЮБК · " + sorted.length)
+                .setItems(labels, (d, i) -> openStreet(sorted[i]))
+                .setNegativeButton("Закрыть", null).show();
     }
 
     @Override public void onCreate(Bundle saved) {
@@ -192,15 +224,18 @@ public class MainActivity extends Activity {
             route.setOnClickListener(v -> map.resetView());
             HudButton places = new HudButton(this, HudButton.PLACES, "Места");
             places.setOnClickListener(v -> showPlaces());
+            HudButton streets = new HudButton(this, HudButton.STREETS, "Улицы");
+            streets.setOnClickListener(v -> showStreets());
             HudButton start = new HudButton(this, HudButton.PLAY, "Продолжить");
             start.setAccent(true);
             start.setOnClickListener(v -> {
                 if (!hasWalked) Toast.makeText(this, "Сначала выберите участок на карте", Toast.LENGTH_SHORT).show();
                 else { mapScreen.setVisibility(View.GONE); walkScreen.setVisibility(View.VISIBLE); terrain.requestRender(); }
             });
-            mapControls.addView(route, new LinearLayout.LayoutParams(dp(104), dp(58)));
-            mapControls.addView(places, new LinearLayout.LayoutParams(dp(86), dp(58)));
-            mapControls.addView(start, new LinearLayout.LayoutParams(dp(104), dp(58)));
+            mapControls.addView(route, new LinearLayout.LayoutParams(dp(88), dp(58)));
+            mapControls.addView(places, new LinearLayout.LayoutParams(dp(76), dp(58)));
+            mapControls.addView(streets, new LinearLayout.LayoutParams(dp(76), dp(58)));
+            mapControls.addView(start, new LinearLayout.LayoutParams(dp(88), dp(58)));
             FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
             controlParams.setMargins(0, 0, 0, dp(10));
             mapScreen.addView(mapControls, controlParams);
