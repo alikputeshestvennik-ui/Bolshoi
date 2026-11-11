@@ -28,7 +28,7 @@ jobs:
       - name: Install runtime
         run: |
           python -m pip install -r ten-agent-runtime/requirements.txt
-          npm install -g @openai/codex
+          npm install -g @openai/codex@0.167.0
           for tool in python3 node npm git gcc g++ java javac go rustc cargo curl; do command -v "$tool" || true; done
       - name: Execute encrypted task
         env:
