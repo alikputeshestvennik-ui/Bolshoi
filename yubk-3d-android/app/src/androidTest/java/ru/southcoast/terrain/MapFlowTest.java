@@ -26,6 +26,7 @@ public class MapFlowTest extends ActivityInstrumentationTestCase2<MainActivity> 
         getInstrumentation().runOnMainSync(() -> {map.transform();tap(map,map.px(terrain.scene.x),map.py(terrain.scene.z));});
         getInstrumentation().waitForIdleSync();AlertDialog dialog=(AlertDialog)field(activity,"teleportDialog");assertNotNull(dialog);assertTrue(dialog.isShowing());assertEquals(View.GONE,walkScreen.getVisibility());
         getInstrumentation().runOnMainSync(() -> dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick());
+        getInstrumentation().waitForIdleSync();SystemClock.sleep(350);
         assertEquals(View.VISIBLE,mapScreen.getVisibility());assertEquals(View.GONE,walkScreen.getVisibility());
         getInstrumentation().runOnMainSync(() -> tap(map,map.px(terrain.scene.x),map.py(terrain.scene.z)));
         getInstrumentation().waitForIdleSync();AlertDialog confirm=(AlertDialog)field(activity,"teleportDialog");assertNotNull(confirm);
@@ -42,18 +43,23 @@ public class MapFlowTest extends ActivityInstrumentationTestCase2<MainActivity> 
     }
     public void testPinchAndDragDoNotTeleport() throws Exception {
         MainActivity a=getActivity();getInstrumentation().waitForIdleSync();Navigation.MapView map=(Navigation.MapView)field(a,"map");
+        final long t=SystemClock.uptimeMillis();
         getInstrumentation().runOnMainSync(() -> {
-            long t=SystemClock.uptimeMillis();float x=map.getWidth()/2f,y=map.getHeight()/2f;
-            MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,x-40,y,0);map.dispatchTouchEvent(down);down.recycle();
-            twoFinger(map,t,t+10,MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),40);
-            twoFinger(map,t,t+40,MotionEvent.ACTION_MOVE,90);twoFinger(map,t,t+70,MotionEvent.ACTION_MOVE,140);
-            twoFinger(map,t,t+90,MotionEvent.ACTION_POINTER_UP|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),140);
-            MotionEvent up=MotionEvent.obtain(t,t+100,MotionEvent.ACTION_UP,x-140,y,0);map.dispatchTouchEvent(up);up.recycle();
+            MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,map.getWidth()/2f-40,map.getHeight()/2f,0);map.dispatchTouchEvent(down);down.recycle();
+            twoFinger(map,t,t+1,MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),40);
+        });
+        for(int step=0;step<5;step++){
+            SystemClock.sleep(150);final float span=70+step*30;
+            getInstrumentation().runOnMainSync(() -> twoFinger(map,t,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,span));
+        }
+        getInstrumentation().runOnMainSync(() -> {
+            twoFinger(map,t,SystemClock.uptimeMillis(),MotionEvent.ACTION_POINTER_UP|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),190);
+            MotionEvent up=MotionEvent.obtain(t,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,map.getWidth()/2f-190,map.getHeight()/2f,0);map.dispatchTouchEvent(up);up.recycle();
         });
         getInstrumentation().waitForIdleSync();assertTrue("Pinch did not zoom",map.zoom>1);assertNull(field(a,"teleportDialog"));
         getInstrumentation().runOnMainSync(() -> {
-            long t=SystemClock.uptimeMillis();float x=map.getWidth()/2f,y=map.getHeight()/2f;
-            for(int i=0;i<3;i++){MotionEvent e=MotionEvent.obtain(t,t+i*30,new int[]{0,2,1}[i],x+i*60,y,0);map.dispatchTouchEvent(e);e.recycle();}
+            long dragTime=SystemClock.uptimeMillis();float x=map.getWidth()/2f,y=map.getHeight()/2f;
+            for(int i=0;i<3;i++){MotionEvent e=MotionEvent.obtain(dragTime,dragTime+i*30,new int[]{0,2,1}[i],x+i*60,y,0);map.dispatchTouchEvent(e);e.recycle();}
         });
         getInstrumentation().waitForIdleSync();assertNull(field(a,"teleportDialog"));assertEquals(View.VISIBLE,((View)field(a,"mapScreen")).getVisibility());screenshot("map-zoom-street-labels");
     }

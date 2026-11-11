@@ -42,7 +42,7 @@ final class WalkScene {
         try {
             for(int i=0;i<parts;i++)streams.add(assets.open(String.format(java.util.Locale.ROOT,"walk.mesh.%03d.gzpart",i)));
         }catch(IOException e){for(InputStream stream:streams)stream.close();throw e;}
-        try(DataInputStream in=new DataInputStream(new GZIPInputStream(new SequenceInputStream(streams.elements())))){
+        try(DataInputStream in=new DataInputStream(new BufferedInputStream(new GZIPInputStream(new SequenceInputStream(streams.elements())),65536))){
             count=in.readInt();if(count<3||count>4000000||count%3!=0)throw new IOException("Invalid walk mesh");
             mesh=ByteBuffer.allocateDirect(count*28).order(ByteOrder.nativeOrder()).asFloatBuffer();
             // Assets contain XYZ + RGB. GLES 1.1 requires RGBA in the color array.

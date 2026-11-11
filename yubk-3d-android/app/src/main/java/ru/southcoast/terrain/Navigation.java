@@ -63,6 +63,7 @@ final class Navigation {
                     zoom=next;clampPan();invalidate();return true;
                 }
             });
+            pinch.setQuickScaleEnabled(false);
         }
         void position(float x,float z,float heading){this.x=x;this.z=z;this.heading=heading;invalidate();}
         void select(float[] p){selection=p;invalidate();}

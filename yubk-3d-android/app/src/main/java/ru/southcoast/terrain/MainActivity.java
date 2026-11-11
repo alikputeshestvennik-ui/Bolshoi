@@ -31,7 +31,8 @@ public class MainActivity extends Activity {
             .setPositiveButton("Перейти",(d,which) -> teleport(point))
             .setNegativeButton("Отмена",(d,which) -> map.select(null))
             .setOnCancelListener(d -> map.select(null)).create();
-        teleportDialog.setOnDismissListener(d -> {teleportDialog=null;map.select(null);});
+        final AlertDialog shown=teleportDialog;
+        shown.setOnDismissListener(d -> {if(teleportDialog==shown){teleportDialog=null;map.select(null);}});
         teleportDialog.show();
     }
     private void teleport(float[] p){
