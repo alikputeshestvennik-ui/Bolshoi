@@ -120,7 +120,7 @@ jobs:
           retention-days: 14
 
       - name: Publish APK for direct download
-        if: github.ref_name != 'feature/ui-refresh' && github.ref_name != 'feature/ten-approved' && github.ref_name != 'codex/ten-direct-deepseek'
+        if: github.ref_name != 'feature/ui-refresh' && github.ref_name != 'feature/ten-approved' && github.ref_name != 'feature/ten-flex-mode' && github.ref_name != 'codex/ten-direct-deepseek'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -389,9 +389,11 @@ class ChatStore(val fid: String) {
                 say("Режим Codex пока принимает текстовые цели. Пришли задачу текстом."); drainQueue(); return
             }
             c.fastBusy = true
-            note("Codex включён · ${modelLabel(Prefs.requestModel.ifBlank { Prefs.smartModel })} · запускаю задачу в песочнице…")
+            val selectedModel = Prefs.requestModel.ifBlank { Prefs.smartModel }
+            val taskContext = "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text
+            note("Codex включён · ${modelLabel(selectedModel)} · запускаю задачу в песочнице…")
             io.launch {
-                val reply = runCatching { CodexGateway.run(Chat.app, "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text, Prefs.requestModel.ifBlank { Prefs.smartModel }) }
+                val reply = runCatching { CodexGateway.run(Chat.app, taskContext, selectedModel) }
                 withContext(Dispatchers.Main) {
                     c.fastBusy = false
                     reply.onSuccess { say(it.text, it.file) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
