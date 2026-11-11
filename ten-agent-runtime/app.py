@@ -4,6 +4,10 @@ The user provides a ChatGPT-plan OAuth token per request over HTTPS. The
 service never persists it. Run this service in a hardened isolated container.
 """
 import asyncio
+import base64
+import io
+import zipfile
+from pathlib import Path
 import hmac
 import json
 import os
@@ -23,6 +27,7 @@ class Request(BaseModel):
 class Response(BaseModel):
     result: str
     session_id: str
+    archive: str | None = None
 
 
 def authenticate(authorization: str | None) -> None:
@@ -38,9 +43,44 @@ def health() -> dict:
     return {"status": "ok", "configured": bool(os.getenv("TEN_AGENT_TOKEN"))}
 
 
-async def run_codex(goal: str, token: str, model: str, base_url: str) -> tuple[str, str]:
+def package_output(workspace: str) -> str | None:
+    root=Path(workspace) / "output"
+    if not root.is_dir(): return None
+    data=io.BytesIO(); total=0; count=0
+    with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
+        for directory, folders, files in os.walk(root, followlinks=False):
+            folders[:] = [name for name in sorted(folders) if name not in {".git", ".codex", ".venv", "node_modules", "__pycache__", "build", ".gradle"} and not (Path(directory)/name).is_symlink()]
+            for name in sorted(files):
+                path=Path(directory)/name
+                if not path.is_file() or path.is_symlink(): continue
+                size=path.stat().st_size; total+=size;count+=1
+                if total>20_000_000 or count>1000: raise RuntimeError("Output exceeds delivery limit")
+                archive.write(path, path.relative_to(root).as_posix())
+    if not count: return None
+    return base64.b64encode(data.getvalue()).decode("ascii")
+
+def restore_output(workspace: str, encoded: str | None) -> None:
+    root=Path(workspace, "output")
+    root.mkdir(exist_ok=True)
+    if not encoded: return
+    raw=base64.b64decode(encoded, validate=True)
+    if len(raw)>25_000_000: raise ValueError("Workspace archive too large")
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        entries=archive.infolist()
+        if len(entries)>1000 or sum(e.file_size for e in entries)>20_000_000: raise ValueError("Workspace contents too large")
+        for entry in entries:
+            path=Path(entry.filename)
+            if path.is_absolute() or ".." in path.parts or entry.is_dir() or (entry.external_attr >> 16) & 0o170000 == 0o120000:
+                raise ValueError("Unsafe workspace path")
+            target=(root/path).resolve()
+            if not target.is_relative_to(root.resolve()): raise ValueError("Unsafe workspace path")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(entry))
+
+async def run_codex(goal: str, token: str, model: str, base_url: str, initial_archive: str | None = None) -> tuple[str, str, str | None]:
     """Start one isolated, ephemeral Codex app-server and verify the turn outcome."""
     with tempfile.TemporaryDirectory(prefix="ten-codex-") as workspace:
+        restore_output(workspace, initial_archive)
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                "HOME": workspace, "ACCESS_TOKEN": token, "LANG": "C.UTF-8"}
         args = ["codex", "app-server", "--listen", "stdio://",
@@ -51,7 +91,8 @@ async def run_codex(goal: str, token: str, model: str, base_url: str) -> tuple[s
                 "-c", 'model_providers.openai_chatgpt_plan.wire_api="responses"',
                 "-c", 'model_providers.openai_chatgpt_plan.requires_openai_auth=false',
                 "-c", 'model_providers.openai_chatgpt_plan.supports_websockets=false',
-                "-c", "shell_environment_policy.ignore_default_excludes=false"]
+                "-c", "shell_environment_policy.ignore_default_excludes=false",
+                "-c", "sandbox_workspace_write.network_access=true"]
         process = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=env, cwd=workspace, start_new_session=True, limit=2_000_000)
         async def send(message: dict) -> None:
@@ -74,7 +115,7 @@ async def run_codex(goal: str, token: str, model: str, base_url: str) -> tuple[s
             started = await request(2, "thread/start", {"model": model, "cwd": workspace,
                 "approvalPolicy": "never", "sandbox": "workspace-write", "ephemeral": True})
             thread_id = started["thread"]["id"]
-            await request(3, "turn/start", {"threadId": thread_id, "input": [{"type": "text", "text": goal}]})
+            await request(3, "turn/start", {"threadId": thread_id, "input": [{"type": "text", "text": "The output/ directory contains the prior saved workspace. Place deliverable and project files there so they persist; keep a concise output/MEMORY.md for continuity where useful. Use the terminal and developer tools to complete the goal.\n\n" + goal}]})
             deltas = []
             final = ""
             while True:
@@ -87,7 +128,7 @@ async def run_codex(goal: str, token: str, model: str, base_url: str) -> tuple[s
                     if params.get("turn", {}).get("status") != "completed": raise RuntimeError("Codex turn failed")
                     result = final or "".join(deltas)
                     if not result: raise RuntimeError("Codex returned no result")
-                    return result.replace(token, "[credential removed]"), thread_id
+                    return result.replace(token, "[credential removed]"), thread_id, package_output(workspace)
                 if event.get("id") is not None and method:
                     raise RuntimeError("Codex requested unsupported interactive approval")
         finally:
@@ -101,15 +142,15 @@ async def run_codex(goal: str, token: str, model: str, base_url: str) -> tuple[s
                     await process.wait()
 
 
-async def execute_goal(goal: str, token: str, model: str, base_url: str) -> Response:
+async def execute_goal(goal: str, token: str, model: str, base_url: str, initial_archive: str | None = None) -> Response:
     from agents import Agent, Runner, RunConfig, OpenAIResponsesModel, function_tool
     from openai import AsyncOpenAI
-    result_holder: dict[str, str] = {}
+    result_holder: dict[str, str | None] = {}
     @function_tool
     async def codex_workspace(task: str) -> str:
         """Run the user's concrete goal in an isolated Codex workspace."""
-        output, session_id = await run_codex(task, token, model, base_url)
-        result_holder.update(output=output, session_id=session_id)
+        output, session_id, archive = await run_codex(task, token, model, base_url, initial_archive)
+        result_holder.update(output=output, session_id=session_id, archive=archive)
         return output
     async with AsyncOpenAI(api_key=token, base_url=base_url) as client:
         orchestrator = Agent(name="Тень: цель — результат",
@@ -118,7 +159,7 @@ async def execute_goal(goal: str, token: str, model: str, base_url: str) -> Resp
                           "Never claim success without a completed tool result."), tools=[codex_workspace])
         run = await Runner.run(orchestrator, goal, max_turns=8, run_config=RunConfig(tracing_disabled=True))
     if not result_holder: raise RuntimeError("The agent did not run Codex")
-    return Response(result=str(run.final_output).replace(token, "[credential removed]"), session_id=result_holder["session_id"])
+    return Response(result=str(run.final_output).replace(token, "[credential removed]"), session_id=str(result_holder["session_id"]), archive=result_holder.get("archive"))
 
 @app.post("/v1/run", response_model=Response)
 async def run(request: Request, authorization: Annotated[str | None, Header()] = None,

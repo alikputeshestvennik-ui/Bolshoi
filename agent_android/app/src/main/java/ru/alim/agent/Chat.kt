@@ -365,12 +365,17 @@ class ChatStore(val fid: String) {
     fun dropUpd() = onMain { if (msgs.removeAll { it.note && UPD.any { p -> it.text.startsWith(p) } }) save() }
     /** Обычная реплика Пилота в ленте (отчёты поручений и т.п.). */
     fun say(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), status = "read"))
+    fun say(text: String, file: Docs.FileRef?) {
+        val files = if (file == null) "" else JSONArray().put(JSONObject().put("n", file.name).put("u", file.uri.toString()).put("m", file.mime)).toString()
+        add(Msg(newId(), false, text, System.currentTimeMillis(), files = files, status = "read"))
+    }
 
     /** queued — сообщение пришло, пока шла задача: это продолжение той задачи, отдаём агенту с её контекстом, а не быстрой полосе. */
     private fun dispatch(m: Msg, queued: Boolean = false) {
         val c = core
         if (c.busy || c.fastBusy) { if (m.id !in queue) queue += m.id; return }
         if (m.note && m.from.isNotBlank()) {
+            c.requestOverride = ""
             delegatedFor = m.from
             c.delegated = true
             val who = Friends.get(m.from).name
@@ -386,10 +391,10 @@ class ChatStore(val fid: String) {
             c.fastBusy = true
             note("Codex включён · ${modelLabel(Prefs.requestModel.ifBlank { Prefs.smartModel })} · запускаю задачу в песочнице…")
             io.launch {
-                val reply = runCatching { CodexGateway.run(Chat.app, m.text, Prefs.requestModel.ifBlank { Prefs.smartModel }) }
+                val reply = runCatching { CodexGateway.run(Chat.app, "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text, Prefs.requestModel.ifBlank { Prefs.smartModel }) }
                 withContext(Dispatchers.Main) {
                     c.fastBusy = false
-                    reply.onSuccess { say(it) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    reply.onSuccess { say(it.text, it.file) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
                     drainQueue()
                 }
             }

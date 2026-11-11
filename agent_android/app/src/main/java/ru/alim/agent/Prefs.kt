@@ -27,6 +27,7 @@ object Prefs {
     val BG_MODELS = listOf("deepseek:deepseek-flash", "deepseek:deepseek-v4-pro", "yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
     private fun pick(v: String, allowed: List<String>, def: String) = if (Llm.isChatGpt(v)) v.trim() else allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
     /** Selection in the composer is independent from persistent role settings. */
+    var codexPreviousRun: String get() = s("codex_previous_run", ""); set(v) = put("codex_previous_run", v)
     var compatibleModel: String get() = s("compatible_model", ""); set(v) = put("compatible_model", v.trim())
     var codexMode: Boolean get() = b("request_codex_mode", false); set(v) = putB("request_codex_mode", v)
     var requestProvider: String get() = s("request_provider", "all"); set(v) = put("request_provider", v)

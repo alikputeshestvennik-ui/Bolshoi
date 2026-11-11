@@ -60,7 +60,8 @@ object CodexGateway {
             r.body?.string().orEmpty()
         }
     }
-    fun run(ctx: Context, goal: String, selected: String): String {
+    data class Result(val text: String, val file: Docs.FileRef?)
+    fun run(ctx: Context, goal: String, selected: String): Result {
         val pat=Git.token;if(pat.isBlank())error("В сборке нет GH_PAT для GitHub Actions")
         require(goal.length<=16000) { "Задача слишком длинная" }
         val prefs=store(ctx)
@@ -73,7 +74,7 @@ object CodexGateway {
         }
         if(backend.isBlank()||providerToken.isBlank())error("Настрой адрес и ключ выбранного провайдера")
         val id=UUID.randomUUID().toString()
-        val task=JSONObject().put("goal",goal).put("base_url",backend).put("model",model).put("provider_token",providerToken)
+        val task=JSONObject().put("goal",goal).put("base_url",backend).put("model",model).put("provider_token",providerToken).put("previous_run_id", Prefs.codexPreviousRun.toLongOrNull() ?: 0L)
         val data=JSONObject().put("ref","main").put("inputs",JSONObject().put("request_id",id).put("payload",encrypt(task.toString(),pat)))
         call(pat,"$ROOT/actions/workflows/TEN_CODEX_TASK.yml/dispatches",data)
         val deadline=System.currentTimeMillis()+25*60_000L
@@ -98,13 +99,24 @@ object CodexGateway {
                         if(!response.isSuccessful)error("Не удалось скачать результат Codex: HTTP ${response.code}")
                         ZipInputStream(response.body?.byteStream() ?: error("Нет результата")).use { zip ->
                             var entry=zip.nextEntry;var text=""
-                            while(entry!=null){if(entry.name.endsWith("ten-result.enc")){val out=java.io.ByteArrayOutputStream();val buf=ByteArray(4096);var n=0;while(zip.read(buf).also{n=it}!=-1){if(out.size()+n>2_000_000)error("Слишком большой результат");out.write(buf,0,n)};text=out.toString("UTF-8");break};entry=zip.nextEntry}
+                            while(entry!=null){if(entry.name.endsWith("ten-result.enc")){val out=java.io.ByteArrayOutputStream();val buf=ByteArray(4096);var n=0;while(zip.read(buf).also{n=it}!=-1){if(out.size()+n>40_000_000)error("Слишком большой результат");out.write(buf,0,n)};text=out.toString("UTF-8");break};entry=zip.nextEntry}
                             text.ifBlank { error("Нет файла результата Codex") }
                         }
                     }
                     val result=JSONObject(decrypt(encrypted,pat))
                     if(!result.optBoolean("ok"))error(result.optString("error","Codex не выполнил задачу"))
-                    return result.getString("result").takeIf{it.isNotBlank()}?:error("Codex вернул пустой результат")
+                    val text=result.getString("result").takeIf{it.isNotBlank()}?:error("Codex вернул пустой результат")
+                    val archive=result.optString("archive", "").takeUnless { it.isBlank() || it == "null" }
+                    val file=archive?.let {
+                        val bytes=Base64.decode(it,Base64.DEFAULT)
+                        require(bytes.size<=25_000_000) { "Файл результата слишком большой" }
+                        val dir=java.io.File(ctx.filesDir,"codex_output").apply { mkdirs() }
+                        val f=java.io.File(dir,"codex_${System.currentTimeMillis()}.zip");f.writeBytes(bytes)
+                        val uri=androidx.core.content.FileProvider.getUriForFile(ctx,"${ctx.packageName}.files",f)
+                        Docs.FileRef(f.name,uri,"application/zip")
+                    }
+                    Prefs.codexPreviousRun=runId.toString()
+                    return Result(text,file)
                 }
             }
             Thread.sleep(5000)

@@ -69,7 +69,7 @@ fun ChatControls(go: (Scr) -> Unit) {
             PickerButton(brainIcon, if (model.isBlank()) "Автоматически" else modelLabel(model), "Выбрать модель", Modifier.fillMaxWidth()) { modelsOpen = true }
             DropdownMenu(modelsOpen, { modelsOpen = false }, modifier = Modifier.heightIn(max = 280.dp), shape = shp(16.dp), containerColor = Card,
                 properties = PopupProperties(focusable = false)) {
-                DropdownMenuItem(text = { Text("Автоматически · роли и оркестрация", style = body(13, if (model.isBlank()) FontWeight.SemiBold else FontWeight.Normal, if (model.isBlank()) Teal else Ink)) },
+                DropdownMenuItem(text = { Text(if (codex) "Автоматически · модель роли «Руки»" else "Автоматически · роли и оркестрация", style = body(13, if (model.isBlank()) FontWeight.SemiBold else FontWeight.Normal, if (model.isBlank()) Teal else Ink)) },
                     trailingIcon = if (model.isBlank()) ({ Icon(Icons.Filled.Check, "Выбрана", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
                     onClick = { model = ""; Prefs.requestModel = ""; modelsOpen = false })
                 if (models.isEmpty()) DropdownMenuItem(text = { Text("Обновить список моделей в настройках", style = body(13, color = Muted)) }, onClick = { modelsOpen = false; go(Scr.Settings) })

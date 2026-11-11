@@ -761,6 +761,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }
                 }
                 Text("Codex работает прямо в чате через фоновую задачу GitHub Actions. Нужен GH_PAT с доступом к Actions; запрос и результат передаются зашифрованными.", style = body(12, color = Muted))
+                BigButton("Начать новое пространство Codex", { Prefs.codexPreviousRun = "" }, bg = Card, fg = Ink, border = Line)
+                Text("Файлы Codex сохраняются между задачами в зашифрованном архиве GitHub Actions на 14 дней. Сброс начинает новое пространство.", style = body(12, color = Muted))
                 if (provider == "compatible") {
                     var customUrl by remember { mutableStateOf(runCatching { CodexGateway.customUrl(ctx) }.getOrDefault("")) }
                     var customModel by remember { mutableStateOf(Prefs.compatibleModel) }
