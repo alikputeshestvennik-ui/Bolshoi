@@ -90,13 +90,43 @@ class WorkspaceRestoreTest(unittest.TestCase):
         import tempfile
         from pathlib import Path
         with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
-            (Path(one)/'output').mkdir();(Path(one)/'output'/'work.py').write_text('print(42)')
+            (Path(one)/'output').mkdir();(Path(one)/'output'/'work.py').write_text('print(42)');(Path(one)/'output'/'work.py').chmod(0o755)
             encoded=app.package_output(one)
             app.restore_output(two,encoded)
             self.assertEqual((Path(two)/'output'/'work.py').read_text(),'print(42)')
+            self.assertTrue((Path(two)/'output'/'work.py').stat().st_mode & 0o100)
     def test_rejects_traversal(self):
         import base64, io, tempfile, zipfile
         data=io.BytesIO()
         with zipfile.ZipFile(data,'w') as z:z.writestr('../escape','bad')
         with tempfile.TemporaryDirectory() as d, self.assertRaises(ValueError):
             app.restore_output(d,base64.b64encode(data.getvalue()).decode())
+
+class AgentsSDKIntegrationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_sdk_routes_selected_provider_and_uses_codex_result(self):
+        import json
+        import httpx
+        import openai
+        from unittest.mock import AsyncMock, patch
+        calls=[]
+        async def handler(request):
+            self.assertEqual(str(request.url), 'https://api.deepseek.com/responses')
+            body=json.loads(request.content);calls.append(body)
+            self.assertEqual(body['model'],'deepseek-flash')
+            self.assertEqual(request.headers['authorization'],'Bearer test-provider-token')
+            if len(calls)==1:
+                output=[{'type':'function_call','id':'fc_1','call_id':'call_1','name':'codex_workspace','arguments':'{"task":"вычисли 2+2"}','status':'completed'}]
+            else:
+                output=[{'type':'message','id':'msg_1','role':'assistant','status':'completed','content':[{'type':'output_text','text':'Результат: 4','annotations':[]}]}]
+            return httpx.Response(200,json={'id':'resp_'+str(len(calls)),'object':'response','created_at':1,'model':'deepseek-flash','status':'completed','output':output,'parallel_tool_calls':False,'tool_choice':'auto','tools':[]})
+        original=openai.AsyncOpenAI
+        def client(*args,**kwargs):
+            kwargs['http_client']=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            return original(*args,**kwargs)
+        codex=AsyncMock(return_value=('4','thread-1',None))
+        with patch.object(openai,'AsyncOpenAI',client), patch.object(app,'run_codex',codex):
+            result=await app.execute_goal('вычисли 2+2','test-provider-token','deepseek-flash','https://api.deepseek.com')
+        self.assertEqual(result.result,'Результат: 4')
+        self.assertEqual(result.session_id,'thread-1')
+        self.assertEqual(len(calls),2)
+        codex.assert_awaited_once_with('вычисли 2+2','test-provider-token','deepseek-flash','https://api.deepseek.com',None)
