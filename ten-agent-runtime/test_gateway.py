@@ -55,16 +55,48 @@ class CodexProtocolTest(unittest.IsolatedAsyncioTestCase):
         fake=Mock();fake.stdout=reader;fake.stdin=Mock();fake.stdin.drain=AsyncMock();fake.returncode=0
         with patch('app.asyncio.create_subprocess_exec', AsyncMock(return_value=fake)) as spawn:
             if status == 'completed':
-                self.assertEqual(await app.run_codex('цель','provider-secret','deepseek-flash','https://api.deepseek.com'), ('готово','thread-1'))
+                self.assertEqual(await app.run_codex('цель','provider-secret','deepseek-flash','https://api.deepseek.com'), ('готово','thread-1',None))
             else:
                 with self.assertRaises(RuntimeError): await app.run_codex('цель','provider-secret','deepseek-flash','https://api.deepseek.com')
             options=spawn.await_args.kwargs
             self.assertEqual(options['env']['ACCESS_TOKEN'],'provider-secret')
             self.assertNotIn('GH_PAT', options['env'])
             self.assertTrue(options['start_new_session'])
+            self.assertIn('sandbox_workspace_write.network_access=true', spawn.await_args.args)
+            self.assertIn('shell_environment_policy.ignore_default_excludes=false', spawn.await_args.args)
         wire=b''.join(call.args[0] for call in fake.stdin.write.call_args_list).decode()
         self.assertIn('thread/start',wire)
         self.assertIn('workspace-write',wire)
         self.assertNotIn('provider-secret',wire)
     async def test_success(self): await self.invoke('completed')
     async def test_failed_turn(self): await self.invoke('failed')
+
+class OutputFilesTest(unittest.TestCase):
+    def test_collects_only_deliverables(self):
+        import base64, io, tempfile, zipfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'output').mkdir();(root/'output'/'result.txt').write_text('готово')
+            (root/'secret.txt').write_text('outside')
+            (root/'output'/'node_modules').mkdir(); (root/'output'/'node_modules'/'dependency.js').write_text('ignored')
+            (root/'output'/'link').symlink_to(root/'secret.txt')
+            encoded=app.package_output(d)
+            with zipfile.ZipFile(io.BytesIO(base64.b64decode(encoded))) as z:
+                self.assertEqual(z.namelist(),['result.txt'])
+                self.assertEqual(z.read('result.txt').decode(),'готово')
+
+class WorkspaceRestoreTest(unittest.TestCase):
+    def test_restores_saved_files(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            (Path(one)/'output').mkdir();(Path(one)/'output'/'work.py').write_text('print(42)')
+            encoded=app.package_output(one)
+            app.restore_output(two,encoded)
+            self.assertEqual((Path(two)/'output'/'work.py').read_text(),'print(42)')
+    def test_rejects_traversal(self):
+        import base64, io, tempfile, zipfile
+        data=io.BytesIO()
+        with zipfile.ZipFile(data,'w') as z:z.writestr('../escape','bad')
+        with tempfile.TemporaryDirectory() as d, self.assertRaises(ValueError):
+            app.restore_output(d,base64.b64encode(data.getvalue()).decode())
