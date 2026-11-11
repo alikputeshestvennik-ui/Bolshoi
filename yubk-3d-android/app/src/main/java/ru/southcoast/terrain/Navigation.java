@@ -46,7 +46,7 @@ final class Navigation {
     static final class MapView extends View {
         final Navigation nav;final WalkScene scene;final Pick pick;
         final Paint paint=new Paint(3);final Path path=new Path();
-        final ScaleGestureDetector pinch;
+        float previousSpan,previousFocusX,previousFocusY;
         final float density;final int slop;
         float x,z,heading,scale,left,top,zoom=1,panX,panY,lastX,lastY,downX,downY;
         boolean dragged,multi;float[] selection;
@@ -54,16 +54,7 @@ final class Navigation {
             super(context);this.nav=nav;this.scene=scene;this.pick=pick;
             density=getResources().getDisplayMetrics().density;slop=ViewConfiguration.get(context).getScaledTouchSlop();
             setContentDescription("Карта Ялты с названиями улиц. Масштаб двумя пальцами, перемещение одним. Тап выбирает место.");
-            pinch=new ScaleGestureDetector(context,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
-                @Override public boolean onScale(ScaleGestureDetector d){
-                    float next=Math.max(1,Math.min(16,zoom*d.getScaleFactor()));
-                    float ratio=next/zoom;
-                    panX=d.getFocusX()-getWidth()/2f-(d.getFocusX()-getWidth()/2f-panX)*ratio;
-                    panY=d.getFocusY()-getHeight()/2f-(d.getFocusY()-getHeight()/2f-panY)*ratio;
-                    zoom=next;clampPan();invalidate();return true;
-                }
-            });
-            pinch.setQuickScaleEnabled(false);
+
         }
         void position(float x,float z,float heading){this.x=x;this.z=z;this.heading=heading;invalidate();}
         void select(float[] p){selection=p;invalidate();}
@@ -113,12 +104,26 @@ final class Navigation {
         float length(float[] r){return (r[2]-r[0])*(r[2]-r[0])+(r[3]-r[1])*(r[3]-r[1]);}
         @Override public boolean onTouchEvent(MotionEvent e){
             if(pick==null)return super.onTouchEvent(e);
-            pinch.onTouchEvent(e);int action=e.getActionMasked();
-            if(action==MotionEvent.ACTION_DOWN){lastX=downX=e.getX();lastY=downY=e.getY();dragged=multi=false;getParent().requestDisallowInterceptTouchEvent(true);}
+            int action=e.getActionMasked();
+            if(e.getPointerCount()>=2){
+                multi=true;dragged=true;
+                float span=(float)Math.hypot(e.getX(1)-e.getX(0),e.getY(1)-e.getY(0));
+                float fx=(e.getX(0)+e.getX(1))/2,fy=(e.getY(0)+e.getY(1))/2;
+                if(action==MotionEvent.ACTION_MOVE&&previousSpan>0&&span>0){
+                    float next=Math.max(1,Math.min(16,zoom*span/previousSpan)),ratio=next/zoom;
+                    panX=fx-getWidth()/2f-(previousFocusX-getWidth()/2f-panX)*ratio;
+                    panY=fy-getHeight()/2f-(previousFocusY-getHeight()/2f-panY)*ratio;
+                    zoom=next;clampPan();invalidate();
+                }
+                previousSpan=span;previousFocusX=fx;previousFocusY=fy;
+                if(action==MotionEvent.ACTION_POINTER_UP)previousSpan=0;
+                return true;
+            }
+            if(action==MotionEvent.ACTION_DOWN){lastX=downX=e.getX();lastY=downY=e.getY();dragged=multi=false;previousSpan=0;getParent().requestDisallowInterceptTouchEvent(true);}
             else if(action==MotionEvent.ACTION_POINTER_DOWN){multi=true;dragged=true;}
             else if(action==MotionEvent.ACTION_MOVE){
                 if(Math.hypot(e.getX()-downX,e.getY()-downY)>slop)dragged=true;
-                if(e.getPointerCount()==1&&!pinch.isInProgress()&&!multi){panX+=e.getX()-lastX;panY+=e.getY()-lastY;clampPan();invalidate();}
+                if(e.getPointerCount()==1&&!multi){panX+=e.getX()-lastX;panY+=e.getY()-lastY;clampPan();invalidate();}
                 lastX=e.getX();lastY=e.getY();
             }else if(action==MotionEvent.ACTION_UP){
                 getParent().requestDisallowInterceptTouchEvent(false);

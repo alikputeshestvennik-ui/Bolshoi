@@ -12,9 +12,9 @@ public class MapFlowTest extends ActivityInstrumentationTestCase2<MainActivity> 
     Object field(MainActivity a,String name) throws Exception {Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);return f.get(a);}
     void tap(Navigation.MapView map,float x,float y){long t=SystemClock.uptimeMillis();MotionEvent a=MotionEvent.obtain(t,t,0,x,y,0),b=MotionEvent.obtain(t,t+40,1,x,y,0);map.dispatchTouchEvent(a);map.dispatchTouchEvent(b);a.recycle();b.recycle();}
     void screenshot(String name) throws Exception {
-        android.graphics.Bitmap bitmap=getInstrumentation().getUiAutomation().takeScreenshot();
-        assertNotNull(bitmap);
-        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(getActivity().getExternalFilesDir(null),name+".png"))){bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}bitmap.recycle();
+        android.os.ParcelFileDescriptor fd=getInstrumentation().getUiAutomation().executeShellCommand("screencap -p /sdcard/Download/yubk-"+name+".png");
+        try(java.io.InputStream in=new android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)){byte[] buffer=new byte[4096];while(in.read(buffer)!=-1){}}
+
     }
     public void testMapFirstConfirmCancelAndRender() throws Exception {
         MainActivity activity=getActivity();getInstrumentation().waitForIdleSync();
