@@ -76,6 +76,8 @@ def restore_output(workspace: str, encoded: str | None) -> None:
             if not target.is_relative_to(root.resolve()): raise ValueError("Unsafe workspace path")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(entry))
+            permissions=(entry.external_attr >> 16) & 0o777
+            if permissions: target.chmod(permissions)
 
 async def run_codex(goal: str, token: str, model: str, base_url: str, initial_archive: str | None = None) -> tuple[str, str, str | None]:
     """Start one isolated, ephemeral Codex app-server and verify the turn outcome."""
