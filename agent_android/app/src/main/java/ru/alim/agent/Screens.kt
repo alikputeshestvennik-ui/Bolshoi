@@ -867,7 +867,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
                 onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit, extra: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null) {
     val names = mapOf(
         "yc:aliceai-llm-flash" to "Alice AI Flash", "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT 5.1 Pro",
-        "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
+        "deepseek:deepseek-v4-flash" to "DeepSeek V4 Flash · DeepSeek", "deepseek:deepseek-v4-pro" to "DeepSeek V4 Pro · DeepSeek", "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash · Яндекс", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
         "cx/gpt-6.1-sol" to "GPT-6.1 Sol · Any", "cx/gpt-6.1-terra" to "GPT-6.1 Terra · Any", "cc/claude-sonnet-5" to "Claude Sonnet 5 · Any",
         "ds/deepseek-v4-pro" to "DeepSeek V4 Pro · Any", "ds/deepseek-v4-flash-vision" to "DeepSeek V4 Flash Vision · Any")
     val list = visibleModels(when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS })

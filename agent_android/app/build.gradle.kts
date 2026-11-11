@@ -18,6 +18,7 @@ android {
         versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
         versionName = "1.1"
         buildConfigField("String", "ANYMODEL_KEY", secret("ANYMODEL_KEY"))
+        buildConfigField("String", "DEEPSEEK_API", secret("DEEPSEEK_API"))
         buildConfigField("String", "YOOMONEY_CLIENT_ID", secret("YOOMONEY_CLIENT_ID"))
         // Яндекс Поиск API: свой ключ или общий ключ Yandex Cloud из Маршрута; каталог — отдельно или из адреса модели Qwen
         buildConfigField("String", "YANDEX_SEARCH_KEY", secret("YANDEX_SEARCH_KEY"))

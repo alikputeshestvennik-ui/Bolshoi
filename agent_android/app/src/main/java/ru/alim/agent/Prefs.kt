@@ -21,13 +21,13 @@ object Prefs {
     private fun putB(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
 
     /** Модели по ролям — только эти (Алим выбрал); старое значение (GPTunnel, Google, удалённые) заменяется первым из списка. */
-    val CHAT_MODELS = listOf("yc:aliceai-llm-flash", "yc:deepseek-v4.1-flash", "ag/gemini-3-flash", "cx/gpt-6.1-terra")
-    val HANDS_MODELS = listOf("yc:aliceai-llm", "yandexgpt-5.1/latest", "yc:deepseek-v4.1-flash",
+    val CHAT_MODELS = listOf("deepseek:deepseek-v4-flash", "deepseek:deepseek-v4-pro", "yc:aliceai-llm-flash", "yc:deepseek-v4.1-flash", "ag/gemini-3-flash", "cx/gpt-6.1-terra")
+    val HANDS_MODELS = listOf("deepseek:deepseek-v4-flash", "deepseek:deepseek-v4-pro", "yc:aliceai-llm", "yandexgpt-5.1/latest", "yc:deepseek-v4.1-flash",
         "cx/gpt-6-astra", "cx/gpt-6.1-sol", "cx/gpt-6.1-terra", "cc/claude-sonnet-5", "ds/deepseek-v4-pro", "ds/deepseek-v4-flash-vision")
-    val BG_MODELS = listOf("yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
+    val BG_MODELS = listOf("deepseek:deepseek-v4-flash", "deepseek:deepseek-v4-pro", "yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
     private fun pick(v: String, allowed: List<String>, def: String) = if (Llm.isChatGpt(v)) v.trim() else allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
     var showOtherModels: Boolean get() = b("show_other_models", false); set(v) = putB("show_other_models", v)
-    var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, CHAT_MODELS[0]); set(v) = put("fm", v.trim())
+    var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, "yc:aliceai-llm-flash"); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
     var fastLane: Boolean get() = b("fastlane", true); set(v) = putB("fastlane", v)
     /** Модель для быстрой полосы (по умолчанию — Alice AI Flash Яндекса: бесплатно, без VPN, хорошо по-русски). */
@@ -83,7 +83,7 @@ object Prefs {
     /** Голос Google для главного друга («» — по полу автоматически). */
     var gVoice: String get() = s("gvoice", ""); set(v) = put("gvoice", v)
     /** Фоновая модель: уведомления, сводки, сам пишет, поиск фото. Пусто — как «Чат». */
-    var bgModel: String get() = pick(s("bgm", ""), BG_MODELS, BG_MODELS[0]); set(v) = put("bgm", v.trim())
+    var bgModel: String get() = pick(s("bgm", ""), BG_MODELS, "yc:deepseek-v4.1-flash"); set(v) = put("bgm", v.trim())
     val bg: String get() = bgModel.ifBlank { fastModel }
     /** Счётчики бесплатных запросов Google за сутки (JSON). */
     fun initCount(fid: String, day: String) = if (sp.getString("icd_$fid", "") == day) sp.getInt("icn_$fid", 0) else 0
