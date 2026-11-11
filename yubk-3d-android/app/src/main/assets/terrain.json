@@ -1,0 +1,20 @@
+{
+  "bounds": [
+    33.35,
+    44.35,
+    34.5,
+    44.75
+  ],
+  "grid": [
+    321,
+    181
+  ],
+  "height_range": [
+    0,
+    1525
+  ],
+  "vertical_exaggeration": 1,
+  "sha256": "74a9c1629053e608218876d5bd5d325d8cd07b5166eba4b51fdbb00e84bff799",
+  "source": "Mapzen/Tilezen Skadi on AWS",
+  "projection": "Local WGS84 equirectangular, reference latitude 44.55; horizontal scale error below 0.4% in this extent"
+}
