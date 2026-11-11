@@ -1,0 +1,4 @@
+fastapi>=0.115,<1
+openai>=2.0,<3
+openai-agents>=0.2,<1
+cryptography>=43,<47

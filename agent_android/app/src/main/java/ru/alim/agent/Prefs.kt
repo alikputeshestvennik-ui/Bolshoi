@@ -21,11 +21,16 @@ object Prefs {
     private fun putB(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
 
     /** Модели по ролям — только эти (Алим выбрал); старое значение (GPTunnel, Google, удалённые) заменяется первым из списка. */
-    val CHAT_MODELS = listOf("deepseek:deepseek-v4-flash", "deepseek:deepseek-v4-pro", "yc:aliceai-llm-flash", "yc:deepseek-v4.1-flash", "ag/gemini-3-flash", "cx/gpt-6.1-terra")
-    val HANDS_MODELS = listOf("deepseek:deepseek-v4-flash", "deepseek:deepseek-v4-pro", "yc:aliceai-llm", "yandexgpt-5.1/latest", "yc:deepseek-v4.1-flash",
+    val CHAT_MODELS = listOf("deepseek:deepseek-flash", "deepseek:deepseek-v4-pro", "yc:aliceai-llm-flash", "yc:deepseek-v4.1-flash", "ag/gemini-3-flash", "cx/gpt-6.1-terra")
+    val HANDS_MODELS = listOf("deepseek:deepseek-flash", "deepseek:deepseek-v4-pro", "yc:aliceai-llm", "yandexgpt-5.1/latest", "yc:deepseek-v4.1-flash",
         "cx/gpt-6-astra", "cx/gpt-6.1-sol", "cx/gpt-6.1-terra", "cc/claude-sonnet-5", "ds/deepseek-v4-pro", "ds/deepseek-v4-flash-vision")
-    val BG_MODELS = listOf("deepseek:deepseek-v4-flash", "deepseek:deepseek-v4-pro", "yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
+    val BG_MODELS = listOf("deepseek:deepseek-flash", "deepseek:deepseek-v4-pro", "yc:deepseek-v4.1-flash", "yc:aliceai-llm-flash")
     private fun pick(v: String, allowed: List<String>, def: String) = if (Llm.isChatGpt(v)) v.trim() else allowed.firstOrNull { it.equals(v.trim(), true) } ?: def
+    /** Selection in the composer is independent from persistent role settings. */
+    var compatibleModel: String get() = s("compatible_model", ""); set(v) = put("compatible_model", v.trim())
+    var codexMode: Boolean get() = b("request_codex_mode", false); set(v) = putB("request_codex_mode", v)
+    var requestProvider: String get() = s("request_provider", "all"); set(v) = put("request_provider", v)
+    var requestModel: String get() = s("request_model", ""); set(v) = put("request_model", v)
     var showOtherModels: Boolean get() = b("show_other_models", false); set(v) = putB("show_other_models", v)
     var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, "yc:aliceai-llm-flash"); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */

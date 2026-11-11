@@ -379,6 +379,26 @@ class ChatStore(val fid: String) {
             return
         }
         c.delegated = false
+        if (Prefs.codexMode) {
+            if (m.att.isNotBlank() || m.voice.isNotBlank()) {
+                say("Режим Codex пока принимает текстовые цели. Пришли задачу текстом."); drainQueue(); return
+            }
+            c.fastBusy = true
+            note("Codex включён · ${modelLabel(Prefs.requestModel.ifBlank { Prefs.smartModel })} · запускаю задачу в песочнице…")
+            io.launch {
+                val reply = runCatching { CodexGateway.run(Chat.app, m.text, Prefs.requestModel.ifBlank { Prefs.smartModel }) }
+                withContext(Dispatchers.Main) {
+                    c.fastBusy = false
+                    reply.onSuccess { say(it) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    drainQueue()
+                }
+            }
+            return
+        }
+        if (Prefs.requestModel.startsWith("compatible:")) {
+            say("Для совместимого API включи Codex в поле запроса."); drainQueue(); return
+        }
+        c.requestOverride = Prefs.requestModel
         val prompt = buildString {
             if (m.replyText.isNotBlank()) append("(Алим отвечает на ${if (m.replyMe) "своё" else "твоё"} сообщение: «${m.replyText}»)\n")
             append(m.text.ifBlank { if (m.att.isNotBlank()) "Посмотри вложения" else "" })
@@ -451,6 +471,7 @@ class ChatStore(val fid: String) {
     /** Стримим простой ответ лёгкой моделью; #task/ошибка — запускаем полноценного агента. */
     private fun tryFastLane(c: Agent.Core, prompt: String) {
         c.fastBusy = true
+        val laneModel = c.fast()
         io.launch {
             val req = JSONArray()
                 .put(JSONObject().put("role", "system").put("content", fastSystem()))
@@ -459,7 +480,7 @@ class ChatStore(val fid: String) {
             var mode = 0 // 0 — ещё не решили, 1 — отвечаем сами (пузырь показан), 2 — задача
             val sb = StringBuilder()
             runCatching {
-                Llm.stream(Prefs.laneModel, req, 600) { d ->
+                Llm.stream(laneModel, req, 600) { d ->
                     if (mode == 2) return@stream
                     sb.append(d)
                     if (mode == 0) {
@@ -472,9 +493,9 @@ class ChatStore(val fid: String) {
                     } else update(bubbleId) { it.copy(text = it.text + d) }
                 }
             }
-            laneSpend(Prefs.laneModel, Llm.lastStreamTok)
+            laneSpend(laneModel, Llm.lastStreamTok)
             // стрим ничего не дал (не поддержан/ошибся до первого слова) — один обычный вызов той же модели
-            val fallbackTxt = if (mode == 0) runCatching { Llm.chat(Prefs.laneModel, req, 600, json = false).also { laneSpend(Prefs.laneModel, (it.inTok + it.outTok).toLong()) }.text }.getOrNull() else null
+            val fallbackTxt = if (mode == 0) runCatching { Llm.chat(laneModel, req, 600, json = false).also { laneSpend(laneModel, (it.inTok + it.outTok).toLong()) }.text }.getOrNull() else null
             withContext(Dispatchers.Main) {
                 c.fastBusy = false
                 when {

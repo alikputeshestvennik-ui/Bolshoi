@@ -745,14 +745,38 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Модели и использование", "чат · задачи · фон · проверка", Muted) {
-                var showOthers by remember { mutableStateOf(Prefs.showOtherModels) }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Показывать сторонние модели", style = body(14, FontWeight.SemiBold))
-                        Text("При подключённом ChatGPT добавляет модели других сервисов в список.", style = body(12, color = Muted))
+                var provider by remember { mutableStateOf(Prefs.requestProvider) }
+                Text("Провайдер для выбора в поле запроса", style = body(14, FontWeight.SemiBold))
+                Text("Автоматический режим использует модели ролей ниже. Ручной выбор действует на чат и основную модель задачи; фон и независимая проверка сохраняют свои настройки.", style = body(12, color = Muted))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("all" to "Все", "codex" to "Codex / ChatGPT", "anymodel" to "AnyModel", "deepseek" to "DeepSeek", "yandex" to "Яндекс", "compatible" to "Другой API").forEach { (id, name) ->
+                        val selected = provider == id
+                        Box(Modifier.height(40.dp).clip(shp(12.dp)).background(if (selected) Line else Bg)
+                            .clickable {
+                                provider = id; Prefs.requestProvider = id
+                                if (Prefs.requestModel.isNotBlank() && id != "all" && modelProvider(Prefs.requestModel) != id) Prefs.requestModel = ""
+                            }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                            Text(name, style = body(13, FontWeight.SemiBold, if (selected) Ink else Muted))
+                        }
                     }
-                    Toggle(showOthers) { showOthers = it; Prefs.showOtherModels = it }
                 }
+                Text("Codex работает прямо в чате через фоновую задачу GitHub Actions. Нужен GH_PAT с доступом к Actions; запрос и результат передаются зашифрованными.", style = body(12, color = Muted))
+                if (provider == "compatible") {
+                    var customUrl by remember { mutableStateOf(runCatching { CodexGateway.customUrl(ctx) }.getOrDefault("")) }
+                    var customModel by remember { mutableStateOf(Prefs.compatibleModel) }
+                    var customKey by remember { mutableStateOf("") }
+                    var customStatus by remember { mutableStateOf("") }
+                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("HTTPS-адрес Responses API") }, singleLine = true)
+                    OutlinedTextField(customModel, { customModel = it }, Modifier.fillMaxWidth(), label = { Text("Идентификатор модели") }, singleLine = true)
+                    OutlinedTextField(customKey, { customKey = it }, Modifier.fillMaxWidth(), label = { Text("Ключ провайдера") }, singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                    BigButton("Сохранить провайдера", {
+                        customStatus = runCatching { CodexGateway.saveCustom(ctx, customUrl, customKey, customModel); customKey = ""; "Сохранено" }.getOrElse { it.message ?: "Ошибка" }
+                    }, bg = Card, fg = Ink, border = Line)
+                    if (customStatus.isNotBlank()) Text(customStatus, style = body(12, color = Muted))
+                    Text("Для Codex нужен публичный HTTPS Responses API с поддержкой инструментов; одного Chat Completions недостаточно.", style = body(12, color = Muted))
+                }
+                val showOthers = true
                 androidx.compose.runtime.key(showOthers) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
                 Text("Модель для каждой роли. Яндекс — бесплатно и без VPN; AnyModel — платно: ${"%.2f".format(AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов баланса × коэффициент модели, расход токенов — в «Истории».",
@@ -867,7 +891,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
                 onModel: (String) -> Unit, onIn: (String) -> Unit, onOut: (String) -> Unit, extra: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null) {
     val names = mapOf(
         "yc:aliceai-llm-flash" to "Alice AI Flash", "yc:aliceai-llm" to "Alice AI", "yandexgpt-5.1/latest" to "YandexGPT 5.1 Pro",
-        "deepseek:deepseek-v4-flash" to "DeepSeek V4 Flash · DeepSeek", "deepseek:deepseek-v4-pro" to "DeepSeek V4 Pro · DeepSeek", "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash · Яндекс", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
+        "deepseek:deepseek-flash" to "DeepSeek V4 Flash · DeepSeek", "deepseek:deepseek-v4-pro" to "DeepSeek V4 Pro · DeepSeek", "yc:deepseek-v4.1-flash" to "DeepSeek V4.1 Flash · Яндекс", "ag/gemini-3-flash" to "Gemini 3 Flash · Any", "cx/gpt-6-astra" to "GPT-6 Astra · Any",
         "cx/gpt-6.1-sol" to "GPT-6.1 Sol · Any", "cx/gpt-6.1-terra" to "GPT-6.1 Terra · Any", "cc/claude-sonnet-5" to "Claude Sonnet 5 · Any",
         "ds/deepseek-v4-pro" to "DeepSeek V4 Pro · Any", "ds/deepseek-v4-flash-vision" to "DeepSeek V4 Flash Vision · Any")
     val list = visibleModels(when (slot) { "bg" -> Prefs.BG_MODELS; "fast" -> Prefs.CHAT_MODELS; else -> Prefs.HANDS_MODELS })
@@ -885,6 +909,7 @@ fun ModelEditor(title: String, slot: String, model: String, pin: String, pout: S
             }
         }
         val note = when {
+            Llm.isDeepSeek(model) -> "Прямой DeepSeek API · платно, расход определяется сервисом"
             Llm.isChatGpt(model) -> "Использует подписку ChatGPT · лимиты аккаунта"
             Llm.isYandex(model) -> "бесплатно · без VPN"
             Llm.isAny(model) -> AnyPrice.coef(model)?.let { "платно · AnyModel ×${it.toString().removeSuffix(".0").replace('.', ',')} ≈ ${"%.1f".format(it * AnyPrice.RUB_PER_M).replace('.', ',')} ₽ за миллион токенов" } ?: "платно · AnyModel"
