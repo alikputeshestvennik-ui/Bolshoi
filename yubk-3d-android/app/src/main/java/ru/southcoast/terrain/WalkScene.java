@@ -12,17 +12,21 @@ import javax.microedition.khronos.opengles.GL10;
 final class WalkScene {
     final FloatBuffer mesh;
     final int count,w,h;
-    int parts;
+    int parts,baseVertices;
+    float[][] windowBatches;
     final float dx,dz,halfX,halfZ;
     final float[] heights,spawn;
     final float[][] polygons;
-    float x,z,heading,pitch=0,forward=0;
+    float x,z,heading,pitch=0,forward=0,moveSpeed=5;
     long lastFrame;
     WalkScene(AssetManager assets) throws IOException {
         try(InputStream in=assets.open("walk.json"); ByteArrayOutputStream out=new ByteArrayOutputStream()){
             byte[] buffer=new byte[8192];int size;
             while((size=in.read(buffer))!=-1)out.write(buffer,0,size);
             JSONObject json=new JSONObject(out.toString("UTF-8"));
+            baseVertices=json.getInt("base_vertices");
+            JSONArray batches=json.getJSONArray("window_batches");windowBatches=new float[batches.length()][4];
+            for(int i=0;i<windowBatches.length;i++)for(int k=0;k<4;k++)windowBatches[i][k]=(float)batches.getJSONArray(i).getDouble(k);
             parts=json.getInt("mesh_parts");w=json.getInt("w");h=json.getInt("h");dx=(float)json.getDouble("dx");dz=(float)json.getDouble("dz");
             halfX=(w-1)*dx/2;halfZ=(h-1)*dz/2;
             JSONArray values=json.getJSONArray("heights");heights=new float[w*h];
@@ -74,12 +78,16 @@ final class WalkScene {
         return false;
     }
     void draw(GL10 gl,float aspect){
-        long now=System.nanoTime();float dt=lastFrame==0?0:Math.min(.05f,(now-lastFrame)/1e9f);lastFrame=now;
+        long now=System.nanoTime();float dt=lastFrame==0?0:Math.min(.15f,(now-lastFrame)/1e9f);lastFrame=now;
         float rad=(float)Math.toRadians(heading),look=(float)Math.toRadians(pitch);
-        float nx=x+(float)Math.sin(rad)*forward*2.2f*dt,nz=z-(float)Math.cos(rad)*forward*2.2f*dt;
-        if(!blocked(nx,nz)){x=nx;z=nz;}
+        // Small collision substeps preserve speed at low FPS without tunnelling through walls.
+        int steps=Math.max(1,(int)Math.ceil(moveSpeed*dt/.2f));
+        if(forward!=0)for(int i=0;i<steps;i++){
+            float nx=x+(float)Math.sin(rad)*forward*moveSpeed*dt/steps,nz=z-(float)Math.cos(rad)*forward*moveSpeed*dt/steps;
+            if(blocked(nx,nz))break;x=nx;z=nz;
+        }
         gl.glClearColor(.62f,.77f,.86f,1);gl.glClear(GL10.GL_COLOR_BUFFER_BIT|GL10.GL_DEPTH_BUFFER_BIT);
-        gl.glMatrixMode(GL10.GL_PROJECTION);gl.glLoadIdentity();GLU.gluPerspective(gl,65,aspect,.25f,3500);
+        gl.glMatrixMode(GL10.GL_PROJECTION);gl.glLoadIdentity();GLU.gluPerspective(gl,65,aspect,.5f,2200);
         gl.glMatrixMode(GL10.GL_MODELVIEW);gl.glLoadIdentity();
         float eye=ground(x,z)+1.9f;
         GLU.gluLookAt(gl,x,eye,z,x+(float)(Math.sin(rad)*Math.cos(look)),eye+(float)Math.sin(look),z-(float)(Math.cos(rad)*Math.cos(look)),0,1,0);
@@ -89,6 +97,14 @@ final class WalkScene {
         gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
         mesh.position(0);gl.glVertexPointer(3,GL10.GL_FLOAT,28,mesh);
         mesh.position(3);gl.glColorPointer(4,GL10.GL_FLOAT,28,mesh);
-        gl.glDrawArrays(GL10.GL_TRIANGLES,0,count);mesh.position(0);gl.glDisable(GL10.GL_FOG);
+        gl.glDrawArrays(GL10.GL_TRIANGLES,0,baseVertices);
+        // Decals use depth bias, and small window details are omitted at distance.
+        gl.glEnable(GL10.GL_POLYGON_OFFSET_FILL);gl.glPolygonOffset(-1f,-2f);gl.glDepthMask(false);
+        for(float[] batch:windowBatches){
+            float xx=batch[2]-x,zz=batch[3]-z;
+            if(xx*xx+zz*zz<180*180)gl.glDrawArrays(GL10.GL_TRIANGLES,(int)batch[0],(int)batch[1]);
+        }
+        gl.glDepthMask(true);gl.glDisable(GL10.GL_POLYGON_OFFSET_FILL);
+        mesh.position(0);gl.glDisable(GL10.GL_FOG);
     }
 }

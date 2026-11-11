@@ -46,28 +46,83 @@ final class Navigation {
     static final class MapView extends View {
         final Navigation nav;final WalkScene scene;final Pick pick;
         final Paint paint=new Paint(3);final Path path=new Path();
-        float x,z,heading,scale,left,top;final float density;
-        MapView(Context context,Navigation nav,WalkScene scene,Pick pick){super(context);this.nav=nav;this.scene=scene;this.pick=pick;density=getResources().getDisplayMetrics().density;setContentDescription("Карта Ялты. Север сверху. Стрелка — виртуальная позиция.");}
+        final ScaleGestureDetector pinch;
+        final float density;final int slop;
+        float x,z,heading,scale,left,top,zoom=1,panX,panY,lastX,lastY,downX,downY;
+        boolean dragged,multi;float[] selection;
+        MapView(Context context,Navigation nav,WalkScene scene,Pick pick){
+            super(context);this.nav=nav;this.scene=scene;this.pick=pick;
+            density=getResources().getDisplayMetrics().density;slop=ViewConfiguration.get(context).getScaledTouchSlop();
+            setContentDescription("Карта Ялты с названиями улиц. Масштаб двумя пальцами, перемещение одним. Тап выбирает место.");
+            pinch=new ScaleGestureDetector(context,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
+                @Override public boolean onScale(ScaleGestureDetector d){
+                    float next=Math.max(1,Math.min(16,zoom*d.getScaleFactor()));
+                    float ratio=next/zoom;
+                    panX=d.getFocusX()-getWidth()/2f-(d.getFocusX()-getWidth()/2f-panX)*ratio;
+                    panY=d.getFocusY()-getHeight()/2f-(d.getFocusY()-getHeight()/2f-panY)*ratio;
+                    zoom=next;clampPan();invalidate();return true;
+                }
+            });
+        }
         void position(float x,float z,float heading){this.x=x;this.z=z;this.heading=heading;invalidate();}
+        void select(float[] p){selection=p;invalidate();}
+        void resetView(){zoom=1;panX=panY=0;invalidate();}
+        float baseScale(){return Math.max(.0001f,Math.min((getWidth()-24*density)/(scene.halfX*2),(getHeight()-24*density)/(scene.halfZ*2)));}
+        void clampPan(){float s=baseScale()*zoom;float mx=Math.max(0,scene.halfX*s-getWidth()/2f+24*density),my=Math.max(0,scene.halfZ*s-getHeight()/2f+24*density);panX=Math.max(-mx,Math.min(mx,panX));panY=Math.max(-my,Math.min(my,panY));}
+        void transform(){scale=baseScale()*zoom;left=getWidth()/2f+panX-scene.halfX*scale;top=getHeight()/2f+panY-scene.halfZ*scale;}
         float px(float x){return left+(x+scene.halfX)*scale;}
         float py(float z){return top+(z+scene.halfZ)*scale;}
         @Override protected void onDraw(Canvas c){
-            super.onDraw(c);c.drawColor(Color.rgb(24,38,40));
-            float pad=12*density;scale=Math.min((getWidth()-pad*2)/(scene.halfX*2),(getHeight()-pad*2)/(scene.halfZ*2));
-            left=(getWidth()-scene.halfX*2*scale)/2;top=(getHeight()-scene.halfZ*2*scale)/2;
-            paint.setStyle(Paint.Style.FILL);paint.setColor(Color.rgb(87,102,91));c.drawRect(left,top,getWidth()-left,getHeight()-top,paint);
+            super.onDraw(c);transform();c.drawColor(Color.rgb(24,38,40));
+            paint.setStyle(Paint.Style.FILL);paint.setColor(Color.rgb(87,102,91));c.drawRect(px(-scene.halfX),py(-scene.halfZ),px(scene.halfX),py(scene.halfZ),paint);
             paint.setColor(Color.rgb(151,155,141));
             for(float[] poly:scene.polygons){path.reset();for(int i=0;i<poly.length;i+=2){if(i==0)path.moveTo(px(poly[i]),py(poly[i+1]));else path.lineTo(px(poly[i]),py(poly[i+1]));}path.close();c.drawPath(path,paint);}
-            paint.setColor(Color.rgb(237,211,158));paint.setStrokeWidth(Math.max(1,3*scale));
+            paint.setColor(Color.rgb(237,211,158));paint.setStrokeWidth(Math.max(density,4*scale));
             for(float[] r:nav.roads)c.drawLine(px(r[0]),py(r[1]),px(r[2]),py(r[3]),paint);
-            c.save();c.translate(px(x),py(z));c.rotate(heading);paint.setColor(Color.rgb(50,205,255));
+            if(pick!=null)labels(c);
+            c.save();c.translate(px(x),py(z));c.rotate(heading);paint.setColor(Color.rgb(50,205,255));paint.setStyle(Paint.Style.FILL);
             path.reset();path.moveTo(0,-9*density);path.lineTo(6*density,7*density);path.lineTo(0,3*density);path.lineTo(-6*density,7*density);path.close();c.drawPath(path,paint);c.restore();
-            paint.setColor(Color.WHITE);paint.setTextSize(12*density);c.drawText("С ↑",8*density,16*density,paint);
-            c.drawLine(10*density,getHeight()-16*density,10*density+200*scale,getHeight()-16*density,paint);c.drawText("200 м",10*density,getHeight()-20*density,paint);
+            if(selection!=null){paint.setColor(Color.rgb(255,171,60));c.drawCircle(px(selection[0]),py(selection[1]),8*density,paint);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2*density);c.drawCircle(px(selection[0]),py(selection[1]),13*density,paint);paint.setStyle(Paint.Style.FILL);}
+            paint.setColor(Color.WHITE);paint.setTextSize(12*density);c.drawText("С ↑",8*density,18*density,paint);
+            int meters=zoom<2?200:zoom<5?100:zoom<10?50:20;
+            paint.setStrokeWidth(2*density);c.drawLine(10*density,getHeight()-16*density,10*density+meters*scale,getHeight()-16*density,paint);c.drawText(meters+" м",10*density,getHeight()-23*density,paint);
         }
+        void labels(Canvas c){
+            LinkedHashMap<String,Integer> visible=new LinkedHashMap<>();
+            for(int i=0;i<nav.roads.length;i++){
+                String name=nav.roadNames[i];if(name.startsWith("Безымянная"))continue;
+                float[] r=nav.roads[i];float xx=px((r[0]+r[2])/2),yy=py((r[1]+r[3])/2);
+                if(xx<16*density||xx>getWidth()-16*density||yy<32*density||yy>getHeight()-40*density)continue;
+                Integer old=visible.get(name);
+                if(old==null||length(r)>length(nav.roads[old]))visible.put(name,i);
+            }
+            ArrayList<RectF> occupied=new ArrayList<>();paint.setTextSize(12*density);paint.setTypeface(Typeface.create(Typeface.DEFAULT,Typeface.BOLD));
+            for(Map.Entry<String,Integer> e:visible.entrySet()){
+                float[] r=nav.roads[e.getValue()];String text=e.getKey();float width=paint.measureText(text);
+                float xx=px((r[0]+r[2])/2)-width/2,yy=py((r[1]+r[3])/2)-5*density;
+                RectF bounds=new RectF(xx-4*density,yy-14*density,xx+width+4*density,yy+4*density);
+                if(bounds.left<4||bounds.right>getWidth()-4)continue;
+                boolean overlap=false;for(RectF rect:occupied)if(RectF.intersects(rect,bounds)){overlap=true;break;}
+                if(overlap)continue;occupied.add(bounds);
+                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);paint.setColor(Color.rgb(30,43,39));c.drawText(text,xx,yy,paint);
+                paint.setStyle(Paint.Style.FILL);paint.setColor(Color.rgb(255,248,224));c.drawText(text,xx,yy,paint);
+            }
+            paint.setTypeface(Typeface.DEFAULT);
+        }
+        float length(float[] r){return (r[2]-r[0])*(r[2]-r[0])+(r[3]-r[1])*(r[3]-r[1]);}
         @Override public boolean onTouchEvent(MotionEvent e){
             if(pick==null)return super.onTouchEvent(e);
-            if(e.getActionMasked()==MotionEvent.ACTION_UP){performClick();if(scale>0&&e.getX()>=left&&e.getX()<=getWidth()-left&&e.getY()>=top&&e.getY()<=getHeight()-top)pick.at((e.getX()-left)/scale-scene.halfX,(e.getY()-top)/scale-scene.halfZ);}
+            pinch.onTouchEvent(e);int action=e.getActionMasked();
+            if(action==MotionEvent.ACTION_DOWN){lastX=downX=e.getX();lastY=downY=e.getY();dragged=multi=false;getParent().requestDisallowInterceptTouchEvent(true);}
+            else if(action==MotionEvent.ACTION_POINTER_DOWN){multi=true;dragged=true;}
+            else if(action==MotionEvent.ACTION_MOVE){
+                if(Math.hypot(e.getX()-downX,e.getY()-downY)>slop)dragged=true;
+                if(e.getPointerCount()==1&&!pinch.isInProgress()&&!multi){panX+=e.getX()-lastX;panY+=e.getY()-lastY;clampPan();invalidate();}
+                lastX=e.getX();lastY=e.getY();
+            }else if(action==MotionEvent.ACTION_UP){
+                getParent().requestDisallowInterceptTouchEvent(false);
+                if(!dragged&&!multi){performClick();transform();float wx=(e.getX()-left)/scale-scene.halfX,wz=(e.getY()-top)/scale-scene.halfZ;if(Math.abs(wx)<=scene.halfX&&Math.abs(wz)<=scene.halfZ)pick.at(wx,wz);}
+            }else if(action==MotionEvent.ACTION_CANCEL){dragged=true;getParent().requestDisallowInterceptTouchEvent(false);}
             return true;
         }
         @Override public boolean performClick(){super.performClick();return true;}

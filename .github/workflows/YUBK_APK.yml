@@ -36,3 +36,27 @@ jobs:
           name: yubk-3d-debug-apk
           path: yubk-3d-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test map-first teleport and GLES rendering
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_2
+          working-directory: yubk-3d-android
+          disable-animations: true
+          script: |
+            gradle :app:connectedDebugAndroidTest --no-daemon
+            adb pull /sdcard/Android/data/ru.southcoast.terrain/files device-screenshots
+      - name: Upload device test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yubk-device-test-reports
+          path: |
+            yubk-3d-android/app/build/reports/androidTests/
+            yubk-3d-android/device-screenshots/

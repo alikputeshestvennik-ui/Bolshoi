@@ -2,7 +2,7 @@
 All geometry in metres, in a local WGS84 projection. No third-party Python modules.
 """
 import pathlib, gzip, struct, math, json, random, urllib.request, xml.etree.ElementTree as ET
-from collections import Counter
+from collections import Counter, defaultdict
 ROOT=pathlib.Path(__file__).resolve().parents[1]; CACHE=ROOT/'.cache'; CACHE.mkdir(exist_ok=True)
 ASSETS=ROOT/'app/src/main/assets'
 BBOX=(34.145,44.487,34.165,44.497)
@@ -31,13 +31,14 @@ def ground(x,z):
     aa=heights[r*W+c];bb=heights[r*W+c+1];cc=heights[(r+1)*W+c];dd=heights[(r+1)*W+c+1]
     return aa+(bb-aa)*u+(cc-aa)*v if u+v<=1 else dd+(cc-dd)*(1-u)+(bb-dd)*(1-v)
 def inside(x,z): return -X+2<x<X-2 and -Z+2<z<Z-2
-mesh=bytearray(); counts=Counter()
+mesh=bytearray(); windows=defaultdict(bytearray); window_mode=False; counts=Counter()
 def tri(a,b,c,color):
     # Store x,y,z + rgb, flat directional lighting baked for mobile.
     u=[b[i]-a[i] for i in range(3)];v=[c[i]-a[i] for i in range(3)]
     n=(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]);length=math.sqrt(sum(t*t for t in n))
     shade=.65+.35*abs(sum(n[i]*(-.4,.82,.4)[i] for i in range(3)))/max(length,1e-9)
-    for p in (a,b,c): mesh.extend(struct.pack('>6f',*p,*(v*shade for v in color)))
+    target=windows[(math.floor((a[0]+b[0]+c[0])/3/80),math.floor((a[2]+b[2]+c[2])/3/80))] if window_mode else mesh
+    for p in (a,b,c): target.extend(struct.pack('>6f',*p,*(v*shade for v in color)))
 def quad(a,b,c,d,col): tri(a,b,c,col);tri(a,c,d,col)
 def point(x,z,offset=0): return (x,ground(x,z)+offset,z)
 for r in range(H-1):
@@ -85,12 +86,15 @@ for poly,tags in buildings:
         length=math.dist(p,q)
         # Window bands, decorative rather than surveyed facade details.
         if length>3:
-            nx=-(q[1]-p[1])/length*.03;nz=(q[0]-p[0])/length*.03
+            winding=1 if sum(aa[0]*bb[1]-bb[0]*aa[1] for aa,bb in zip(poly,poly[1:]+poly[:1]))>0 else -1
+            nx=(q[1]-p[1])/length*.08*winding;nz=-(q[0]-p[0])/length*.08*winding
             for level in range(1,int(height/3)):
                 for i in range(1,int(length/3)):
                     t=i*3/length; ex=(q[0]-p[0])/length*.55;ez=(q[1]-p[1])/length*.55
                     x=p[0]+(q[0]-p[0])*t;z=p[1]+(q[1]-p[1])*t;y=base+level*3
-                    for sign in (-1,1):quad((x-ex+nx*sign,y,z-ez+nz*sign),(x+ex+nx*sign,y,z+ez+nz*sign),(x+ex+nx*sign,y+1.3,z+ez+nz*sign),(x-ex+nx*sign,y+1.3,z-ez+nz*sign),(.16,.25,.29))
+                    window_mode=True
+                    quad((x-ex+nx,y,z-ez+nz),(x+ex+nx,y,z+ez+nz),(x+ex+nx,y+1.3,z+ez+nz),(x-ex+nx,y+1.3,z-ez+nz),(.16,.25,.29))
+                    window_mode=False
     colliders.append(poly); counts['buildings']+=1
 
 def inpoly(p,poly):
@@ -141,6 +145,11 @@ assert valid,'No usable roads'
 a,b,t=min(valid,key=lambda r:math.dist(r[0],(0,0)))
 meta=dict(name='Ялта · пилот 1.6 × 1.1 км',bbox=BBOX,w=W,h=H,dx=dx,dz=dz,heights=heights,spawn=[*a,math.degrees(math.atan2(b[0]-a[0],-(b[1]-a[1])))],buildings=colliders,counts=dict(counts),source='© OpenStreetMap contributors, ODbL 1.0; Mapzen/Tilezen Skadi',osm_timestamp=root.attrib.get('timestamp','See source.osm.gz'))
 (ASSETS/'walk.json').write_text(json.dumps(meta,separators=(',',':'),ensure_ascii=False))
+meta['base_vertices']=len(mesh)//24
+meta['window_batches']=[]
+for (cx,cz),data in sorted(windows.items()):
+    meta['window_batches'].append([len(mesh)//24,len(data)//24,(cx+.5)*80,(cz+.5)*80])
+    mesh.extend(data)
 packed=gzip.compress(struct.pack('>i',len(mesh)//24)+mesh,mtime=0)
 chunks=[packed[i:i+262144] for i in range(0,len(packed),262144)]
 for old in ASSETS.glob('walk.mesh.*.gzpart'):old.unlink()

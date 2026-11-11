@@ -18,3 +18,12 @@ for poly in m['buildings']:
         assert math.hypot(x-a[0]-t*vx,z-a[1]-t*vz)>.5,'Spawn touches wall'
     assert not hit,'Spawn inside building'
 print(f'PASS: {n:,} vertices, finite metric geometry, colors, height-grid size, walkable spawn')
+
+end=m['base_vertices']
+assert 0<end<=n and end%3==0
+for start,count,cx,cz in m['window_batches']:
+ assert start==end and count>0 and count%3==0
+ assert math.isfinite(cx) and math.isfinite(cz)
+ end+=count
+assert end==n
+print('PASS: nonoverlapping base and window LOD batches cover the mesh')
