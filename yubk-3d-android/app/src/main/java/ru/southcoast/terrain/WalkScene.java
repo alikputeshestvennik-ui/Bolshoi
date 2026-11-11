@@ -1,0 +1,89 @@
+package ru.southcoast.terrain;
+
+import android.content.res.AssetManager;
+import android.opengl.GLU;
+import org.json.*;
+import java.io.*;
+import java.nio.*;
+import java.util.zip.GZIPInputStream;
+import javax.microedition.khronos.opengles.GL10;
+
+/** Metric local pilot scene. All state is owned by the GL thread. */
+final class WalkScene {
+    final FloatBuffer mesh;
+    final int count,w,h;
+    int parts;
+    final float dx,dz,halfX,halfZ;
+    final float[] heights,spawn;
+    final float[][] polygons;
+    float x,z,heading,pitch=0,forward=0;
+    long lastFrame;
+    WalkScene(AssetManager assets) throws IOException {
+        try(InputStream in=assets.open("walk.json"); ByteArrayOutputStream out=new ByteArrayOutputStream()){
+            byte[] buffer=new byte[8192];int size;
+            while((size=in.read(buffer))!=-1)out.write(buffer,0,size);
+            JSONObject json=new JSONObject(out.toString("UTF-8"));
+            parts=json.getInt("mesh_parts");w=json.getInt("w");h=json.getInt("h");dx=(float)json.getDouble("dx");dz=(float)json.getDouble("dz");
+            halfX=(w-1)*dx/2;halfZ=(h-1)*dz/2;
+            JSONArray values=json.getJSONArray("heights");heights=new float[w*h];
+            for(int i=0;i<heights.length;i++)heights[i]=(float)values.getDouble(i);
+            values=json.getJSONArray("spawn");spawn=new float[3];for(int i=0;i<3;i++)spawn[i]=(float)values.getDouble(i);
+            JSONArray buildings=json.getJSONArray("buildings");polygons=new float[buildings.length()][];
+            for(int i=0;i<polygons.length;i++){
+                JSONArray p=buildings.getJSONArray(i);polygons[i]=new float[p.length()*2];
+                for(int k=0;k<p.length();k++){polygons[i][k*2]=(float)p.getJSONArray(k).getDouble(0);polygons[i][k*2+1]=(float)p.getJSONArray(k).getDouble(1);}
+            }
+        }catch(JSONException e){throw new IOException("Invalid walk metadata",e);}
+        java.util.Vector<InputStream> streams=new java.util.Vector<>();
+        try {
+            for(int i=0;i<parts;i++)streams.add(assets.open(String.format(java.util.Locale.ROOT,"walk.mesh.%03d.gzpart",i)));
+        }catch(IOException e){for(InputStream stream:streams)stream.close();throw e;}
+        try(DataInputStream in=new DataInputStream(new GZIPInputStream(new SequenceInputStream(streams.elements())))){
+            count=in.readInt();if(count<3||count>4000000||count%3!=0)throw new IOException("Invalid walk mesh");
+            mesh=ByteBuffer.allocateDirect(count*24).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            for(int i=0;i<count*6;i++)mesh.put(in.readFloat());mesh.position(0);
+        }
+        reset();
+    }
+    void reset(){x=spawn[0];z=spawn[1];heading=spawn[2];pitch=0;forward=0;lastFrame=0;}
+    float ground(float x,float z){
+        float u=Math.max(0,Math.min(w-1.00001f,(x+halfX)/dx)),v=Math.max(0,Math.min(h-1.00001f,(z+halfZ)/dz));
+        int c=(int)u,r=(int)v;u-=c;v-=r;
+        float a=heights[r*w+c],b=heights[r*w+c+1],cc=heights[(r+1)*w+c],d=heights[(r+1)*w+c+1];
+        return u+v<=1 ? a+(b-a)*u+(cc-a)*v : d+(cc-d)*(1-u)+(b-d)*(1-v);
+    }
+    boolean blocked(float px,float pz){
+        if(Math.abs(px)>halfX-3||Math.abs(pz)>halfZ-3||ground(px,pz)<.7f)return true;
+        for(float[] p:polygons){
+            boolean hit=false;
+            for(int i=0,j=p.length-2;i<p.length;j=i,i+=2){
+                float ax=p[i],az=p[i+1],bx=p[j],bz=p[j+1];
+                if((az>pz)!=(bz>pz)&&px<(bx-ax)*(pz-az)/(bz-az)+ax)hit=!hit;
+                float vx=bx-ax,vz=bz-az,len=vx*vx+vz*vz;
+                float t=len==0?0:Math.max(0,Math.min(1,((px-ax)*vx+(pz-az)*vz)/len));
+                float ex=px-ax-t*vx,ez=pz-az-t*vz;
+                if(ex*ex+ez*ez<.25f)return true;
+            }
+            if(hit)return true;
+        }
+        return false;
+    }
+    void draw(GL10 gl,float aspect){
+        long now=System.nanoTime();float dt=lastFrame==0?0:Math.min(.05f,(now-lastFrame)/1e9f);lastFrame=now;
+        float rad=(float)Math.toRadians(heading),look=(float)Math.toRadians(pitch);
+        float nx=x+(float)Math.sin(rad)*forward*2.2f*dt,nz=z-(float)Math.cos(rad)*forward*2.2f*dt;
+        if(!blocked(nx,nz)){x=nx;z=nz;}
+        gl.glClearColor(.62f,.77f,.86f,1);gl.glClear(GL10.GL_COLOR_BUFFER_BIT|GL10.GL_DEPTH_BUFFER_BIT);
+        gl.glMatrixMode(GL10.GL_PROJECTION);gl.glLoadIdentity();GLU.gluPerspective(gl,65,aspect,.25f,3500);
+        gl.glMatrixMode(GL10.GL_MODELVIEW);gl.glLoadIdentity();
+        float eye=ground(x,z)+1.9f;
+        GLU.gluLookAt(gl,x,eye,z,x+(float)(Math.sin(rad)*Math.cos(look)),eye+(float)Math.sin(look),z-(float)(Math.cos(rad)*Math.cos(look)),0,1,0);
+        gl.glEnable(GL10.GL_FOG);gl.glFogf(GL10.GL_FOG_MODE,GL10.GL_LINEAR);
+        gl.glFogf(GL10.GL_FOG_START,700);gl.glFogf(GL10.GL_FOG_END,2200);
+        gl.glFogfv(GL10.GL_FOG_COLOR,new float[]{.62f,.77f,.86f,1},0);
+        gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
+        mesh.position(0);gl.glVertexPointer(3,GL10.GL_FLOAT,24,mesh);
+        mesh.position(3);gl.glColorPointer(3,GL10.GL_FLOAT,24,mesh);
+        gl.glDrawArrays(GL10.GL_TRIANGLES,0,count);mesh.position(0);gl.glDisable(GL10.GL_FOG);
+    }
+}

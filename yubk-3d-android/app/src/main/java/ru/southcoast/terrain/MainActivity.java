@@ -21,23 +21,40 @@ public class MainActivity extends Activity {
         layout.setPadding(0,32,0,24);
         TextView title = new TextView(this);
         title.setText("ЮБК · Севастополь — Алушта\nРеальный масштаб высот · 1:1");
-        title.setTextSize(20); title.setPadding(20,12,20,12);
+        title.setTextSize(16); title.setPadding(20,12,20,12);
         layout.addView(title);
         try {
             terrain = new TerrainView();
             layout.addView(terrain,new LinearLayout.LayoutParams(-1,0,1));
             Button reset = new Button(this); reset.setText("Вернуть общий вид");
-            reset.setOnClickListener(v -> terrain.queueEvent(() -> { terrain.render.yaw=0; terrain.render.tilt=55; terrain.render.zoom=1; terrain.requestRender(); }));
+            reset.setOnClickListener(v -> terrain.queueEvent(() -> { terrain.render.walkMode=false; terrain.render.walk.forward=0; terrain.render.yaw=0; terrain.render.tilt=55; terrain.render.zoom=1; terrain.requestRender(); }));
             layout.addView(reset);
+            LinearLayout controls = new LinearLayout(this);
+            Button walk = new Button(this); walk.setText("Прогулка · Ялта");
+            walk.setOnClickListener(v -> terrain.queueEvent(() -> {terrain.render.walk.reset();terrain.render.walkMode=true;terrain.requestRender();}));
+            controls.addView(walk,new LinearLayout.LayoutParams(0,-2,2));
+            for(int direction : new int[]{-1,1}) {
+                Button move = new Button(this);move.setText(direction==1 ? "Вперёд" : "Назад");
+                move.setOnTouchListener((v,e) -> {
+                    int action=e.getActionMasked();
+                    if(action==MotionEvent.ACTION_DOWN || action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL){
+                        float speed=action==MotionEvent.ACTION_DOWN ? direction : 0;
+                        terrain.queueEvent(() -> {terrain.render.walk.forward=speed;terrain.requestRender();});
+                    }
+                    return true;
+                });
+                controls.addView(move,new LinearLayout.LayoutParams(0,-2,1));
+            }
+            layout.addView(controls);
             TextView help = new TextView(this);
-            help.setText("Поворот: одним пальцем · Масштаб: двумя\nСевер — верх карты при сбросе. Шаг сетки ≈ 250–290 м.\nВысоты: Mapzen / Tilezen, SRTM (NASA / USGS).\nСиний: нулевая высота, приближение уровня моря.");
+            help.setText("Прогулка: взгляд пальцем, движение — удерживайте кнопку.\nПилот Ялты: ≈ 1,6 × 1,1 км. Дома и деревья упрощены.\n© OpenStreetMap contributors · ODbL · openstreetmap.org/copyright\nРельеф: Mapzen / Tilezen · SRTM NASA / USGS");
             help.setPadding(20,8,20,8); layout.addView(help);
         } catch (IOException e) {
             TextView error = new TextView(this); error.setText("Не удалось загрузить рельеф. Пересоберите приложение с terrain.bin."); layout.addView(error);
         }
         setContentView(layout);
     }
-    @Override protected void onPause(){ super.onPause(); if(terrain!=null)terrain.onPause(); }
+    @Override protected void onPause(){ super.onPause(); if(terrain!=null){terrain.queueEvent(() -> {terrain.render.walk.forward=0;terrain.render.walk.lastFrame=0;});terrain.onPause();} }
     @Override protected void onResume(){ super.onResume(); if(terrain!=null)terrain.onResume(); }
     class TerrainView extends GLSurfaceView {
         final TerrainRenderer render;
@@ -57,15 +74,18 @@ public class MainActivity extends Activity {
             float x=e.getX(), y=e.getY();
             if(e.getActionMasked()==MotionEvent.ACTION_MOVE && e.getPointerCount()==1 && !scale.isInProgress()){
                 float dx=x-lastX,dy=y-lastY;
-                queueEvent(() -> {render.yaw+=dx*.25f; render.tilt=Math.max(5,Math.min(85,render.tilt+dy*.25f)); requestRender();});
+                queueEvent(() -> {if(render.walkMode){render.walk.heading+=dx*.2f;render.walk.pitch=Math.max(-75,Math.min(75,render.walk.pitch-dy*.2f));}
+                    else {render.yaw+=dx*.25f; render.tilt=Math.max(5,Math.min(85,render.tilt+dy*.25f));} requestRender();});
             }
             lastX=x;lastY=y;return true;
         }
     }
     class TerrainRenderer implements GLSurfaceView.Renderer {
         FloatBuffer vertices, colors;
+        final WalkScene walk; boolean walkMode=false;
         int count; float yaw=0,tilt=55,zoom=1,aspect=1;
         TerrainRenderer() throws IOException {
+            walk=new WalkScene(getAssets());
             try(DataInputStream in=new DataInputStream(getAssets().open("terrain.bin"))){
                 int w=in.readInt(),h=in.readInt();
                 if(w<2||h<2||w*h>1000000)throw new IOException("Invalid mesh");
@@ -94,6 +114,8 @@ public class MainActivity extends Activity {
         public void onSurfaceCreated(GL10 gl,EGLConfig config){gl.glClearColor(.035f,.065f,.09f,1);gl.glEnable(GL10.GL_DEPTH_TEST);}
         public void onSurfaceChanged(GL10 gl,int w,int h){gl.glViewport(0,0,w,h);aspect=(float)w/Math.max(1,h);}
         public void onDrawFrame(GL10 gl){
+            if(walkMode){walk.draw(gl,aspect);if(walk.forward!=0)terrain.requestRender();return;}
+            gl.glClearColor(.035f,.065f,.09f,1);
             gl.glClear(GL10.GL_COLOR_BUFFER_BIT|GL10.GL_DEPTH_BUFFER_BIT);
             gl.glMatrixMode(GL10.GL_PROJECTION);gl.glLoadIdentity();
             float radius=55/zoom;float halfY=radius/Math.min(1,aspect);
