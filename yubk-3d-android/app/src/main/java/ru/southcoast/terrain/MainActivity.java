@@ -18,7 +18,11 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(0,32,0,24);
+        layout.setOnApplyWindowInsetsListener((v,insets) -> {
+            v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
+            return insets;
+        });
         TextView title = new TextView(this);
         title.setText("ЮБК · Севастополь — Алушта\nРеальный масштаб высот · 1:1");
         title.setTextSize(16); title.setPadding(20,12,20,12);
@@ -47,12 +51,14 @@ public class MainActivity extends Activity {
             }
             layout.addView(controls);
             TextView help = new TextView(this);
+            help.setTextSize(11);
             help.setText("Прогулка: взгляд пальцем, движение — удерживайте кнопку.\nПилот Ялты: ≈ 1,6 × 1,1 км. Дома и деревья упрощены.\n© OpenStreetMap contributors · ODbL · openstreetmap.org/copyright\nРельеф: Mapzen / Tilezen · SRTM NASA / USGS");
             help.setPadding(20,8,20,8); layout.addView(help);
         } catch (IOException e) {
             TextView error = new TextView(this); error.setText("Не удалось загрузить рельеф. Пересоберите приложение с terrain.bin."); layout.addView(error);
         }
         setContentView(layout);
+        layout.requestApplyInsets();
     }
     @Override protected void onPause(){ super.onPause(); if(terrain!=null){terrain.queueEvent(() -> {terrain.render.walk.forward=0;terrain.render.walk.lastFrame=0;});terrain.onPause();} }
     @Override protected void onResume(){ super.onResume(); if(terrain!=null)terrain.onResume(); }
@@ -74,7 +80,8 @@ public class MainActivity extends Activity {
             float x=e.getX(), y=e.getY();
             if(e.getActionMasked()==MotionEvent.ACTION_MOVE && e.getPointerCount()==1 && !scale.isInProgress()){
                 float dx=x-lastX,dy=y-lastY;
-                queueEvent(() -> {if(render.walkMode){render.walk.heading+=dx*.2f;render.walk.pitch=Math.max(-75,Math.min(75,render.walk.pitch-dy*.2f));}
+                float lookX=dx/Math.max(1,getWidth())*120f,lookY=dy/Math.max(1,getHeight())*65f;
+                queueEvent(() -> {if(render.walkMode){render.walk.heading+=lookX;render.walk.pitch=Math.max(-50,Math.min(50,render.walk.pitch-lookY));}
                     else {render.yaw+=dx*.25f; render.tilt=Math.max(5,Math.min(85,render.tilt+dy*.25f));} requestRender();});
             }
             lastX=x;lastY=y;return true;

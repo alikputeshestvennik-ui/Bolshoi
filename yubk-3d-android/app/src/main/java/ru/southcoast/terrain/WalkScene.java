@@ -40,8 +40,13 @@ final class WalkScene {
         }catch(IOException e){for(InputStream stream:streams)stream.close();throw e;}
         try(DataInputStream in=new DataInputStream(new GZIPInputStream(new SequenceInputStream(streams.elements())))){
             count=in.readInt();if(count<3||count>4000000||count%3!=0)throw new IOException("Invalid walk mesh");
-            mesh=ByteBuffer.allocateDirect(count*24).order(ByteOrder.nativeOrder()).asFloatBuffer();
-            for(int i=0;i<count*6;i++)mesh.put(in.readFloat());mesh.position(0);
+            mesh=ByteBuffer.allocateDirect(count*28).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            // Assets contain XYZ + RGB. GLES 1.1 requires RGBA in the color array.
+            for(int i=0;i<count;i++){
+                for(int k=0;k<6;k++)mesh.put(in.readFloat());
+                mesh.put(1f);
+            }
+            mesh.position(0);
         }
         reset();
     }
@@ -82,8 +87,8 @@ final class WalkScene {
         gl.glFogf(GL10.GL_FOG_START,700);gl.glFogf(GL10.GL_FOG_END,2200);
         gl.glFogfv(GL10.GL_FOG_COLOR,new float[]{.62f,.77f,.86f,1},0);
         gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);gl.glEnableClientState(GL10.GL_COLOR_ARRAY);
-        mesh.position(0);gl.glVertexPointer(3,GL10.GL_FLOAT,24,mesh);
-        mesh.position(3);gl.glColorPointer(3,GL10.GL_FLOAT,24,mesh);
+        mesh.position(0);gl.glVertexPointer(3,GL10.GL_FLOAT,28,mesh);
+        mesh.position(3);gl.glColorPointer(4,GL10.GL_FLOAT,28,mesh);
         gl.glDrawArrays(GL10.GL_TRIANGLES,0,count);mesh.position(0);gl.glDisable(GL10.GL_FOG);
     }
 }
