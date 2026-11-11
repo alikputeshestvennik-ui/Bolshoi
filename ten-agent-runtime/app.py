@@ -93,6 +93,14 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
                 "-c", 'model_providers.openai_chatgpt_plan.supports_websockets=false',
                 "-c", "shell_environment_policy.ignore_default_excludes=false",
                 "-c", "sandbox_workspace_write.network_access=true"]
+        if "deepseek" in model.lower():
+            catalog=json.loads(Path(__file__).with_name("deepseek-models.json").read_text())
+            family="deepseek-v4-pro" if "pro" in model.lower() else "deepseek-flash"
+            selected=next(entry for entry in catalog["models"] if entry["slug"]==family)
+            selected["slug"]=model
+            catalog_file=Path(workspace,"provider-models.json")
+            catalog_file.write_text(json.dumps({"models":[selected]}),encoding="utf-8")
+            args.extend(["-c", "model_catalog_json=" + json.dumps(str(catalog_file))])
         process = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=env, cwd=workspace, start_new_session=True, limit=2_000_000)
         async def send(message: dict) -> None:
