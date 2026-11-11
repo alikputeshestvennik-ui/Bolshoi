@@ -112,14 +112,22 @@ final class Region {
             tiles = new Tile[tileJson.length()];
             for (int i = 0; i < tiles.length; i++) tiles[i] = new Tile(tileJson.getJSONObject(i));
             JSONArray roadsJson = j.optJSONArray("roads");
-            int roadCount = roadsJson == null ? 0 : roadsJson.length();
+            int roadCount = 0;
+            if (roadsJson != null) for (int i = 0; i < roadsJson.length(); i++) roadCount += roadsJson.getJSONArray(i).length();
             roads = new float[roadCount * 4];
-            for (int i = 0; i < roadCount; i++) {
-                JSONArray seg = roadsJson.getJSONArray(i);
-                roads[i * 4] = (float) seg.getDouble(0);
-                roads[i * 4 + 1] = (float) seg.getDouble(1);
-                roads[i * 4 + 2] = (float) seg.getDouble(2);
-                roads[i * 4 + 3] = (float) seg.getDouble(3);
+            int roadAt = 0;
+            if (roadsJson != null) {
+                for (int i = 0; i < roadsJson.length(); i++) {
+                    JSONArray way = roadsJson.getJSONArray(i);
+                    for (int s = 0; s < way.length(); s++) {
+                        JSONArray seg = way.getJSONArray(s);
+                        roads[roadAt * 4] = (float) seg.getDouble(0);
+                        roads[roadAt * 4 + 1] = (float) seg.getDouble(1);
+                        roads[roadAt * 4 + 2] = (float) seg.getDouble(2);
+                        roads[roadAt * 4 + 3] = (float) seg.getDouble(3);
+                        roadAt++;
+                    }
+                }
             }
             JSONArray streetJson = j.optJSONArray("streets");
             int streetCount = streetJson == null ? 0 : streetJson.length();
