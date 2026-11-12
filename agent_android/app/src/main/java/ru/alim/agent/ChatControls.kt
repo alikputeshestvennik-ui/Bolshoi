@@ -45,7 +45,7 @@ private val brainIcon by lazy { lineIco("brain", "M12 5a3 3 0 0 0-5.5-1.6A3.4 3.
 private val bulbIcon by lazy { lineIco("bulb-picker", "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.7 1 1.5 1 2.5h6c0-1 .2-1.8 1-2.5A6 6 0 0 0 12 3z") }
 
 @Composable
-private fun PickerButton(icon: ImageVector, label: String, accessibility: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun PickerButton(icon: ImageVector, label: String, accessibility: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(modifier.height(46.dp).clip(shp(12.dp)).background(AccentSoft).border(1.dp, Line, shp(12.dp))
         .clickable(onClickLabel = accessibility, onClick = onClick).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(rememberVectorPainter(icon), null, tint = Teal, modifier = Modifier.size(18.dp))

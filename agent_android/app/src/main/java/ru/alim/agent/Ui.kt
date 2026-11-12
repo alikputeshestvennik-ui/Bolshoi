@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Journal, Active, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
+enum class Scr { Home, Journal, Active, Task, Tg, Music, Yt, History, Rules, Settings, CodexSettings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 val LocalFlexActive = androidx.compose.runtime.staticCompositionLocalOf { false }
 
@@ -191,7 +191,7 @@ fun App(voice: Voice) {
                 else scr = destination
             }
             val home: () -> Unit = { if (scr == Scr.Task) { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
-            val withBar = !flex && scr != Scr.Home && scr != Scr.Journal && (scr != Scr.Task || historyRecord != null)
+            val withBar = !flex && scr != Scr.Home && scr != Scr.Journal && scr != Scr.CodexSettings && (scr != Scr.Task || historyRecord != null)
             var barH by remember { mutableStateOf(0) }
             val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
             val barHaze = remember { dev.chrisbanes.haze.HazeState() }
@@ -212,6 +212,7 @@ fun App(voice: Voice) {
                 Scr.History -> HistoryScreen(home) { r -> historyRecord = r; taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt }) { s -> subFrom = Scr.Settings; scr = s }
+                Scr.CodexSettings -> CodexSettingsScreen { scr = Scr.Home }
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
                 Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)

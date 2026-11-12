@@ -621,6 +621,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     "ChatGPT" to if (ChatGptAccount.connected) ChatGptAccount.email.ifBlank { "подключён" } else "не подключён",
                     "Telegram" to Tg.statusText, "Почта Gmail" to "почтовые ящики"))
                 group("Модели и расход", listOf("Модели и использование" to "чат · задачи · фон · проверка", "Лимит расходов" to "платные сервисы"))
+                SetGroup("Codex") {
+                    SetRow("Настройки Codex", "провайдеры · Python · файлы", first = true) { open(Scr.CodexSettings) }
+                }
                 SetGroup("Поведение Тени") {
                     listOf(Triple("Что Тень помнит", "память", Scr.Memory), Triple("Сам пишет первым", "инициатива и расписание", Scr.Initiative), Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules)).forEachIndexed { i, (name, sub, destination) ->
                         SetRow(name, sub, first = i == 0) { open(destination) }
@@ -745,31 +748,6 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Модели и использование", "чат · задачи · фон · проверка", Muted) {
-                CodexRuntimePanel()
-                Text("Codex — отдельный чат. Команды и файлы выполняются во встроенном Linux-окружении телефона, без Termux и без ручного запуска сервера.", style = body(12, color = Muted))
-                listOf("deepseek" to "DeepSeek", "any" to "AnyModel").forEach { (id, name) ->
-                    var key by remember(id) { mutableStateOf("") }
-                    var status by remember(id) { mutableStateOf("") }
-                    OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("Ключ $name") }, singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-                    BigButton("Сохранить ключ $name", {
-                        status = runCatching { CodexGateway.saveProviderToken(ctx, id, key); key = ""; "Сохранено" }.getOrElse { it.message.orEmpty() }
-                    }, bg = Card, fg = Ink, border = Line)
-                    if (status.isNotBlank()) Text(status, style = body(12, color = Muted))
-                }
-                    var customUrl by remember { mutableStateOf(runCatching { CodexGateway.customUrl(ctx) }.getOrDefault("")) }
-                    var customModel by remember { mutableStateOf(Prefs.compatibleModel) }
-                    var customKey by remember { mutableStateOf("") }
-                    var customStatus by remember { mutableStateOf("") }
-                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("Базовый HTTPS-адрес, например https://api.example.com/v1") }, singleLine = true)
-                    OutlinedTextField(customModel, { customModel = it }, Modifier.fillMaxWidth(), label = { Text("Идентификатор модели") }, singleLine = true)
-                    OutlinedTextField(customKey, { customKey = it }, Modifier.fillMaxWidth(), label = { Text("Ключ провайдера") }, singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-                    BigButton("Сохранить провайдера", {
-                        customStatus = runCatching { CodexGateway.saveCustom(ctx, customUrl, customKey, customModel); customKey = ""; "Сохранено" }.getOrElse { it.message ?: "Ошибка" }
-                    }, bg = Card, fg = Ink, border = Line)
-                    if (customStatus.isNotBlank()) Text(customStatus, style = body(12, color = Muted))
-                    Text("Подойдёт базовый HTTPS-адрес OpenAI-совместимого API (обычно с /v1) и модель с поддержкой инструментов. Ключ хранится зашифрованным на телефоне.", style = body(12, color = Muted))
                 val showOthers = true
                 androidx.compose.runtime.key(showOthers) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))

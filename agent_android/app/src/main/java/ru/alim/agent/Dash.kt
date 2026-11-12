@@ -485,7 +485,7 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
     val cur = when (here) {
         Scr.Journal -> Scr.Home
         Scr.Digest -> Scr.History
-        Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt -> Scr.Settings
+        Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt, Scr.CodexSettings -> Scr.Settings
         else -> here
     }
     val codexOn = Friends.isCodex(Friends.current) && cur == Scr.Home

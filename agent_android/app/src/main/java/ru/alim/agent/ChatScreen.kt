@@ -168,6 +168,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     var tick by remember { mutableStateOf(0) }
     var composerH by remember { mutableStateOf(220) }
     var composerFocused by remember { mutableStateOf(false) }
+    var askDelete by remember(fid) { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
@@ -183,8 +184,9 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
             val bars = if (flex) 0.dp else WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val topExtra = if (Friends.isCodex(fid)) 72.dp else 20.dp
             LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 20.dp, bottom = bars + (if (flex) 0.dp else with(LocalDensity.current) { composerH.toDp() }) + 18.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + topExtra, bottom = bars + (if (flex) 0.dp else with(LocalDensity.current) { composerH.toDp() }) + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (!flex) core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
                 if (!flex && core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
@@ -220,6 +222,9 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             .background(Brush.verticalGradient(listOf(fadeBottom.copy(alpha = 0f), fadeBottom.copy(alpha = 0.75f), fadeBottom.copy(alpha = 0.95f)))))
 
         // ——— шапка ———
+        if (!ChatSel.on && search == null && Friends.isCodex(fid)) {
+            CodexTopBar(fid, go) { askDelete = true }
+        }
         if (ChatSel.on) Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(48.dp).glass(haze, circ).clickable(onClickLabel = "Снять выделение") { ChatSel.ids.clear() }, contentAlignment = Alignment.Center) {
@@ -280,6 +285,9 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), null, tint = Ink, modifier = Modifier.size(22.dp)); HGap(8)
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
+            } else if (Friends.isCodex(fid)) {
+                if (composerFocused && WindowInsets.ime.getBottom(LocalDensity.current) > 0) CodexKeyboardBar(fid, go)
+                Composer(haze, chat, f, onInputFocusChange = { composerFocused = it })
             } else {
                 BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
             }
@@ -295,6 +303,23 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 .clickable(onClickLabel = "Вниз") { scope.launch { list.animateScrollToItem(0) } }, contentAlignment = Alignment.Center) {
                 Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icDown), "Вниз", tint = Ink, modifier = Modifier.size(24.dp))
             }
+        }
+        if (askDelete) {
+            val canRemove = fid != Friends.CODEX
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { askDelete = false },
+                title = { Text(if (canRemove) "Удалить диалог?" else "Очистить диалог?") },
+                text = { Text(if (canRemove) "«${f.name}» и вся переписка будут удалены." else "Переписка Codex будет очищена. Сам режим останется.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton({
+                        askDelete = false
+                        if (canRemove) Friends.remove(fid) else chat.delete(chat.msgs.map { it.id }.toList())
+                        Friends.open(Friends.CODEX)
+                        go(Scr.Home)
+                    }) { Text(if (canRemove) "Удалить" else "Очистить", color = Danger) }
+                },
+                dismissButton = { androidx.compose.material3.TextButton({ askDelete = false }) { Text("Отмена") } },
+            )
         }
     }
 }
