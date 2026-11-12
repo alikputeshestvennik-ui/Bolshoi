@@ -32,6 +32,13 @@ object Prefs {
     var codexMode: Boolean get() = b("request_codex_mode", false); set(v) = putB("request_codex_mode", v)
     var requestProvider: String get() = s("request_provider", "all"); set(v) = put("request_provider", v)
     var requestModel: String get() = s("request_model", ""); set(v) = put("request_model", v)
+    /** Provider/model выбран отдельно для каждого диалога Codex. */
+    fun codexModel(id: String): String = s("codex_model_" + id, "")
+    fun setCodexModel(id: String, value: String) = put("codex_model_" + id, value.trim())
+    var lastCodex: String get() = s("last_codex", "codex"); set(v) = put("last_codex", v)
+    /** Плавающее окно Codex: reasoning и последний ответ поверх других приложений. */
+    var codexOverlay: Boolean get() = b("codex_overlay", false); set(v) = putB("codex_overlay", v)
+    var codexActiveTask: String get() = s("codex_active_task", ""); set(v) = put("codex_active_task", v)
     var showOtherModels: Boolean get() = b("show_other_models", false); set(v) = putB("show_other_models", v)
     var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, "yc:aliceai-llm-flash"); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */

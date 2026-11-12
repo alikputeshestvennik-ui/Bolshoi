@@ -75,6 +75,7 @@ data class Friend(
 object Friends {
     const val MAIN = "main"
     const val CODEX = "codex"
+    fun isCodex(id: String) = id == CODEX || id.startsWith("codex-")
     val list = mutableStateListOf<Friend>()
     /** Открытый сейчас диалог. */
     var current by mutableStateOf(MAIN)
@@ -92,13 +93,14 @@ object Friends {
             }
         }
         if (list.none { it.main }) list.add(0, Friend(MAIN, Prefs.botName, Prefs.botMale, Prefs.botStyle, Prefs.botAvatar))
-        // теперь помощник один — остальных друзей не показываем
-        list.removeAll { !it.main && it.id != CODEX }
+        // теперь помощник один — остальных друзей не показываем, но диалоги Codex сохраняем
+        list.removeAll { !it.main && !isCodex(it.id) }
         if (list.none { it.id == CODEX }) list.add(Friend(CODEX, "Codex", true, "short", role = "Код и проекты"))
+        if (list.none { it.id == Prefs.lastCodex }) Prefs.lastCodex = CODEX
         // переименование: «Пилот» → «Тень» (один раз; если Алим потом даст своё имя — оставим его)
         if (!Prefs.renamedTen) { Prefs.renamedTen = true
             list.firstOrNull { it.main && it.name.equals("Пилот", true) }?.let { f -> save(f.copy(name = "Тень")) } }
-        current = Prefs.lastChat.takeIf { it == MAIN || it == CODEX } ?: MAIN
+        current = Prefs.lastChat.takeIf { it == MAIN || isCodex(it) } ?: MAIN
     }
 
     fun get(id: String): Friend = list.firstOrNull { it.id == id } ?: list.firstOrNull { it.main } ?: Friend(MAIN, "Артур", true, "buddy")
@@ -116,6 +118,7 @@ object Friends {
         list.removeAll { it.id == id }
         runCatching { File(Chat.app.filesDir, "chat_$id.json").delete() }
         if (current == id) open(MAIN)
+        if (Prefs.lastCodex == id) Prefs.lastCodex = CODEX
         persist()
     }
 
@@ -124,7 +127,17 @@ object Friends {
         save(f); return f
     }
 
-    fun open(id: String) { current = id; Prefs.lastChat = id }
+    /** Новый независимый диалог Codex со своим провайдером, моделью и рабочей папкой. */
+    fun newCodex(): Friend {
+        val n = list.count { isCodex(it.id) } + 1
+        val f = Friend("codex-" + System.currentTimeMillis(), if (n <= 1) "Codex" else "Codex $n", true, "short", role = "Код и проекты")
+        save(f); open(f.id); return f
+    }
+
+    fun open(id: String) {
+        current = id; Prefs.lastChat = id
+        if (isCodex(id)) Prefs.lastCodex = id
+    }
 
     const val MUSTAFA = "Кавказский акцент, говорит неспешно, тепло и уверенно, как старший брат. Вставляет «слушай, брат», «Иншаллах», " +
         "«Машаллах», «Альхамдулиллях», «валлах», «дон» — в случайных местах, но не в каждой фразе. Любит пошутить, по-доброму подкалывает."
@@ -386,16 +399,19 @@ class ChatStore(val fid: String) {
             return
         }
         c.delegated = false
-        if (fid == Friends.CODEX) {
+        if (Friends.isCodex(fid)) {
             if (m.att.isNotBlank() || m.voice.isNotBlank()) {
                 say("Режим Codex пока принимает текстовые цели. Пришли задачу текстом."); drainQueue(); return
             }
             c.fastBusy = true
-            val selectedModel = Prefs.requestModel.ifBlank { Prefs.smartModel }
+            val selectedModel = Prefs.codexModel(fid).ifBlank { Prefs.smartModel }
             val taskContext = "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text
-            note("Codex · выполняю на телефоне…")
+            if (EmbeddedRuntime.state == EmbeddedRuntime.State.READY) note("Codex · выполняю на телефоне…")
+            else note("Codex · готовлю локальное окружение…")
+            Prefs.codexActiveTask = fid
+            if (Prefs.codexOverlay) CodexOverlayService.start(Chat.app, fid)
             io.launch {
-                val reply = runCatching { CodexGateway.run(Chat.app, taskContext, selectedModel) }
+                val reply = runCatching { CodexGateway.run(Chat.app, taskContext, selectedModel, fid) }
                 withContext(Dispatchers.Main) {
                     c.fastBusy = false
                     reply.onSuccess { say(it.text, it.file) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }

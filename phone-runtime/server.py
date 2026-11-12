@@ -1,166 +1,455 @@
-"""Loopback-only bridge to the installed Codex CLI. No GitHub Actions."""
+"""Loopback-only bridge to the Codex CLI bundled with Ten.
+
+The bridge is intentionally dependency-free: it uses the Python standard
+library only.  It is started by the Android app inside the Termux bootstrap
+environment, but the same file can be used from a normal Linux desktop.
+"""
+from __future__ import annotations
+
 import hmac
 import json
 import os
 from pathlib import Path
-import secrets
 import re
-import subprocess
+import secrets
+import select
 import signal
+import socket
+import socketserver
+import subprocess
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
-ROOT = Path(os.environ.get('TEN_LOCAL_HOME', Path.home() / '.ten-local'))
+ROOT = Path(os.environ.get("TEN_LOCAL_HOME", Path.home() / ".ten-local"))
 ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
-TOKEN = ROOT / 'token'
+TOKEN = ROOT / "token"
 if not TOKEN.exists():
     fd = os.open(TOKEN, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'w') as f:
+    with os.fdopen(fd, "w") as f:
         f.write(secrets.token_urlsafe(32))
 SECRET = TOKEN.read_text().strip()
-WORK = ROOT / 'workspace'
+WORK = ROOT / "workspace"
 WORK.mkdir(exist_ok=True)
-LOCK = threading.Lock()
-PROCESS_LOCK = threading.Lock()
-PROCESS = None
+
+PROXY_PORT = int(os.environ.get("TEN_PROXY_PORT", "8767"))
+PROXY_READY = False
+TASKS: dict[str, "Task"] = {}
+TASKS_LOCK = threading.Lock()
+MAX_STDERR = 8192
 
 
-def stop_process():
-    with PROCESS_LOCK:
-        if PROCESS is None or PROCESS.poll() is not None:
-            return False
+def safe_task_id(value: object) -> str:
+    text = str(value or "default")
+    text = re.sub(r"[^A-Za-z0-9_-]", "", text)[:64]
+    return text or "default"
+
+
+def task_workspace(task_id: str) -> Path:
+    directory = WORK if task_id == "default" else WORK / task_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+class Task:
+    def __init__(self, task_id: str):
+        self.id = task_id
+        self.process: subprocess.Popen | None = None
+        self.status = "queued"
+        self.started = time.time()
+        self.finished = 0.0
+        self.last_reasoning = ""
+        self.last_answer = ""
+        self.error = ""
+        self.returncode: int | None = None
+        self.lock = threading.Lock()
+
+    def snapshot(self) -> dict:
+        return {
+            "task_id": self.id,
+            "status": self.status,
+            "started": self.started,
+            "finished": self.finished,
+            "reasoning": self.last_reasoning[-4000:],
+            "answer": self.last_answer[-8000:],
+            "error": self.error[-2000:],
+            "returncode": self.returncode,
+        }
+
+
+def active_task(task_id: str) -> bool:
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+    if task is None:
+        return False
+    return task.process is not None and task.process.poll() is None
+
+
+def stop_task(task_id: str | None = None) -> bool:
+    stopped = False
+    with TASKS_LOCK:
+        tasks = list(TASKS.values()) if task_id is None else [TASKS[task_id]] if task_id in TASKS else []
+    for task in tasks:
+        process = task.process
+        if process is None or process.poll() is not None:
+            continue
         try:
-            os.killpg(PROCESS.pid, signal.SIGKILL)
+            os.killpg(process.pid, signal.SIGKILL)
+            stopped = True
         except ProcessLookupError:
             pass
-        return True
+        except OSError:
+            pass
+    return stopped
 
 
-def run_process(command, **kwargs):
-    global PROCESS
-    goal = kwargs.pop('input')
-    timeout = kwargs.pop('timeout')
-    with PROCESS_LOCK:
-        process = subprocess.Popen(command, stdin=subprocess.PIPE, start_new_session=True, **kwargs)
-        PROCESS = process
+def _reasoning_text(item: dict) -> str:
+    for key in ("text", "summary", "content"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, list):
+            parts = []
+            for part in value:
+                if isinstance(part, dict):
+                    text = part.get("text") or part.get("content")
+                    if isinstance(text, str):
+                        parts.append(text)
+                elif isinstance(part, str):
+                    parts.append(part)
+            if parts:
+                return "\n".join(parts).strip()
+    return ""
+
+
+def handle_event(task: Task, event: dict) -> None:
+    kind = event.get("type", "")
+    if kind in ("error", "turn.failed"):
+        error = event.get("error") or event.get("message")
+        if isinstance(error, dict):
+            error = error.get("message") or error.get("code")
+        if error:
+            task.error = str(error)[-2000:]
+        if kind == "turn.failed":
+            task.status = "failed"
+        return
+    if kind in ("item.started", "item.updated", "item.completed"):
+        item = event.get("item") or {}
+        if not isinstance(item, dict):
+            return
+        item_type = str(item.get("type", "")).lower()
+        text = _reasoning_text(item)
+        if not text:
+            return
+        if "reasoning" in item_type or "thought" in item_type or "plan" in item_type:
+            task.last_reasoning = text[-4000:]
+        elif "message" in item_type or "assistant" in item_type:
+            task.last_answer = text[-8000:]
+    elif kind == "turn.completed":
+        response = event.get("response") or {}
+        if isinstance(response, dict):
+            output = _reasoning_text(response)
+            if output:
+                task.last_answer = output[-8000:]
+
+
+def run_process(task: Task, command: list[str], prompt: str, env: dict, output: Path, timeout: int) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        start_new_session=True,
+        env=env,
+    )
+    task.process = process
+    task.status = "running"
+    stderr_chunks: list[str] = []
+
+    def read_stdout() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                handle_event(task, event)
+
+    def read_stderr() -> None:
+        assert process.stderr is not None
+        while True:
+            chunk = process.stderr.read(2048)
+            if not chunk:
+                break
+            stderr_chunks.append(chunk)
+            joined = "".join(stderr_chunks)
+            if len(joined) > MAX_STDERR * 2:
+                stderr_chunks[:] = [joined[-MAX_STDERR:]]
+
+    out_thread = threading.Thread(target=read_stdout, daemon=True)
+    err_thread = threading.Thread(target=read_stderr, daemon=True)
+    out_thread.start()
+    err_thread.start()
     try:
-        try:
-            stdout, stderr = process.communicate(goal, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            stop_process()
-            process.communicate()
-            raise
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        assert process.stdin is not None
+        process.stdin.write(prompt)
+        process.stdin.close()
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop_task(task.id)
+        process.wait()
+        task.status = "timeout"
+        raise
     finally:
-        with PROCESS_LOCK:
-            PROCESS = None
+        out_thread.join(2)
+        err_thread.join(2)
+        task.process = None
+        task.returncode = process.returncode
+        task.finished = time.time()
+    stderr = "".join(stderr_chunks)[-MAX_STDERR:]
+    answer = output.read_text(encoding="utf-8", errors="replace") if output.exists() else ""
+    if not answer.strip():
+        answer = task.last_answer
+    if process.returncode == 0:
+        task.status = "done"
+        task.last_answer = answer[-8000:]
+    elif process.returncode == -signal.SIGKILL:
+        task.status = "cancelled"
+    elif task.status != "timeout":
+        task.status = "failed"
+        task.error = stderr[-2000:]
+    return subprocess.CompletedProcess(command, process.returncode, answer, stderr)
+
+
+class ProxyServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class ProxyHandler(socketserver.StreamRequestHandler):
+    def handle(self) -> None:
+        line = self.rfile.readline(65536).decode("latin-1").strip()
+        if not line:
+            return
+        parts = line.split()
+        if len(parts) < 3:
+            return
+        method, target = parts[0].upper(), parts[1]
+        headers = []
+        while True:
+            header = self.rfile.readline(65536)
+            if header in (b"\r\n", b"\n", b""):
+                break
+            headers.append(header)
+        if method != "CONNECT":
+            self.wfile.write(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
+            return
+        try:
+            host, port_text = target.rsplit(":", 1)
+            port = int(port_text)
+            upstream = socket.create_connection((host, port), timeout=25)
+        except (OSError, ValueError):
+            self.wfile.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+            return
+        self.wfile.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        self.wfile.flush()
+        sockets = [self.connection, upstream]
+        try:
+            while True:
+                readable, _, _ = select.select(sockets, [], [], 120)
+                if not readable:
+                    break
+                for source in readable:
+                    data = source.recv(65536)
+                    if not data:
+                        return
+                    destination = upstream if source is self.connection else self.connection
+                    destination.sendall(data)
+        except OSError:
+            pass
+        finally:
+            upstream.close()
+
+
+def start_proxy() -> bool:
+    global PROXY_READY
+    if PROXY_READY:
+        return True
+    try:
+        server = ProxyServer(("127.0.0.1", PROXY_PORT), ProxyHandler)
+    except OSError:
+        return False
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    PROXY_READY = True
+    return True
+
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
-        pass  # Do not log prompts or credentials.
+        return
 
-    def reply(self, status, value):
+    def reply(self, status: int, value: dict) -> None:
         data = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Content-Length', str(len(data)))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
-    def do_GET(self):
-        if self.path == '/health':
-            self.reply(200, {'status': 'ok', 'busy': LOCK.locked()})
-        else:
-            self.reply(404, {'error': 'Неизвестный адрес'})
+    def authorized(self) -> bool:
+        return hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + SECRET)
 
-    def do_POST(self):
-        if self.path not in {'/run', '/cancel'}:
-            return self.reply(404, {'error': 'Неизвестный адрес'})
-        if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + SECRET):
-            return self.reply(401, {'error': 'Проверь ключ локального окружения'})
-        if self.path == '/cancel':
-            return self.reply(200, {'stopped': stop_process()})
+    def do_GET(self) -> None:
+        path = urlsplit(self.path)
+        if path.path == "/health":
+            with TASKS_LOCK:
+                busy = any(t.status in ("queued", "running") for t in TASKS.values())
+            return self.reply(200, {"status": "ok", "busy": busy})
+        if path.path == "/status":
+            if not self.authorized():
+                return self.reply(401, {"error": "Проверь ключ локального окружения"})
+            task_id = path.query.removeprefix("task_id=") if path.query.startswith("task_id=") else ""
+            if task_id:
+                with TASKS_LOCK:
+                    task = TASKS.get(safe_task_id(task_id))
+                if task is None:
+                    return self.reply(404, {"error": "Задача не найдена"})
+                return self.reply(200, task.snapshot())
+            with TASKS_LOCK:
+                return self.reply(200, {"tasks": [t.snapshot() for t in TASKS.values()][-20:]})
+        return self.reply(404, {"error": "Неизвестный адрес"})
+
+    def do_POST(self) -> None:
+        path = urlsplit(self.path).path
+        if path not in {"/run", "/cancel"}:
+            return self.reply(404, {"error": "Неизвестный адрес"})
+        if not self.authorized():
+            return self.reply(401, {"error": "Проверь ключ локального окружения"})
         try:
-            length = int(self.headers.get('Content-Length', '0'))
+            length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 100000:
                 raise ValueError()
-            task = json.loads(self.rfile.read(length))
-            goal = task['goal']
+            request = json.loads(self.rfile.read(length))
+        except (ValueError, json.JSONDecodeError):
+            return self.reply(400, {"error": "Некорректный запрос"})
+        if path == "/cancel":
+            task_id = request.get("task_id") if isinstance(request, dict) else None
+            return self.reply(200, {"stopped": stop_task(safe_task_id(task_id) if task_id else None)})
+        try:
+            goal = request["goal"]
             if not isinstance(goal, str) or not 0 < len(goal) <= 16000:
                 raise ValueError()
-        except (ValueError, KeyError, TypeError):
-            return self.reply(400, {'error': 'Некорректная задача'})
-        selected = task.get('selected', '')
-        provider_token = task.get('provider_token', '')
-        base_url = task.get('base_url', '')
-        gh_token = task.get('gh_token', '')
-        if not isinstance(selected, str) or not re.fullmatch(r'[a-zA-Z0-9._/:\-]{0,160}', selected):
-            return self.reply(400, {'error': 'Некорректная модель'})
+        except (KeyError, TypeError, ValueError):
+            return self.reply(400, {"error": "Некорректная задача"})
+        task_id = safe_task_id(request.get("task_id", "default"))
+        if active_task(task_id):
+            return self.reply(409, {"error": "Codex уже выполняет задачу в этом диалоге"})
+        selected = request.get("selected", "")
+        provider_token = request.get("provider_token", "")
+        base_url = request.get("base_url", "")
+        gh_token = request.get("gh_token", "")
+        if not isinstance(selected, str) or not re.fullmatch(r"[a-zA-Z0-9._/:\-]{0,160}", selected):
+            return self.reply(400, {"error": "Некорректная модель"})
         backend = None
+        wire_api = "chat"
         model_id = selected
-        if selected.startswith('deepseek:'):
-            backend = 'https://api.deepseek.com'
-            model_id = selected.split(':', 1)[1]
-        elif selected.startswith('any:'):
-            backend = 'https://anymodel.org/v1'
-            model_id = selected.split(':', 1)[1]
-        elif re.match(r'^(?:cx|cc|ds|ag|kmc)/', selected, re.IGNORECASE):
-            backend = 'https://anymodel.org/v1'
-        elif selected.startswith('compatible:'):
-            model_id = selected.split(':', 1)[1]
-            backend = base_url if isinstance(base_url, str) else ''
-            if not re.fullmatch(r'https://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._/-]*)?', backend):
-                return self.reply(400, {'error': 'Некорректный адрес провайдера'})
-        elif selected and not selected.startswith('chatgpt:'):
-            return self.reply(400, {'error': 'Провайдер пока не поддерживается'})
-        if selected.startswith('chatgpt:'):
-            model_id = selected.split(':', 1)[1]
+        if selected.startswith("chatgpt:"):
+            backend = "https://api.openai.com/v1"
+            wire_api = "responses"
+            model_id = selected.split(":", 1)[1]
+        elif selected.startswith("deepseek:"):
+            backend = "https://api.deepseek.com"
+            model_id = selected.split(":", 1)[1]
+        elif selected.startswith("any:"):
+            backend = "https://anymodel.org/v1"
+            model_id = selected.split(":", 1)[1]
+        elif re.match(r"^(?:cx|cc|ds|ag|kmc)/", selected, re.IGNORECASE):
+            backend = "https://anymodel.org/v1"
+        elif selected.startswith("compatible:"):
+            model_id = selected.split(":", 1)[1]
+            backend = base_url if isinstance(base_url, str) else ""
+            if not re.fullmatch(r"https://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._/-]*)?", backend):
+                return self.reply(400, {"error": "Некорректный адрес провайдера"})
+        elif selected:
+            return self.reply(400, {"error": "Провайдер пока не поддерживается"})
         if selected and not model_id.strip():
-            return self.reply(400, {'error': 'Некорректная модель'})
+            return self.reply(400, {"error": "Некорректная модель"})
         if backend and (not isinstance(provider_token, str) or not provider_token.strip()):
-            return self.reply(400, {'error': 'Укажи ключ выбранного провайдера'})
-        if not LOCK.acquire(blocking=False):
-            return self.reply(409, {'error': 'Codex уже выполняет задачу'})
+            return self.reply(400, {"error": "Укажи ключ выбранного провайдера"})
+        task = Task(task_id)
+        with TASKS_LOCK:
+            TASKS[task_id] = task
         try:
-            with tempfile.TemporaryDirectory(prefix='result-', dir=ROOT) as tmp:
-                output = Path(tmp) / 'answer.txt'
-                command = ['codex', 'exec', '--skip-git-repo-check', '--sandbox', os.environ.get('TEN_CODEX_SANDBOX', 'workspace-write'),
-                           '-C', str(WORK), '-o', str(output), '-']
-                env = os.environ.copy()
-                if gh_token and isinstance(gh_token, str) and gh_token.strip():
-                    env['GH_TOKEN'] = gh_token.strip()
-                    env['GITHUB_TOKEN'] = gh_token.strip()
-                if selected:
-                    command[2:2] = ['-m', model_id]
-                if backend:
-                    env['TEN_PROVIDER_TOKEN'] = provider_token.strip()
-                    command[2:2] = ['-c', 'model_provider="ten_provider"',
-                        '-c', 'model_providers.ten_provider.name="Ten provider"',
-                        '-c', 'model_providers.ten_provider.base_url=' + json.dumps(backend),
-                        '-c', 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
-                        '-c', 'model_providers.ten_provider.wire_api="responses"',
-                        '-c', 'model_providers.ten_provider.requires_openai_auth=false']
-                result = run_process(command, input=goal, text=True, env=env, stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.PIPE, timeout=1200)
-                diagnostic = getattr(result, 'stderr', '') or ''
-                if 'error building bubblewrap command' in diagnostic or 'cannot establish app-server socket mount isolation' in diagnostic:
-                    return self.reply(503, {'error': 'Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено.'})
-                if result.returncode == -signal.SIGKILL:
-                    return self.reply(409, {'error': 'Задача остановлена'})
-                if result.returncode != 0:
-                    return self.reply(502, {'error': 'Локальный Codex завершился с ошибкой. Проверь вход и запуск Codex в терминале.'})
-                answer = output.read_text() if output.exists() else ''
-                if not answer.strip():
-                    return self.reply(502, {'error': 'Codex не вернул текстовый результат'})
-                self.reply(200, {'result': answer})
+            workspace = task_workspace(task_id)
+            output_dir = Path(tempfile.mkdtemp(prefix="result-", dir=ROOT))
+            output = output_dir / "answer.txt"
+            sandbox = os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access")
+            command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
+                       "-C", str(workspace), "-o", str(output), "--json"]
+            if selected:
+                command += ["-m", model_id]
+            if backend:
+                command += [
+                    "-c", 'model_provider="ten_provider"',
+                    "-c", 'model_providers.ten_provider.name="Ten provider"',
+                    "-c", "model_providers.ten_provider.base_url=" + json.dumps(backend),
+                    "-c", 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
+                    "-c", 'model_providers.ten_provider.wire_api="' + wire_api + '"',
+                    "-c", "model_providers.ten_provider.requires_openai_auth=false",
+                ]
+            command.append("-")
+            env = os.environ.copy()
+            if gh_token and isinstance(gh_token, str) and gh_token.strip():
+                env["GH_TOKEN"] = gh_token.strip()
+                env["GITHUB_TOKEN"] = gh_token.strip()
+            if backend:
+                env["TEN_PROVIDER_TOKEN"] = provider_token.strip()
+            if PROXY_READY:
+                proxy = f"http://127.0.0.1:{PROXY_PORT}"
+                env["HTTPS_PROXY"] = proxy
+                env["HTTP_PROXY"] = proxy
+                env["ALL_PROXY"] = proxy
+                env["NO_PROXY"] = "127.0.0.1,localhost"
+            result = run_process(task, command, goal, env, output, 1200)
+            diagnostic = result.stderr or ""
+            if "error building bubblewrap command" in diagnostic or "cannot establish app-server socket mount isolation" in diagnostic:
+                return self.reply(503, {"error": "Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено."})
+            if result.returncode == -signal.SIGKILL:
+                return self.reply(409, {"error": "Задача остановлена"})
+            if result.returncode != 0:
+                details = task.error or diagnostic[-1000:]
+                message = "Локальный Codex завершился с ошибкой"
+                if details:
+                    message += ": " + details.replace("\n", " ")[:300]
+                return self.reply(502, {"error": message})
+            answer = (result.stdout or "").strip()
+            if not answer:
+                return self.reply(502, {"error": "Codex не вернул текстовый результат"})
+            return self.reply(200, {"result": answer, "task_id": task_id})
         except subprocess.TimeoutExpired:
-            self.reply(504, {'error': 'Время задачи истекло'})
+            return self.reply(504, {"error": "Время задачи истекло"})
         except (OSError, UnicodeError):
-            self.reply(500, {'error': 'Не удалось запустить локальный Codex'})
+            return self.reply(500, {"error": "Не удалось запустить локальный Codex"})
         finally:
-            LOCK.release()
+            try:
+                if output_dir.exists():
+                    for child in output_dir.iterdir():
+                        child.unlink(missing_ok=True)
+                    output_dir.rmdir()
+            except OSError:
+                pass
 
-if __name__ == '__main__':
-    print('Тень: локальный исполнитель на 127.0.0.1:8766', flush=True)
-    ThreadingHTTPServer(('127.0.0.1', 8766), Handler).serve_forever()
+
+if __name__ == "__main__":
+    start_proxy()
+    print("Тень: локальный исполнитель на 127.0.0.1:8766", flush=True)
+    ThreadingHTTPServer(("127.0.0.1", 8766), Handler).serve_forever()

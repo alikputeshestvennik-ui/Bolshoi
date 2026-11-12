@@ -169,6 +169,7 @@ class ArturService : Service() {
         Agent.app = applicationContext
         Chat.init(this); Online.init(this)
         Deleg.init(this); Watch.init(this)   // поручения переживают закрытие приложения и перезагрузку
+        EmbeddedRuntime.startAsync(this)       // Codex поднимается сам, без Termux и ручного ключа
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel("artur_bg") == null)
             nm.createNotificationChannel(NotificationChannel("artur_bg", "Тень рядом (фон)", NotificationManager.IMPORTANCE_MIN))

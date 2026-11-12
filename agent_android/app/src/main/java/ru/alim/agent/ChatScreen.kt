@@ -171,6 +171,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
+    // Назад из Codex-диалога возвращает в чат Тени, а не выбрасывает в лаунчер.
+    androidx.activity.compose.BackHandler(enabled = Friends.isCodex(fid) && !ChatSel.on && search == null) { Friends.open(Friends.MAIN) }
     // в кабине без фото-обоев фон рисует общая сцена полёта под экраном (Ui) — здесь прозрачно
     val skyBehind = false   // кабины больше нет — фон всегда тема
     Box(Modifier.fillMaxSize().then(if (skyBehind) Modifier else Modifier.background(Th.c.bg))) {

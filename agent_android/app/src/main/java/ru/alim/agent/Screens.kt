@@ -745,7 +745,8 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Модели и использование", "чат · задачи · фон · проверка", Muted) {
-                Text("Codex — отдельный чат. Команды и файлы находятся в локальном окружении телефона; модель использует авторизацию и настройки установленного Codex.", style = body(12, color = Muted))
+                CodexRuntimePanel()
+                Text("Codex — отдельный чат. Команды и файлы выполняются во встроенном Linux-окружении телефона, без Termux и без ручного запуска сервера.", style = body(12, color = Muted))
                 listOf("deepseek" to "DeepSeek", "any" to "AnyModel").forEach { (id, name) ->
                     var key by remember(id) { mutableStateOf("") }
                     var status by remember(id) { mutableStateOf("") }
@@ -756,19 +757,11 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     }, bg = Card, fg = Ink, border = Line)
                     if (status.isNotBlank()) Text(status, style = body(12, color = Muted))
                 }
-                var localToken by remember { mutableStateOf("") }
-                var localStatus by remember { mutableStateOf("") }
-                OutlinedTextField(localToken, { localToken = it }, Modifier.fillMaxWidth(), label = { Text("Ключ локального окружения") }, singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-                BigButton("Подключить окружение", {
-                    localStatus = runCatching { CodexGateway.saveLocalToken(ctx, localToken); localToken = ""; "Ключ сохранён. Открой чат Codex." }.getOrElse { it.message.orEmpty() }
-                }, bg = Card, fg = Ink, border = Line)
-                if (localStatus.isNotBlank()) Text(localStatus, style = body(12, color = Muted))
                     var customUrl by remember { mutableStateOf(runCatching { CodexGateway.customUrl(ctx) }.getOrDefault("")) }
                     var customModel by remember { mutableStateOf(Prefs.compatibleModel) }
                     var customKey by remember { mutableStateOf("") }
                     var customStatus by remember { mutableStateOf("") }
-                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("HTTPS-адрес Responses API") }, singleLine = true)
+                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("HTTPS-адрес OpenAI-совместимого API") }, singleLine = true)
                     OutlinedTextField(customModel, { customModel = it }, Modifier.fillMaxWidth(), label = { Text("Идентификатор модели") }, singleLine = true)
                     OutlinedTextField(customKey, { customKey = it }, Modifier.fillMaxWidth(), label = { Text("Ключ провайдера") }, singleLine = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
@@ -776,7 +769,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                         customStatus = runCatching { CodexGateway.saveCustom(ctx, customUrl, customKey, customModel); customKey = ""; "Сохранено" }.getOrElse { it.message ?: "Ошибка" }
                     }, bg = Card, fg = Ink, border = Line)
                     if (customStatus.isNotBlank()) Text(customStatus, style = body(12, color = Muted))
-                    Text("Для Codex нужен публичный HTTPS Responses API с поддержкой инструментов; одного Chat Completions недостаточно.", style = body(12, color = Muted))
+                    Text("Подойдёт OpenAI-совместимый HTTPS API с Chat Completions и поддержкой инструментов. Модель должна уметь вызывать инструменты.", style = body(12, color = Muted))
                 val showOthers = true
                 androidx.compose.runtime.key(showOthers) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))

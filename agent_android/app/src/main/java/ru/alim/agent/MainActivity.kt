@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         Monitor.schedule(this)
         BuildWatch.schedule(this)
         ArturService.start(this)
+        EmbeddedRuntime.startAsync(this)
         setContent { App(voice) }
     }
 

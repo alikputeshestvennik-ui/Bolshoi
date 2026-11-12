@@ -488,11 +488,11 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
         Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt -> Scr.Settings
         else -> here
     }
-    val codexOn = Friends.current == Friends.CODEX && cur == Scr.Home
+    val codexOn = Friends.isCodex(Friends.current) && cur == Scr.Home
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         NavDot(haze, icChat, "Чат", Modifier.weight(1f), cur == Scr.Home && !codexOn, false, if (cur == Scr.Home) onSearch else null) { Friends.open(Friends.MAIN); go(Scr.Home) }
-        NavDot(haze, icCodex, "Codex", Modifier.weight(1f), codexOn, false, null) { Friends.open(Friends.CODEX); go(Scr.Home) }
+        NavDot(haze, icCodex, "Codex", Modifier.weight(1f), codexOn, false, null) { Friends.open(Prefs.lastCodex.takeIf { Friends.isCodex(it) } ?: Friends.CODEX); go(Scr.Home) }
         items.forEach { (ic, label, to) ->
             NavDot(haze, ic, label, Modifier.weight(1f), to == cur, active && to == Scr.Active, if (to == Scr.Home) onSearch else null) { go(to) }
         }

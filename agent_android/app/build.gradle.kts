@@ -13,7 +13,9 @@ android {
     defaultConfig {
         applicationId = "ru.alim.agent"
         minSdk = 26
-        targetSdk = 34
+        // targetSdk 28 keeps exec permission for the embedded Termux bootstrap.
+        // Android 10+ blocks executing files from app storage for targetSdk 29+.
+        targetSdk = 28
         // Номер растёт с каждой сборкой — обновление ставится поверх
         versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
         versionName = "1.1"
@@ -55,6 +57,7 @@ android {
     sourceSets["main"].java.srcDir("src/main/tdlib/java")
     sourceSets["main"].jniLibs.srcDir("src/main/tdlib/libs")
     buildFeatures { compose = true; buildConfig = true }
+    androidResources { noCompress += listOf("zip", "deb", "tar.gz") }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

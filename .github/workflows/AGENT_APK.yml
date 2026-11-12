@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -56,6 +56,20 @@ jobs:
       - name: Test local Codex bridge
         if: hashFiles('phone-runtime/test_server.py') != ''
         run: python3 -m unittest discover -s phone-runtime -v
+
+      - name: Prepare embedded Codex runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 agent_android/scripts/prepare_runtime_assets.py
+          test -s agent_android/app/src/main/assets/bootstrap-aarch64.zip
+          test -s agent_android/app/src/main/assets/runtime/server.py
+          test -s agent_android/app/src/main/assets/runtime/manifest.json
+          count=$(find agent_android/app/src/main/assets/runtime/debs -name '*.deb' | wc -l)
+          test "$count" -ge 20
+          echo "Runtime deb packages: $count"
+          du -sh agent_android/app/src/main/assets
+          sha256sum agent_android/app/src/main/assets/bootstrap-aarch64.zip
 
       - name: Prepare release keystore
         env:

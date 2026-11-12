@@ -47,25 +47,63 @@ object CodexGateway {
         require(token.isNotBlank()) { "Введите ключ" }
         store(ctx).edit().putString("provider_" + provider, token.trim()).apply()
     }
-    fun cancel(ctx: Context) {
-        val token = store(ctx).getString("local_token", "").orEmpty()
+    private fun token(ctx: Context): String {
+        val automatic = EmbeddedRuntime.tokenOrEmpty(ctx)
+        if (automatic.isNotBlank()) return automatic
+        val manual = store(ctx).getString("local_token", "").orEmpty()
+        if (manual.isNotBlank()) return manual
+        return EmbeddedRuntime.awaitToken(ctx)
+    }
+
+    fun status(ctx: Context, taskId: String): JSONObject {
+        val token = EmbeddedRuntime.tokenOrEmpty(ctx)
+        if (token.isBlank()) return JSONObject().put("status", "preparing")
+        val url = "http://127.0.0.1:8766/status?task_id=" + android.net.Uri.encode(taskId)
+        val request = Request.Builder().url(url).header("Authorization", "Bearer $token").get().build()
+        return http.newCall(request).execute().use { response ->
+            val body = JSONObject(response.body?.string().orEmpty())
+            if (!response.isSuccessful) JSONObject().put("status", "waiting").put("error", body.optString("error"))
+            else body
+        }
+    }
+
+    fun cancel(ctx: Context, taskId: String = "default") {
+        val token = token(ctx)
+        val body = JSONObject().put("task_id", taskId)
         val request = Request.Builder().url("http://127.0.0.1:8766/cancel")
             .header("Authorization", "Bearer $token")
-            .post("{}".toRequestBody("application/json".toMediaType())).build()
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
         http.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "Не удалось остановить задачу" }
         }
     }
     data class Result(val text: String, val file: Docs.FileRef?)
-    fun run(ctx: Context, goal: String, selected: String): Result {
-        val token = store(ctx).getString("local_token", "").orEmpty()
-        require(token.isNotBlank()) { "Подключи локальное окружение в настройках" }
+    fun run(ctx: Context, goal: String, selected: String, taskId: String = "default"): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
-        val provider = when { Llm.isDeepSeek(selected) -> "deepseek"; Llm.isAny(selected) -> "any"; selected.startsWith("compatible:") -> "compatible"; else -> "" }
-        val providerToken = store(ctx).getString("provider_" + provider, "").orEmpty().ifBlank {
-            when (provider) { "deepseek" -> BuildConfig.DEEPSEEK_API.trim(); "any" -> Llm.anyKey; "compatible" -> store(ctx).getString("custom_token", "").orEmpty(); else -> "" }
+        EmbeddedRuntime.startAsync(ctx)
+        val token = token(ctx)
+        require(token.isNotBlank()) { "Локальное окружение ещё готовится" }
+        val provider = when {
+            Llm.isDeepSeek(selected) -> "deepseek"
+            Llm.isAny(selected) -> "any"
+            selected.startsWith("compatible:") -> "compatible"
+            selected.startsWith("chatgpt:") || Llm.isChatGpt(selected) -> "chatgpt"
+            else -> ""
         }
-        val body = JSONObject().put("goal", goal).put("selected", selected).put("provider_token", providerToken)
+        val providerToken = if (provider == "chatgpt") {
+            ChatGptAccount.access()
+        } else {
+            store(ctx).getString("provider_" + provider, "").orEmpty().ifBlank {
+                when (provider) {
+                    "deepseek" -> BuildConfig.DEEPSEEK_API.trim()
+                    "any" -> Llm.anyKey
+                    "compatible" -> store(ctx).getString("custom_token", "").orEmpty()
+                    else -> ""
+                }
+            }
+        }
+        val body = JSONObject().put("goal", goal).put("selected", selected)
+            .put("provider_token", providerToken).put("task_id", taskId)
         if (provider == "compatible") body.put("base_url", customUrl(ctx))
         val ghToken = BuildConfig.GH_PAT.trim()
         if (ghToken.isNotBlank()) body.put("gh_token", ghToken)
