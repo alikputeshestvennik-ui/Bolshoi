@@ -7,7 +7,7 @@ import java.util.*;
 
 /** Graphic regional map: hillshade backdrop, the whole South Coast highway and settlements. */
 final class RegionMapView extends View {
-    interface Pick { void at(float x, float z); }
+    interface Pick { void at(float x, float z, Region.Street street); }
 
     final Region region;
     final Pick pick;
@@ -16,7 +16,10 @@ final class RegionMapView extends View {
     final Path path = new Path();
     final RectF dstRect = new RectF();
     final ArrayList<RectF> occupied = new ArrayList<>();
+    final ArrayList<Region.Street> visibleStreets = new ArrayList<>();
+    final ArrayList<RectF> streetRects = new ArrayList<>();
     final Typeface boldTypeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
+    int placeLabelCount;
     final float density;
     final int slop;
     float x, z, heading, zoom = 1, panX, panY;
@@ -95,8 +98,11 @@ final class RegionMapView extends View {
             c.drawPath(path, paint);
         }
 
+        drawWater(c);
         drawRoads(c);
         drawPlaces(c);
+        drawStreetLabels(c);
+        drawWaterLabels(c);
         if (selection != null) {
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(Color.rgb(255, 186, 67));
@@ -110,6 +116,56 @@ final class RegionMapView extends View {
         }
         drawMarker(c);
         if (!compact) drawScale(c);
+    }
+
+    void drawWater(Canvas c) {
+        if (region.water == null || region.water.length == 0) return;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        for (Region.Water water : region.water) {
+            if (water.points.length < 4) continue;
+            path.reset();
+            path.moveTo(px(water.points[0]), py(water.points[1]));
+            for (int i = 2; i + 1 < water.points.length; i += 2) path.lineTo(px(water.points[i]), py(water.points[i + 1]));
+            float base = "river".equals(water.kind) ? 1.45f : "canal".equals(water.kind) ? 1.1f : .8f;
+            if (compact) base *= .7f;
+            paint.setColor(Color.argb(185, 7, 38, 51));
+            paint.setStrokeWidth((base + 1.8f) * density);
+            c.drawPath(path, paint);
+            paint.setColor("river".equals(water.kind) ? Color.rgb(82, 183, 222) : Color.rgb(71, 157, 197));
+            paint.setStrokeWidth(base * density);
+            c.drawPath(path, paint);
+        }
+    }
+
+    void drawWaterLabels(Canvas c) {
+        if (compact || zoom < 3.2f || region.water == null || region.water.length == 0) return;
+        paint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.ITALIC));
+        paint.setTextSize(9.5f * density);
+        int shown = 0;
+        for (Region.Water water : region.water) {
+            if (water.points.length < 4) continue;
+            int mid = (water.points.length / 4) * 2;
+            float sx = px(water.points[mid]), sy = py(water.points[mid + 1]);
+            if (sx < 0 || sx > getWidth() || sy < 0 || sy > getHeight()) continue;
+            float width = paint.measureText(water.name);
+            RectF box = new RectF(sx + 5 * density, sy - 12 * density, sx + width + 8 * density, sy + 3 * density);
+            if (box.right > getWidth() - 4 || box.left < 4) continue;
+            boolean overlap = false;
+            for (int i = 0; i < placeLabelCount; i++) if (RectF.intersects(occupied.get(i), box)) { overlap = true; break; }
+            if (!overlap) for (RectF used : streetRects) if (RectF.intersects(used, box)) { overlap = true; break; }
+            if (overlap) continue;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2.4f * density);
+            paint.setColor(Color.argb(210, 5, 28, 38));
+            c.drawText(water.name, sx + 5 * density, sy - 3 * density, paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(174, 225, 242));
+            c.drawText(water.name, sx + 5 * density, sy - 3 * density, paint);
+            if (++shown >= 22) break;
+        }
+        paint.setTypeface(Typeface.DEFAULT);
     }
 
     void drawRoads(Canvas c) {
@@ -160,7 +216,52 @@ final class RegionMapView extends View {
             paint.setColor(compact ? Color.rgb(240, 238, 216) : p.major() ? Color.rgb(255, 247, 217) : Color.rgb(235, 239, 221));
             c.drawText(p.name, tx, ty, paint);
         }
+        placeLabelCount = occupiedCount;
         paint.setTypeface(Typeface.DEFAULT);
+    }
+
+    void drawStreetLabels(Canvas c) {
+        visibleStreets.clear();
+        streetRects.clear();
+        if (compact || zoom < 2.8f || region.streets == null || region.streets.length == 0) return;
+        paint.setTypeface(boldTypeface);
+        paint.setTextSize((zoom >= 5.5f ? 10.5f : 9.3f) * density);
+        for (Region.Street street : region.streets) {
+            float sx = px(street.lx), sy = py(street.lz);
+            if (sx < -20 || sx > getWidth() + 20 || sy < -20 || sy > getHeight() + 20) continue;
+            float width = paint.measureText(street.name);
+            float tx = sx + 6 * density, ty = sy - 5 * density;
+            RectF box = new RectF(tx - 4 * density, ty - 11 * density, tx + width + 4 * density, ty + 4 * density);
+            if (box.left < 3 || box.right > getWidth() - 3 || box.top < 2 || box.bottom > getHeight() - 2) continue;
+            boolean overlap = false;
+            for (int i = 0; i < placeLabelCount; i++) if (RectF.intersects(occupied.get(i), box)) { overlap = true; break; }
+            if (!overlap) for (RectF used : streetRects) if (RectF.intersects(used, box)) { overlap = true; break; }
+            if (overlap) continue;
+            visibleStreets.add(street);
+            streetRects.add(box);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(255, 198, 81));
+            c.drawCircle(sx, sy, 2.4f * density, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2.5f * density);
+            paint.setColor(Color.argb(205, 9, 28, 31));
+            c.drawText(street.name, tx, ty, paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(247, 244, 221));
+            c.drawText(street.name, tx, ty, paint);
+            if (visibleStreets.size() >= 55) break;
+        }
+        paint.setTypeface(Typeface.DEFAULT);
+    }
+
+    Region.Street streetAt(float screenX, float screenY) {
+        for (int i = 0; i < visibleStreets.size(); i++) {
+            if (streetRects.get(i).contains(screenX, screenY)) return visibleStreets.get(i);
+            Region.Street street = visibleStreets.get(i);
+            float sx = px(street.lx), sy = py(street.lz);
+            if (Math.hypot(screenX - sx, screenY - sy) <= 13 * density) return street;
+        }
+        return null;
     }
 
     void drawMarker(Canvas c) {
@@ -234,7 +335,7 @@ final class RegionMapView extends View {
                 performClick();
                 transform();
                 float wx = (e.getX() - left) / scale, wz = (e.getY() - top) / scale;
-                if (pick != null) pick.at(wx, wz);
+                if (pick != null) pick.at(wx, wz, streetAt(e.getX(), e.getY()));
             }
         } else if (action == MotionEvent.ACTION_CANCEL) {
             dragged = true; getParent().requestDisallowInterceptTouchEvent(false);

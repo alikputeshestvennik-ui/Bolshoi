@@ -58,12 +58,32 @@ final class Region {
     static final class Street {
         final String name, tileId;
         final float lx, lz, heading;
+        String city = "ЮБК";
+        float cityRouteM;
         Street(JSONObject j) throws JSONException {
             name = j.getString("name");
             tileId = j.optString("tile", "tile_00");
             lx = (float) j.getDouble("lx");
             lz = (float) j.getDouble("lz");
             heading = (float) j.getDouble("heading");
+        }
+    }
+
+    static final class Water {
+        final String name, kind;
+        final float width;
+        final float[] points;
+        Water(JSONObject j) throws JSONException {
+            name = j.getString("name");
+            kind = j.optString("kind", "stream");
+            width = (float) j.optDouble("width", 4.0);
+            JSONArray pointsJson = j.getJSONArray("points");
+            points = new float[pointsJson.length() * 2];
+            for (int i = 0; i < pointsJson.length(); i++) {
+                JSONArray p = pointsJson.getJSONArray(i);
+                points[i * 2] = (float) p.getDouble(0);
+                points[i * 2 + 1] = (float) p.getDouble(1);
+            }
         }
     }
 
@@ -74,6 +94,7 @@ final class Region {
     final float[] roads;
     final Place[] places;
     final Street[] streets;
+    final Water[] water;
     final Tile[] tiles;
     final Bitmap map;
 
@@ -133,11 +154,38 @@ final class Region {
             int streetCount = streetJson == null ? 0 : streetJson.length();
             streets = new Street[streetCount];
             for (int i = 0; i < streetCount; i++) streets[i] = new Street(streetJson.getJSONObject(i));
+            JSONArray waterJson = j.optJSONArray("water");
+            int waterCount = waterJson == null ? 0 : waterJson.length();
+            water = new Water[waterCount];
+            for (int i = 0; i < waterCount; i++) water[i] = new Water(waterJson.getJSONObject(i));
+            assignStreetCities();
             try (InputStream image = assets.open(j.getString("map"))) {
                 map = BitmapFactory.decodeStream(image);
             }
         } catch (JSONException e) {
             throw new IOException("Invalid regional route data", e);
+        }
+    }
+
+    private void assignStreetCities() {
+        for (Street street : streets) {
+            Tile tile = tileById(street.tileId);
+            if (tile == null) continue;
+            float gx = street.lx + (tile.originLon - originLon) * sx;
+            float gz = street.lz + (originLat - tile.originLat) * sz;
+            Place nearestTown = null, nearest = null;
+            float townD = Float.MAX_VALUE, anyD = Float.MAX_VALUE;
+            for (Place place : places) {
+                float d = (place.x - gx) * (place.x - gx) + (place.z - gz) * (place.z - gz);
+                if (d < anyD) { anyD = d; nearest = place; }
+                boolean town = "city".equals(place.kind) || "town".equals(place.kind);
+                if (town && d < townD) { townD = d; nearestTown = place; }
+            }
+            Place chosen = nearestTown != null && townD < 14_000f * 14_000f ? nearestTown : nearest;
+            if (chosen != null) {
+                street.city = chosen.name;
+                street.cityRouteM = chosen.routeM;
+            }
         }
     }
 

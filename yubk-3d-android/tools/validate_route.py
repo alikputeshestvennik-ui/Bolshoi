@@ -58,7 +58,7 @@ def main() -> None:
         vertices = meta["counts"]["vertices"]
         vertex_total += vertices
         building_total += meta["counts"]["buildings"]
-        if vertices < 1000 or vertices > 2_500_000:
+        if vertices < 1000 or vertices > 3_200_000:
             fail(f"{tile['id']} has implausible vertex count {vertices}")
         if meta.get("mesh_parts", 0) < 1:
             fail(f"{tile['id']} has no mesh parts")

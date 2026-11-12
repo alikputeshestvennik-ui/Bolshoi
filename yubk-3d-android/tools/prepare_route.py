@@ -39,7 +39,7 @@ GRID_STEP = 18.0
 ROAD_STEP_MAIN = 2.0
 ROAD_STEP_OTHER = 3.5
 CORRIDOR_M = 520.0
-MAX_WINDOWS_PER_TILE = 6000
+MAX_WINDOWS_PER_TILE = 10000
 
 # WGS84 metres per degree at the latitude of the South Coast.
 _phi = math.radians(44.55)
@@ -513,7 +513,7 @@ def place_name_for_tile(chunks, places):
     return None
 
 
-def build_region(route, region_osm, chunks):
+def build_region(route, region_osm, chunks, water):
     rxz = [xz(lat, lon) for lat, lon in route]
     cumulative = [0.0]
     for a, b in zip(rxz, rxz[1:]):
@@ -605,6 +605,30 @@ def build_region(route, region_osm, chunks):
             route_map.append([round(x, 1), round(z, 1), round(heading_at(rxz, i), 1), round(cumulative[i], 1)])
             step_accum = cumulative[i]
 
+    water_lines = []
+    widths = {"river": 8.0, "stream": 4.0, "canal": 5.0, "drain": 3.0, "drystream": 3.0}
+    for element in water:
+        tags = element.get("tags", {})
+        kind = tags.get("waterway")
+        name = tags.get("name:ru") or tags.get("name")
+        if kind not in widths or not name or len(name) < 3 or not element.get("geometry"):
+            continue
+        points = [xz(p["lat"], p["lon"]) for p in element["geometry"]]
+        if len(points) < 2:
+            continue
+        dense = [points[0]]
+        for p in points[1:]:
+            if dist(dense[-1], p) >= 18.0:
+                dense.append(p)
+        if dense[-1] != points[-1]:
+            dense.append(points[-1])
+        if len(dense) < 2:
+            continue
+        water_lines.append({
+            "name": name, "kind": kind, "width": widths[kind],
+            "points": [[round(x, 1), round(z, 1)] for x, z in dense],
+        })
+
     region = {
         "name": "ЮБК · Севастополь — Алушта",
         "bounds": list(REGION_BOUNDS),
@@ -615,6 +639,7 @@ def build_region(route, region_osm, chunks):
         "route": route_map,
         "coast": coast,
         "roads": roads,
+        "water": water_lines,
         "places": places,
         "tiles": tiles,
         "map": "route/region_map.png",
@@ -709,10 +734,11 @@ def build_region_map(region_osm, water):
             continue
         if tags.get("natural") == "water":
             if len(pts) > 2:
-                draw.polygon(pts, fill=(66, 126, 160, 170))
-        elif tags.get("waterway") in ("river", "stream", "canal", "drain"):
-            width = {"river": 3, "stream": 1, "canal": 2, "drain": 1}.get(tags.get("waterway"), 1)
-            draw.line(pts, fill=(78, 138, 172, 210), width=width, joint="curve")
+                draw.polygon(pts, fill=(62, 130, 169, 220))
+        elif tags.get("waterway") in ("river", "stream", "canal", "drain", "drystream"):
+            width = {"river": 5, "stream": 2, "canal": 3, "drain": 1, "drystream": 1}.get(tags.get("waterway"), 1)
+            draw.line(pts, fill=(45, 111, 145, 235), width=width + 2, joint="curve")
+            draw.line(pts, fill=(102, 179, 213, 245), width=width, joint="curve")
 
     # Coastline accent.
     for element in region_osm.get("elements", []):
@@ -887,13 +913,16 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
     main_names = {"Южнобережное шоссе"}
     main_refs = ("35А-002", "35К-002", "67К-1", "М-18", "А-291")
     drawn_way_ids = set()
+    route_distance = 0.0
+    route_marker_next = 500.0
     for way_id, run, tags in sorted(roads_all, key=lambda v: (v[2].get("highway") not in ("trunk", "primary"), v[0])):
         if way_id in drawn_way_ids:
             continue
         drawn_way_ids.add(way_id)
         name = tags.get("name:ru") or tags.get("name") or ""
         ref = tags.get("ref") or ""
-        is_main = name in main_names or any(x in ref for x in main_refs)
+        on_route = min(route_index.distance(p) for p in run) < 9.0
+        is_main = name in main_names or any(x in ref for x in main_refs) or on_route
         cls = tags.get("highway", "residential")
         step = ROAD_STEP_MAIN if is_main else ROAD_STEP_OTHER
         dense = catmull_rom(run, step)
@@ -912,23 +941,25 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             asphalt = (0.49, 0.42, 0.30)
             shoulder = (0.43, 0.38, 0.28)
         else:
-            asphalt = (0.33, 0.34, 0.35) if is_main else (0.36, 0.36, 0.35)
-            shoulder = (0.53, 0.50, 0.42)
-        sidewalk = tags.get("sidewalk") in ("both", "left", "right", "yes") or (is_main and cls in ("trunk", "primary", "secondary"))
+            asphalt = (0.43, 0.44, 0.45) if is_main else (0.36, 0.37, 0.37)
+            shoulder = (0.60, 0.56, 0.47) if is_main else (0.51, 0.48, 0.40)
+        sidewalk = tags.get("sidewalk") in ("both", "left", "right", "yes") or (is_main and cls in ("trunk", "primary", "secondary", "tertiary"))
         for a, b, ya, yb in zip(dense, dense[1:], heights, heights[1:]):
             length = math.hypot(b[0] - a[0], b[1] - a[1])
             if length < 0.05:
                 continue
             # A thin shoulder prevents roads from looking pasted over the DEM.
+            tone = 0.018 * math.sin(a[0] * 0.31 + a[1] * 0.17) + 0.009 * math.sin(a[0] * 0.071 - a[1] * 0.23)
+            segment_asphalt = tuple(clamp(v + tone, 0.0, 1.0) for v in asphalt)
             strip2(mesh, a, b, half + 0.55, 0.055, ya, yb, shoulder)
-            strip2(mesh, a, b, half, 0.11, ya, yb, asphalt)
+            strip2(mesh, a, b, half, 0.11, ya, yb, segment_asphalt)
             if sidewalk and is_main:
                 for side in (-1, 1):
                     nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
                     off = half + 0.85
                     pa = (a[0] + nx * off * side, a[1] + nz * off * side)
                     pb = (b[0] + nx * off * side, b[1] + nz * off * side)
-                    strip2(mesh, pa, pb, 0.65, 0.17, ya, yb, (0.58, 0.56, 0.49))
+                    strip2(mesh, pa, pb, 0.65, 0.17, ya, yb, (0.66, 0.63, 0.55))
             if is_main and ("footway" not in cls and "path" not in cls):
                 # Continuous edge lines and a dashed centre line.
                 for side in (-1, 1):
@@ -936,12 +967,40 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                     off = half - 0.22
                     pa = (a[0] + nx * off * side, a[1] + nz * off * side)
                     pb = (b[0] + nx * off * side, b[1] + nz * off * side)
-                    strip2(mesh, pa, pb, 0.07, 0.135, ya, yb, (0.92, 0.89, 0.74))
+                    strip2(mesh, pa, pb, 0.085, 0.135, ya, yb, (0.98, 0.96, 0.83))
                 # Use the actual arc position from the run to make a stable dash pattern.
                 # The tiny modulo is enough for visual purpose and avoids per-tile seams.
                 phase = (abs(a[0] * 0.73 + a[1] * 0.37) % 9.0)
                 if phase < 4.0:
-                    strip2(mesh, a, b, 0.07, 0.14, ya, yb, (0.93, 0.90, 0.75))
+                    strip2(mesh, a, b, 0.085, 0.14, ya, yb, (0.98, 0.96, 0.83))
+            if is_main:
+                route_distance += length
+                while route_distance >= route_marker_next:
+                    route_marker_next += 500.0
+                    nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+                    tx, tz = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+                    px = a[0] + nx * (half + 2.6)
+                    pz = a[1] + nz * (half + 2.6)
+                    yy = (ya + yb) / 2
+                    top_y = yy + 1.12
+                    white = (0.91, 0.90, 0.86)
+                    dark = (0.14, 0.14, 0.15)
+                    for ss in (-1.0, 1.0):
+                        ox, oz = tx * 0.055 * ss, tz * 0.055 * ss
+                        mesh.quad(
+                            (px - nx * 0.11 + ox, yy, pz - nz * 0.11 + oz),
+                            (px + nx * 0.11 + ox, yy, pz + nz * 0.11 + oz),
+                            (px + nx * 0.11 + ox, top_y - 0.34, pz + nz * 0.11 + oz),
+                            (px - nx * 0.11 + ox, top_y - 0.34, pz - nz * 0.11 + oz),
+                            white,
+                        )
+                        mesh.quad(
+                            (px - nx * 0.11 + ox, top_y - 0.34, pz - nz * 0.11 + oz),
+                            (px + nx * 0.11 + ox, top_y - 0.34, pz + nz * 0.11 + oz),
+                            (px + nx * 0.11 + ox, top_y, pz + nz * 0.11 + oz),
+                            (px - nx * 0.11 + ox, top_y, pz - nz * 0.11 + oz),
+                            dark,
+                        )
             # Guardrail on the downhill side of mountain roads, retaining wall uphill.
             if is_main:
                 nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
@@ -963,6 +1022,61 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                         # Stone retaining wall above the uphill shoulder.
                         wall_top = base + 1.15
                         mesh.quad((ex, base - 0.25, ez), (ex + (b[0] - a[0]), base - 0.25, ez + (b[1] - a[1])), (ex + (b[0] - a[0]), wall_top, ez + (b[1] - a[1])), (ex, wall_top, ez), (0.55, 0.51, 0.43))
+
+    # Procedural infill: low coastal houses and roadside farms where OSM has gaps.
+    rng_build = random.Random(9140 + n)
+    existing = [(sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly), poly)
+                for _, poly, _ in buildings if len(poly) >= 3]
+    next_house_at = 95.0 + rng_build.random() * 80.0
+    proc_id = 0
+    proc_centers = []
+    distance_along = 0.0
+    for ra, rb in zip(route_local, route_local[1:]):
+        seg_len = math.hypot(rb[0] - ra[0], rb[1] - ra[1])
+        while seg_len > 1e-6 and distance_along + seg_len >= next_house_at and proc_id < 46:
+            t = max(0.0, min(1.0, (next_house_at - distance_along) / seg_len))
+            next_house_at += 105.0 + rng_build.random() * 135.0
+            if rng_build.random() < 0.32:
+                continue
+            base_x = ra[0] + (rb[0] - ra[0]) * t
+            base_z = ra[1] + (rb[1] - ra[1]) * t
+            side = 1.0 if rng_build.random() < 0.5 else -1.0
+            nx, nz = -(rb[1] - ra[1]) / seg_len, (rb[0] - ra[0]) / seg_len
+            off = rng_build.uniform(30.0, 82.0)
+            hx = base_x + nx * side * off
+            hz = base_z + nz * side * off
+            if not (xmin + 7 < hx < xmax - 7 and zmin + 7 < hz < zmax - 7):
+                continue
+            ground_y = ground_at(hx, hz)
+            if ground_y < 2.0 or ground_y > 300.0 or road_index.distance((hx, hz)) < 15.0:
+                continue
+            if any(math.hypot(hx - ex, hz - ez) < 20.0 for ex, ez, _ in existing):
+                continue
+            if any(math.hypot(hx - px2, hz - pz2) < 22.0 for px2, pz2 in proc_centers):
+                continue
+            angle = math.atan2(rb[0] - ra[0], -(rb[1] - ra[1])) + rng_build.uniform(-0.32, 0.32)
+            width = rng_build.uniform(7.5, 15.0)
+            depth = rng_build.uniform(6.0, 11.5)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            corners = []
+            inside_existing = False
+            for ux, uz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                cx = hx + (cos_a * width * 0.5 * ux - sin_a * depth * 0.5 * uz)
+                cz = hz + (sin_a * width * 0.5 * ux + cos_a * depth * 0.5 * uz)
+                corners.append((cx, cz))
+                if abs(cx) > (w - 1) * dx / 2 - 3 or abs(cz) > (h - 1) * dz / 2 - 3 or ground_at(cx, cz) < 1.0:
+                    inside_existing = True
+                    break
+                if any(point_in_poly(cx, cz, epoly) for _, _, epoly in existing):
+                    inside_existing = True
+                    break
+            if inside_existing:
+                continue
+            levels = 1 + (rng_build.random() < 0.22) + (rng_build.random() < 0.10)
+            buildings.append((-9000000 - proc_id, corners, {"building": "house", "building:levels": str(levels)}))
+            proc_centers.append((hx, hz))
+            proc_id += 1
+        distance_along += seg_len
 
     # Buildings: simplified footprints with a plinth, cornice, roofs and local windows.
     def near_road(p):
@@ -995,7 +1109,9 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         facade = palette[hsel % len(palette)]
         roof_color = ROOFS[(hsel // 7) % len(ROOFS)]
         lower_color = tuple(v * 0.82 for v in facade)
-        near_main = near_route((sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly)), 170.0)
+        cx = sum(p[0] for p in poly) / len(poly)
+        cz = sum(p[1] for p in poly) / len(poly)
+        near_main = near_route((cx, cz), 280.0)
         roof = triangulate(poly)
         if not roof:
             continue
@@ -1007,14 +1123,35 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             mesh.quad((a[0], bottom_a, a[1]), (b[0], bottom_b, b[1]), (b[0], band, b[1]), (a[0], band, a[1]), lower_color)
             if top > band:
                 mesh.quad((a[0], band, a[1]), (b[0], band, b[1]), (b[0], top, b[1]), (a[0], top, a[1]), facade)
-            # Window rows. Near-road buildings receive individual panes; distant ones stay clean.
             wall_len = math.hypot(b[0] - a[0], b[1] - a[1])
+            if near_main and wall_len > 3.0:
+                nx, nz = (b[1] - a[1]) / wall_len, -(b[0] - a[0]) / wall_len
+                mx, mz = (a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5
+                if (mx - cx) * nx + (mz - cz) * nz < 0:
+                    nx, nz = -nx, -nz
+                floors = int(clamp((height - 3.0) // 3.0, 0, 18))
+                # Horizontal floor belts and a recessed entrance add readable depth.
+                for floor in range(1, floors + 1):
+                    y0 = base + 0.75 + floor * 3.0
+                    if y0 >= top - 0.45:
+                        break
+                    mesh.quad((a[0] + nx * 0.035, y0 - 0.035, a[1] + nz * 0.035),
+                              (b[0] + nx * 0.035, y0 - 0.035, b[1] + nz * 0.035),
+                              (b[0] + nx * 0.035, y0 + 0.035, b[1] + nz * 0.035),
+                              (a[0] + nx * 0.035, y0 + 0.035, a[1] + nz * 0.035),
+                              tuple(v * 0.77 for v in facade))
+                if wall_len > 4.5:
+                    t0, t1 = 0.44, 0.56
+                    x0 = a[0] + (b[0] - a[0]) * t0 + nx * 0.07
+                    z0 = a[1] + (b[1] - a[1]) * t0 + nz * 0.07
+                    x1 = a[0] + (b[0] - a[0]) * t1 + nx * 0.07
+                    z1 = a[1] + (b[1] - a[1]) * t1 + nz * 0.07
+                    mesh.quad((x0, base - 0.5, z0), (x1, base - 0.5, z1), (x1, base + 2.25, z1), (x0, base + 2.25, z0), (0.20, 0.19, 0.17))
+            # Window rows. Near-road buildings receive individual panes; distant ones stay clean.
             if near_main and window_budget > 0 and wall_len > 3.0 and height > 5.5:
-                # Extra vertices are intentionally limited per tile on older devices.
                 floors = int(clamp((height - 3.0) // 3.0, 0, 18))
                 cols = int(clamp((wall_len - 1.0) // 3.2, 0, 14))
                 if floors and cols:
-                    nx, nz = (b[1] - a[1]) / wall_len * 0.075, -(b[0] - a[0]) / wall_len * 0.075
                     for floor in range(floors):
                         y0 = base + 1.55 + floor * 3.0
                         if y0 + 1.15 >= top - 0.5:
@@ -1023,17 +1160,18 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                             if window_budget <= 0:
                                 break
                             t = (col + 0.5) / cols
-                            cx = a[0] + (b[0] - a[0]) * t
-                            cz = a[1] + (b[1] - a[1]) * t
+                            wx = a[0] + (b[0] - a[0]) * t
+                            wz = a[1] + (b[1] - a[1]) * t
                             t2 = min(cols, col + 0.56) / cols
                             x2 = a[0] + (b[0] - a[0]) * t2
                             z2 = a[1] + (b[1] - a[1]) * t2
-                            # Glass and a narrow warm sill.
-                            pane = (0.15 + (hsel % 5) * 0.008, 0.22, 0.27)
-                            cell = (int(math.floor(cx / 80.0)), int(math.floor(cz / 80.0)))
+                            pane = (0.12 + (hsel % 5) * 0.008, 0.20, 0.26)
+                            cell = (int(math.floor(wx / 80.0)), int(math.floor(wz / 80.0)))
                             target = mesh.windows[cell]
-                            mesh.quad((cx + nx, y0, cz + nz), (x2 + nx, y0, z2 + nz), (x2 + nx, y0 + 1.15, z2 + nz), (cx + nx, y0 + 1.15, cz + nz), pane, target)
-                            mesh.quad((cx + nx, y0 - 0.08, cz + nz), (x2 + nx, y0 - 0.08, z2 + nz), (x2 + nx, y0, z2 + nz), (cx + nx, y0, cz + nz), (0.86, 0.81, 0.69), target)
+                            mesh.quad((wx + nx * 0.085, y0, wz + nz * 0.085), (x2 + nx * 0.085, y0, z2 + nz * 0.085),
+                                      (x2 + nx * 0.085, y0 + 1.15, z2 + nz * 0.085), (wx + nx * 0.085, y0 + 1.15, wz + nz * 0.085), pane, target)
+                            mesh.quad((wx + nx * 0.085, y0 - 0.09, wz + nz * 0.085), (x2 + nx * 0.085, y0 - 0.09, z2 + nz * 0.085),
+                                      (x2 + nx * 0.085, y0, z2 + nz * 0.085), (wx + nx * 0.085, y0, wz + nz * 0.085), (0.91, 0.86, 0.73), target)
                             window_budget -= 1
         # Roof cap or a low hipped roof for small houses.
         if kind == "house" and height <= 16 and polygon_area(poly) < 900:
@@ -1195,7 +1333,7 @@ def main():
     region_osm = load_region_osm()
     water = load_water()
     chunks = load_chunks(route)
-    region, rxz, cumulative, headings = build_region(route, region_osm, chunks)
+    region, rxz, cumulative, headings = build_region(route, region_osm, chunks, water)
     build_region_map(region_osm, water)
     print(f"region: {region['length_m']/1000:.1f} km, {len(region['tiles'])} tiles, {len(region['places'])} places")
     if args.map_only:

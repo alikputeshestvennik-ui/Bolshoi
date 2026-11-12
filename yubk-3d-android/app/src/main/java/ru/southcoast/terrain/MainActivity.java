@@ -17,7 +17,8 @@ public class MainActivity extends Activity {
     private Region region;
     private TerrainView terrain;
     private RegionMapView map, miniMap;
-    private FrameLayout mapScreen, walkScreen;
+    private FrameLayout screenRoot, mapScreen, walkScreen;
+    private StreetPicker streetPicker;
     private TextView location, loading;
     private HudButton speedButton;
     private Region.Tile currentTile;
@@ -96,6 +97,7 @@ public class MainActivity extends Activity {
 
     private void openStreet(Region.Street street) {
         if (street == null) return;
+        if (streetPicker != null) streetPicker.hide();
         Region.Tile tile = region.tileById(street.tileId);
         if (tile == null) {
             Toast.makeText(this, "Участок этой улицы ещё готовится", Toast.LENGTH_LONG).show();
@@ -142,7 +144,13 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void pickMap(float x, float z, Region.Street street) {
+        if (street != null) openStreet(street);
+        else confirmTeleport(x, z);
+    }
+
     private void showMap() {
+        if (streetPicker != null) streetPicker.hide();
         if (terrain != null) terrain.queueEvent(() -> {
             if (terrain.scene != null) { terrain.scene.forward = 0; terrain.scene.lastFrame = 0; }
         });
@@ -167,26 +175,18 @@ public class MainActivity extends Activity {
     }
 
     private void showStreets() {
-        Region.Street[] all = region.streets;
-        if (all == null || all.length == 0) {
+        if (region.streets == null || region.streets.length == 0) {
             Toast.makeText(this, "Список улиц ещё не подготовлен", Toast.LENGTH_LONG).show();
             return;
         }
-        Region.Street[] sorted = all.clone();
-        java.util.Arrays.sort(sorted, (a, b) -> a.name.compareToIgnoreCase(b.name));
-        final String[] labels = new String[sorted.length];
-        for (int i = 0; i < sorted.length; i++) {
-            Region.Tile t = region.tileById(sorted[i].tileId);
-            labels[i] = sorted[i].name + "  ·  " + (t == null ? "" : t.name);
-        }
-        new AlertDialog.Builder(this).setTitle("Улицы ЮБК · " + sorted.length)
-                .setItems(labels, (d, i) -> openStreet(sorted[i]))
-                .setNegativeButton("Закрыть", null).show();
+        if (streetPicker == null) streetPicker = new StreetPicker(this, region, this::openStreet);
+        streetPicker.show(screenRoot);
     }
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         FrameLayout root = new FrameLayout(this);
+        screenRoot = root;
         root.setOnApplyWindowInsetsListener((v, i) -> {
             v.setPadding(i.getSystemWindowInsetLeft(), i.getSystemWindowInsetTop(), i.getSystemWindowInsetRight(), i.getSystemWindowInsetBottom());
             return i;
@@ -197,7 +197,7 @@ public class MainActivity extends Activity {
             mapScreen = new FrameLayout(this);
             walkScreen = new FrameLayout(this);
 
-            map = new RegionMapView(this, region, this::confirmTeleport, false);
+            map = new RegionMapView(this, region, this::pickMap, false);
             mapScreen.addView(map, new FrameLayout.LayoutParams(-1, -1));
 
             LinearLayout titleCard = column();
