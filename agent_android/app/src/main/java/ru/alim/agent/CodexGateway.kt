@@ -24,6 +24,8 @@ import javax.crypto.spec.SecretKeySpec
 object CodexGateway {
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(21, TimeUnit.MINUTES).callTimeout(22, TimeUnit.MINUTES).build()
+    private val control = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS).callTimeout(40, TimeUnit.SECONDS).build()
     private fun store(ctx: Context): android.content.SharedPreferences {
         val key = MasterKey.Builder(ctx.applicationContext).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         return EncryptedSharedPreferences.create(ctx.applicationContext, "codex_gateway", key,
@@ -61,10 +63,14 @@ object CodexGateway {
         if (token.isBlank()) return JSONObject().put("status", "preparing")
         val url = "http://127.0.0.1:8766/status?task_id=" + android.net.Uri.encode(taskId)
         val request = Request.Builder().url(url).header("Authorization", "Bearer $token").get().build()
-        return http.newCall(request).execute().use { response ->
-            val body = JSONObject(response.body?.string().orEmpty())
-            if (!response.isSuccessful) JSONObject().put("status", "waiting").put("error", body.optString("error"))
-            else body
+        return control.newCall(request).execute().use { response ->
+            val body = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrDefault(JSONObject())
+            if (!response.isSuccessful) {
+                val reason = body.optString("error").ifBlank { "Локальный Codex не отвечает (${response.code})" }
+                throw java.io.IOException(reason)
+            }
+            if (!body.has("status")) throw java.io.IOException("Локальный Codex вернул пустой ответ")
+            body
         }
     }
 
@@ -74,11 +80,58 @@ object CodexGateway {
         val request = Request.Builder().url("http://127.0.0.1:8766/cancel")
             .header("Authorization", "Bearer $token")
             .post(body.toString().toRequestBody("application/json".toMediaType())).build()
-        http.newCall(request).execute().use { response ->
+        control.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "Не удалось остановить задачу" }
         }
     }
     data class Result(val text: String, val files: List<Docs.FileRef>)
+
+    private fun parseFiles(ctx: Context, array: org.json.JSONArray?): List<Docs.FileRef> {
+        val root = ctx.filesDir.canonicalFile
+        val files = ArrayList<Docs.FileRef>()
+        if (array == null) return files
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val file = runCatching { java.io.File(item.optString("path")).canonicalFile }.getOrNull() ?: continue
+            if (!file.isFile || !file.path.startsWith(root.path + java.io.File.separator)) continue
+            val uri = runCatching { FileProvider.getUriForFile(ctx, ctx.packageName + ".files", file) }.getOrNull() ?: continue
+            files += Docs.FileRef(file.name, uri, item.optString("mime", "application/octet-stream"))
+        }
+        return files
+    }
+
+    private fun answerFrom(ctx: Context, snapshot: JSONObject): Result {
+        val answer = snapshot.optString("answer").ifBlank { snapshot.optString("result") }.trim()
+        if (answer.isBlank()) error("Codex не вернул текстовый результат")
+        return Result(answer, parseFiles(ctx, snapshot.optJSONArray("files")))
+    }
+
+    private fun begin(ctx: Context, token: String, body: JSONObject, taskId: String): JSONObject {
+        var lastError: java.io.IOException? = null
+        for (attempt in 0 until 3) {
+            val request = Request.Builder().url("http://127.0.0.1:8766/start")
+                .header("Authorization", "Bearer $token")
+                .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            try {
+                return control.newCall(request).execute().use { response ->
+                    val result = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrDefault(JSONObject())
+                    if (!response.isSuccessful) error(result.optString("error", "Не удалось начать задачу"))
+                    result
+                }
+            } catch (e: java.io.IOException) {
+                lastError = e
+                // The request may have reached the bridge before the stream was
+                // interrupted.  In that case /status already knows the task.
+                val existing = runCatching { status(ctx, taskId) }.getOrNull()
+                if (existing != null && existing.optString("status") in setOf("queued", "running", "done", "failed", "cancelled", "timeout")) {
+                    return JSONObject().put("task_id", taskId)
+                }
+                if (attempt < 2) Thread.sleep(800)
+            }
+        }
+        throw lastError ?: java.io.IOException("Не удалось запустить локальный Codex")
+    }
+
     fun run(ctx: Context, goal: String, selected: String, taskId: String = "default"): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
         EmbeddedRuntime.startAsync(ctx)
@@ -108,23 +161,38 @@ object CodexGateway {
         if (provider == "compatible") body.put("base_url", customUrl(ctx))
         val ghToken = BuildConfig.GH_PAT.trim()
         if (ghToken.isNotBlank()) body.put("gh_token", ghToken)
-        val request = Request.Builder().url("http://127.0.0.1:8766/run")
-            .header("Authorization", "Bearer $token")
-            .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
-        return http.newCall(request).execute().use { response ->
-            val result = JSONObject(response.body?.string().orEmpty())
-            if (!response.isSuccessful) error(result.optString("error", "Ошибка локального окружения"))
-            val root = ctx.filesDir.canonicalFile
-            val files = ArrayList<Docs.FileRef>()
-            val array = result.optJSONArray("files") ?: org.json.JSONArray()
-            for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: continue
-                val file = runCatching { java.io.File(item.optString("path")).canonicalFile }.getOrNull() ?: continue
-                if (!file.isFile || !file.path.startsWith(root.path + java.io.File.separator)) continue
-                val uri = runCatching { FileProvider.getUriForFile(ctx, ctx.packageName + ".files", file) }.getOrNull() ?: continue
-                files += Docs.FileRef(file.name, uri, item.optString("mime", "application/octet-stream"))
+
+        val started = begin(ctx, token, body, taskId)
+        val jobId = started.optString("task_id").ifBlank { taskId }
+        val deadline = System.currentTimeMillis() + 21 * 60_000
+        var failures = 0
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                val snapshot = status(ctx, jobId)
+                when (snapshot.optString("status")) {
+                    "done" -> return answerFrom(ctx, snapshot)
+                    "failed", "timeout" -> error(snapshot.optString("error").ifBlank { "Локальный Codex завершился с ошибкой" })
+                    "cancelled" -> error("Задача остановлена")
+                }
+                failures = 0
+            } catch (e: java.io.IOException) {
+                failures++
+                if (failures >= 20) {
+                    if (!EmbeddedRuntime.isReady(ctx)) EmbeddedRuntime.startAsync(ctx)
+                    val log = EmbeddedRuntime.logTail().takeLast(500).trim()
+                    val suffix = if (log.isBlank()) "" else ". Лог: $log"
+                    val reason = when (e.message?.lowercase()) {
+                        "stream closed", "closed", "connection closed" -> "соединение закрылось"
+                        else -> e.message ?: "нет ответа"
+                    }
+                    error("Связь с локальным Codex прервалась: $reason$suffix")
+                }
+            } catch (e: org.json.JSONException) {
+                failures++
+                if (failures >= 20) error("Локальный Codex вернул некорректный ответ")
             }
-            Result(result.getString("result"), files)
+            Thread.sleep(if (failures == 0) 700 else 1500)
         }
+        error("Время задачи истекло")
     }
 }

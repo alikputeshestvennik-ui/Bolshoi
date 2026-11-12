@@ -176,6 +176,22 @@ class BridgeTest(unittest.TestCase):
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "deepseek:deepseek-flash", "provider_token": "k", "gh_token": "ghp_test"})[0], 200)
 
+    def test_async_start_returns_immediately_and_status_delivers_answer(self):
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(answer="async answer")):
+            status, body = self.request(self.bridge.SECRET, {"goal": "test", "task_id": "async-task"}, path="/start")
+            self.assertEqual(status, 202)
+            self.assertEqual(body["status"], "started")
+            self.assertEqual(body["task_id"], "async-task")
+            for _ in range(50):
+                current, snapshot = self.get_status(self.bridge.SECRET, "async-task")
+                self.assertEqual(current, 200)
+                if snapshot["status"] == "done":
+                    self.assertEqual(snapshot["answer"], "async answer")
+                    self.assertEqual(snapshot["files"], [])
+                    return
+                time.sleep(0.02)
+            self.fail("background task did not finish")
+
     def test_status_reports_finished_task(self):
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(answer="answer")):
             self.request(self.bridge.SECRET, {"goal": "test", "task_id": "status-task"})

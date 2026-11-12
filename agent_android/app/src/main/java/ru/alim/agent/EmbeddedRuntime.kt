@@ -70,6 +70,8 @@ object EmbeddedRuntime {
         )
     }
 
+    fun logTail(): String = lastLog.takeLast(1500)
+
     fun tokenOrEmpty(ctx: Context): String {
         val token = File(paths(ctx).tenHome, "token")
         if (!token.isFile) return ""
@@ -230,7 +232,7 @@ object EmbeddedRuntime {
         for ((target, link) in symlinks) {
             runCatching {
                 val file = File(link)
-                if (file.exists()) file.delete()
+                if (file.exists() || java.nio.file.Files.isSymbolicLink(file.toPath())) file.delete()
                 Os.symlink(target, link)
             }
         }
@@ -240,6 +242,7 @@ object EmbeddedRuntime {
         File(p.home).mkdirs()
         File(p.tmp).mkdirs()
         fixAptConfig(p)
+        rewriteAbsoluteSymlinks(p)
         rewriteShebangs(p)
     }
 
@@ -272,7 +275,25 @@ object EmbeddedRuntime {
         """.trimIndent()
         runShell(p, script, 300)
         if (!File(p.prefix, "bin/python3").exists()) error("Python не установился")
+        rewriteAbsoluteSymlinks(p)
         rewriteShebangs(p)
+    }
+
+    /** Termux packages contain absolute symlinks to /data/data/com.termux/files/usr. */
+    private fun rewriteAbsoluteSymlinks(p: Paths) {
+        val termuxPrefix = "/data/data/com.termux/files/usr"
+        val root = File(p.prefix)
+        if (!root.isDirectory) return
+        root.walkTopDown().forEach { file ->
+            if (!runCatching { java.nio.file.Files.isSymbolicLink(file.toPath()) }.getOrDefault(false)) return@forEach
+            runCatching {
+                val target = java.nio.file.Files.readSymbolicLink(file.toPath()).toString()
+                if (!target.startsWith(termuxPrefix)) return@runCatching
+                val relocated = p.prefix + target.removePrefix(termuxPrefix)
+                file.delete()
+                Os.symlink(relocated, file.absolutePath)
+            }
+        }
     }
 
     /** Termux packages embed /data/data/com.termux/files/usr in script shebangs. */

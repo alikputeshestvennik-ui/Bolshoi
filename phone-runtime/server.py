@@ -65,6 +65,7 @@ class Task:
         self.last_answer = ""
         self.error = ""
         self.returncode: int | None = None
+        self.files: list[dict] = []
         self.lock = threading.Lock()
 
     def snapshot(self) -> dict:
@@ -77,6 +78,7 @@ class Task:
             "answer": self.last_answer[-8000:],
             "error": self.error[-2000:],
             "returncode": self.returncode,
+            "files": self.files,
         }
 
 
@@ -127,6 +129,8 @@ def active_task(task_id: str) -> bool:
         task = TASKS.get(task_id)
     if task is None:
         return False
+    if task.status in ("queued", "running"):
+        return True
     return task.process is not None and task.process.poll() is None
 
 
@@ -336,6 +340,108 @@ def start_proxy() -> bool:
     return True
 
 
+def execute_task(task: Task, goal: str, selected: str, provider_token: str,
+                 base_url: str, gh_token: str) -> tuple[int, dict]:
+    """Run Codex and return an HTTP-style status and JSON payload.
+
+    Both /run (compatibility) and /start (preferred by the Android client) use
+    this function.  /start runs it in a worker thread so a long Codex turn never
+    keeps a single HTTP stream open for many minutes.
+    """
+    output_dir: Path | None = None
+    try:
+        workspace = task_workspace(task.id)
+        output_dir = Path(tempfile.mkdtemp(prefix="result-", dir=ROOT))
+        output = output_dir / "answer.txt"
+        before_files = workspace_snapshot(workspace)
+        sandbox = os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access")
+        command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
+                   "-C", str(workspace), "-o", str(output), "--json"]
+        if selected:
+            model_id = selected
+            if selected.startswith(("chatgpt:", "deepseek:", "any:", "compatible:")):
+                model_id = selected.split(":", 1)[1]
+            command += ["-m", model_id]
+        backend = None
+        wire_api = "chat"
+        if selected.startswith("chatgpt:"):
+            backend = "https://api.openai.com/v1"
+            wire_api = "responses"
+        elif selected.startswith("deepseek:"):
+            backend = "https://api.deepseek.com"
+        elif selected.startswith("any:") or re.match(r"^(?:cx|cc|ds|ag|kmc)/", selected, re.IGNORECASE):
+            backend = "https://anymodel.org/v1"
+        elif selected.startswith("compatible:"):
+            backend = base_url
+        if backend:
+            command += [
+                "-c", 'model_provider="ten_provider"',
+                "-c", 'model_providers.ten_provider.name="Ten provider"',
+                "-c", "model_providers.ten_provider.base_url=" + json.dumps(backend),
+                "-c", 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
+                "-c", 'model_providers.ten_provider.wire_api="' + wire_api + '"',
+                "-c", "model_providers.ten_provider.requires_openai_auth=false",
+            ]
+        command.append("-")
+        env = os.environ.copy()
+        if gh_token and isinstance(gh_token, str) and gh_token.strip():
+            env["GH_TOKEN"] = gh_token.strip()
+            env["GITHUB_TOKEN"] = gh_token.strip()
+        if backend:
+            env["TEN_PROVIDER_TOKEN"] = provider_token.strip()
+        if PROXY_READY:
+            proxy = f"http://127.0.0.1:{PROXY_PORT}"
+            env["HTTPS_PROXY"] = proxy
+            env["HTTP_PROXY"] = proxy
+            env["ALL_PROXY"] = proxy
+            env["NO_PROXY"] = "127.0.0.1,localhost"
+        result = run_process(task, command, goal, env, output, 1200)
+        diagnostic = result.stderr or ""
+        if "error building bubblewrap command" in diagnostic or "cannot establish app-server socket mount isolation" in diagnostic:
+            message = "Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено."
+            task.status = "failed"
+            task.error = message
+            return 503, {"error": message, "task_id": task.id}
+        if result.returncode == -signal.SIGKILL:
+            return 409, {"error": "Задача остановлена", "task_id": task.id}
+        if result.returncode != 0:
+            details = task.error or diagnostic[-1000:]
+            message = "Локальный Codex завершился с ошибкой"
+            if details:
+                message += ": " + details.replace("\n", " ")[:300]
+            task.status = "failed"
+            task.error = message
+            return 502, {"error": message, "task_id": task.id}
+        answer = (result.stdout or "").strip()
+        if not answer:
+            message = "Codex не вернул текстовый результат"
+            task.status = "failed"
+            task.error = message
+            return 502, {"error": message, "task_id": task.id}
+        task.status = "done"
+        task.last_answer = answer[-8000:]
+        task.files = changed_files(workspace, before_files)
+        return 200, {"result": answer, "task_id": task.id, "files": task.files}
+    except subprocess.TimeoutExpired:
+        task.status = "timeout"
+        task.error = "Время задачи истекло"
+        return 504, {"error": task.error, "task_id": task.id}
+    except (OSError, UnicodeError) as exc:
+        message = "Не удалось запустить локальный Codex: " + str(exc)[:200]
+        task.status = "failed"
+        task.error = message
+        return 500, {"error": message, "task_id": task.id}
+    finally:
+        task.finished = time.time()
+        try:
+            if output_dir is not None and output_dir.exists():
+                for child in output_dir.iterdir():
+                    child.unlink(missing_ok=True)
+                output_dir.rmdir()
+        except OSError:
+            pass
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         return
@@ -373,7 +479,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if path not in {"/run", "/cancel"}:
+        if path not in {"/run", "/start", "/cancel"}:
             return self.reply(404, {"error": "Неизвестный адрес"})
         if not self.authorized():
             return self.reply(401, {"error": "Проверь ключ локального окружения"})
@@ -382,10 +488,12 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < length <= 100000:
                 raise ValueError()
             request = json.loads(self.rfile.read(length))
+            if not isinstance(request, dict):
+                raise ValueError()
         except (ValueError, json.JSONDecodeError):
             return self.reply(400, {"error": "Некорректный запрос"})
         if path == "/cancel":
-            task_id = request.get("task_id") if isinstance(request, dict) else None
+            task_id = request.get("task_id")
             return self.reply(200, {"stopped": stop_task(safe_task_id(task_id) if task_id else None)})
         try:
             goal = request["goal"]
@@ -395,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {"error": "Некорректная задача"})
         task_id = safe_task_id(request.get("task_id", "default"))
         if active_task(task_id):
-            return self.reply(409, {"error": "Codex уже выполняет задачу в этом диалоге"})
+            return self.reply(409, {"error": "Codex уже выполняет задачу в этом диалоге", "task_id": task_id})
         selected = request.get("selected", "")
         provider_token = request.get("provider_token", "")
         base_url = request.get("base_url", "")
@@ -403,11 +511,9 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(selected, str) or not re.fullmatch(r"[a-zA-Z0-9._/:\-]{0,160}", selected):
             return self.reply(400, {"error": "Некорректная модель"})
         backend = None
-        wire_api = "chat"
         model_id = selected
         if selected.startswith("chatgpt:"):
             backend = "https://api.openai.com/v1"
-            wire_api = "responses"
             model_id = selected.split(":", 1)[1]
         elif selected.startswith("deepseek:"):
             backend = "https://api.deepseek.com"
@@ -431,67 +537,18 @@ class Handler(BaseHTTPRequestHandler):
         task = Task(task_id)
         with TASKS_LOCK:
             TASKS[task_id] = task
-        output_dir: Path | None = None
-        try:
-            workspace = task_workspace(task_id)
-            output_dir = Path(tempfile.mkdtemp(prefix="result-", dir=ROOT))
-            output = output_dir / "answer.txt"
-            before_files = workspace_snapshot(workspace)
-            sandbox = os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access")
-            command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
-                       "-C", str(workspace), "-o", str(output), "--json"]
-            if selected:
-                command += ["-m", model_id]
-            if backend:
-                command += [
-                    "-c", 'model_provider="ten_provider"',
-                    "-c", 'model_providers.ten_provider.name="Ten provider"',
-                    "-c", "model_providers.ten_provider.base_url=" + json.dumps(backend),
-                    "-c", 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
-                    "-c", 'model_providers.ten_provider.wire_api="' + wire_api + '"',
-                    "-c", "model_providers.ten_provider.requires_openai_auth=false",
-                ]
-            command.append("-")
-            env = os.environ.copy()
-            if gh_token and isinstance(gh_token, str) and gh_token.strip():
-                env["GH_TOKEN"] = gh_token.strip()
-                env["GITHUB_TOKEN"] = gh_token.strip()
-            if backend:
-                env["TEN_PROVIDER_TOKEN"] = provider_token.strip()
-            if PROXY_READY:
-                proxy = f"http://127.0.0.1:{PROXY_PORT}"
-                env["HTTPS_PROXY"] = proxy
-                env["HTTP_PROXY"] = proxy
-                env["ALL_PROXY"] = proxy
-                env["NO_PROXY"] = "127.0.0.1,localhost"
-            result = run_process(task, command, goal, env, output, 1200)
-            diagnostic = result.stderr or ""
-            if "error building bubblewrap command" in diagnostic or "cannot establish app-server socket mount isolation" in diagnostic:
-                return self.reply(503, {"error": "Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено."})
-            if result.returncode == -signal.SIGKILL:
-                return self.reply(409, {"error": "Задача остановлена"})
-            if result.returncode != 0:
-                details = task.error or diagnostic[-1000:]
-                message = "Локальный Codex завершился с ошибкой"
-                if details:
-                    message += ": " + details.replace("\n", " ")[:300]
-                return self.reply(502, {"error": message})
-            answer = (result.stdout or "").strip()
-            if not answer:
-                return self.reply(502, {"error": "Codex не вернул текстовый результат"})
-            return self.reply(200, {"result": answer, "task_id": task_id, "files": changed_files(workspace, before_files)})
-        except subprocess.TimeoutExpired:
-            return self.reply(504, {"error": "Время задачи истекло"})
-        except (OSError, UnicodeError):
-            return self.reply(500, {"error": "Не удалось запустить локальный Codex"})
-        finally:
-            try:
-                if output_dir is not None and output_dir.exists():
-                    for child in output_dir.iterdir():
-                        child.unlink(missing_ok=True)
-                    output_dir.rmdir()
-            except OSError:
-                pass
+        if path == "/start" or request.get("background") is True:
+            task.status = "queued"
+            def worker() -> None:
+                status, payload = execute_task(task, goal, selected, provider_token, base_url, gh_token)
+                if status != 200 and task.status not in ("cancelled", "timeout"):
+                    task.status = "failed"
+                    task.error = str(payload.get("error", "Ошибка локального Codex"))[-2000:]
+                task.finished = time.time()
+            threading.Thread(target=worker, name="codex-task-" + task_id, daemon=True).start()
+            return self.reply(202, {"status": "started", "task_id": task_id})
+        status, payload = execute_task(task, goal, selected, provider_token, base_url, gh_token)
+        return self.reply(status, payload)
 
 
 if __name__ == "__main__":
