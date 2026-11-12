@@ -39,9 +39,9 @@ class MainActivity : ComponentActivity() {
         setContent { App(voice) }
     }
 
-    override fun onResume() { super.onResume(); AppState.foreground = true
+    override fun onResume() { super.onResume(); AppState.foreground = true; CodexOverlayService.appVisible(true)
         runCatching { androidx.core.app.NotificationManagerCompat.from(this).cancel(7777) } }
-    override fun onPause() { AppState.foreground = false; super.onPause() }
+    override fun onPause() { AppState.foreground = false; CodexOverlayService.appVisible(false); super.onPause() }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

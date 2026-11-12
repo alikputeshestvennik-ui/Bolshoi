@@ -281,6 +281,9 @@ class ChatStore(val fid: String) {
     private lateinit var file: File
     private var lastId = 0L
     private val queue = ArrayList<Long>()
+    @Volatile private var codexInterrupted = false
+    @Volatile private var codexStopping = false
+    @Volatile private var codexCancelInFlight = false
     private var voiceCount = 0
     private var lastUserVoice = false
     /** Для чьей просьбы сейчас работает главный (id друга). */
@@ -390,7 +393,23 @@ class ChatStore(val fid: String) {
     /** queued — сообщение пришло, пока шла задача: это продолжение той задачи, отдаём агенту с её контекстом, а не быстрой полосе. */
     private fun dispatch(m: Msg, queued: Boolean = false) {
         val c = core
-        if (c.busy || c.fastBusy) { if (m.id !in queue) queue += m.id; return }
+        if (c.busy || c.fastBusy) {
+            if (Friends.isCodex(fid) && c.fastBusy && Prefs.codexFollowUp == "interrupt") {
+                if (!codexInterrupted) note("Codex · перебиваю текущую задачу…")
+                codexInterrupted = true
+                if (m.id !in queue) queue += m.id
+                if (!codexCancelInFlight) {
+                    codexCancelInFlight = true
+                    io.launch {
+                        runCatching { CodexGateway.cancel(Chat.app, fid) }
+                        withContext(Dispatchers.Main) { codexCancelInFlight = false }
+                    }
+                }
+                return
+            }
+            if (m.id !in queue) queue += m.id
+            return
+        }
         if (m.note && m.from.isNotBlank()) {
             c.requestOverride = ""
             delegatedFor = m.from
@@ -406,11 +425,12 @@ class ChatStore(val fid: String) {
                 say("Голосовые в Codex пока не передаются: напиши задачу текстом или приложи файл."); drainQueue(); return
             }
             c.fastBusy = true
-            val selectedModel = Llm.codexModel(Prefs.codexModel(fid).ifBlank { Prefs.smartModel })
+            val provider = Prefs.codexProvider(fid)
+            val autoModel = requestModels(provider, ChatGptAccount.models).firstOrNull()
+            val selectedModel = Llm.codexModel(Prefs.codexModel(fid).ifBlank { autoModel ?: Prefs.smartModel })
             val recent = recentForPrompt(10).take(9000)
             val files = Chat.filesOf(m)
-            if (EmbeddedRuntime.state == EmbeddedRuntime.State.READY) note("Codex · выполняю на телефоне…")
-            else note("Codex · готовлю локальное окружение…")
+            if (EmbeddedRuntime.state != EmbeddedRuntime.State.READY) note("Codex · готовлю локальное окружение…")
             Prefs.codexActiveTask = fid
             if (Prefs.codexOverlay) CodexOverlayService.start(Chat.app, fid)
             io.launch {
@@ -434,7 +454,20 @@ class ChatStore(val fid: String) {
                 val reply = taskContext.mapCatching { CodexGateway.run(Chat.app, it, selectedModel, fid) }
                 withContext(Dispatchers.Main) {
                     c.fastBusy = false
-                    reply.onSuccess { say(it.text, it.files) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    when {
+                        codexStopping -> {
+                            codexStopping = false
+                            codexInterrupted = false
+                            queue.clear()
+                            note("Codex · остановил задачу.")
+                        }
+                        codexInterrupted -> {
+                            codexInterrupted = false
+                            note("Codex · перебил задачу, беру новое сообщение.")
+                        }
+                        else -> reply.onSuccess { say(it.text, it.files) }
+                            .onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    }
                     drainQueue()
                 }
             }
@@ -557,6 +590,29 @@ class ChatStore(val fid: String) {
             queue.removeAt(0)
             msgs.firstOrNull { it.id == next }?.let { dispatch(it, queued = true) }
         }, 300)
+    }
+
+    /** Stop the current Codex session and drop anything that was waiting behind it. */
+    fun stopCodex() = onMain {
+        queue.clear()
+        codexInterrupted = false
+        codexStopping = true
+        if (!codexCancelInFlight) {
+            codexCancelInFlight = true
+            io.launch {
+                val failure = runCatching { CodexGateway.cancel(Chat.app, fid) }.exceptionOrNull()
+                withContext(Dispatchers.Main) {
+                    codexCancelInFlight = false
+                    if (failure != null) {
+                        codexStopping = false
+                        note("Не удалось остановить Codex: ${failure.message ?: "ошибка"}")
+                    } else if (!core.fastBusy) {
+                        codexStopping = false
+                        note("Codex · остановил задачу.")
+                    }
+                }
+            }
+        }
     }
 
     /** Связь вернулась — отправляем то, что Алим написал без сети. */

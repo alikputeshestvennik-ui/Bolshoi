@@ -48,6 +48,7 @@ class CodexOverlayService : Service() {
     private var pollJob: Job? = null
     private var window: WindowManager? = null
     private var root: View? = null
+    private var prompt: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var titleView: TextView? = null
     private var reasonView: TextView? = null
@@ -58,6 +59,7 @@ class CodexOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         Prefs.init(this)
         Th.load()
         if (!Settings.canDrawOverlays(this)) {
@@ -66,7 +68,7 @@ class CodexOverlayService : Service() {
         }
         startForegroundNow()
         taskId = Prefs.codexActiveTask
-        showWindow()
+        if (!AppState.foreground) showWindow()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -76,6 +78,7 @@ class CodexOverlayService : Service() {
         } else if (taskId.isBlank()) {
             taskId = Prefs.codexActiveTask
         }
+        setWindowVisible(!AppState.foreground)
         pollJob?.cancel()
         pollJob = scope.launch { poll() }
         return START_NOT_STICKY
@@ -83,8 +86,8 @@ class CodexOverlayService : Service() {
 
     override fun onDestroy() {
         pollJob?.cancel()
-        root?.let { view -> runCatching { window?.removeView(view) } }
-        root = null
+        hideWindow()
+        instance = null
         scope.cancel()
         super.onDestroy()
     }
@@ -95,13 +98,15 @@ class CodexOverlayService : Service() {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Codex · активность", NotificationManager.IMPORTANCE_LOW))
         }
         val open = PendingIntent.getActivity(
-            this, 11, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            this, 11, Intent(this, MainActivity::class.java)
+                .putExtra("open", "chat:" + taskId.ifBlank { Friends.CODEX })
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_mono)
             .setContentTitle("Codex работает")
-            .setContentText("Reasoning и ответ — в плавающем окне")
+            .setContentText("Окно появится при сворачивании приложения")
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -116,29 +121,30 @@ class CodexOverlayService : Service() {
     }
 
     private fun showWindow() {
+        if (root != null || AppState.foreground || !Settings.canDrawOverlays(this)) return
         val wm = getSystemService(WindowManager::class.java) ?: return
         window = wm
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(11), dp(14), dp(12))
+            setPadding(dp(10), dp(8), dp(10), dp(9))
             background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
+                cornerRadius = dp(14).toFloat()
                 setColor(Th.c.card.toArgb())
-                setStroke(dp(1), Th.c.accent.copy(alpha = 0.55f).toArgb())
+                setStroke(dp(1), Th.c.accent.copy(alpha = 0.6f).toArgb())
             }
-            elevation = dp(10).toFloat()
+            elevation = dp(6).toFloat()
         }
         val head = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        titleView = textView(12f, Th.c.accent.toArgb(), true).apply {
+        titleView = textView(10f, Th.c.accent.toArgb(), true).apply {
             text = "Codex · ждёт задачу"
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
         head.addView(titleView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val close = textView(20f, Th.c.muted.toArgb(), false).apply {
+        val close = textView(16f, Th.c.muted.toArgb(), false).apply {
             text = "×"
             gravity = Gravity.CENTER
             setPadding(dp(8), 0, 0, 0)
@@ -146,23 +152,23 @@ class CodexOverlayService : Service() {
         }
         head.addView(close, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         card.addView(head)
-        reasonView = textView(11f, Th.c.muted.toArgb(), false).apply {
+        reasonView = textView(9f, Th.c.muted.toArgb(), false).apply {
             text = "…"
-            maxLines = 5
+            maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(4), 0, 0)
         }
         card.addView(reasonView)
-        answerView = textView(12f, Th.c.ink.toArgb(), false).apply {
+        answerView = textView(10f, Th.c.ink.toArgb(), false).apply {
             text = ""
-            maxLines = 5
+            maxLines = 4
             ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(4), 0, 0)
         }
         card.addView(answerView)
 
         val layout = WindowManager.LayoutParams(
-            dp(300),
+            dp(232),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -171,16 +177,30 @@ class CodexOverlayService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dp(20)
-            y = dp(120)
+            x = dp(14)
+            y = dp(96)
         }
         params = layout
-        installDrag(card, wm, layout)
+        installDrag(card, wm, layout) { showOpenPrompt() }
         runCatching { wm.addView(card, layout) }
         root = card
     }
 
-    private fun installDrag(view: View, wm: WindowManager, layout: WindowManager.LayoutParams) {
+    private fun hideWindow() {
+        hidePrompt()
+        root?.let { view -> runCatching { window?.removeView(view) } }
+        root = null
+        titleView = null
+        reasonView = null
+        answerView = null
+        params = null
+    }
+
+    private fun setWindowVisible(visible: Boolean) {
+        if (visible) showWindow() else hideWindow()
+    }
+
+    private fun installDrag(view: View, wm: WindowManager, layout: WindowManager.LayoutParams, onTap: () -> Unit) {
         var downX = 0f
         var downY = 0f
         var startX = 0
@@ -205,10 +225,67 @@ class CodexOverlayService : Service() {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) onTap()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> true
                 else -> false
             }
         }
+    }
+
+    private fun showOpenPrompt() {
+        if (prompt != null || root == null) return
+        val wm = window ?: return
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Th.c.card.toArgb())
+                setStroke(dp(1), Th.c.accent.copy(alpha = 0.7f).toArgb())
+            }
+        }
+        box.addView(textView(11f, Th.c.ink.toArgb(), true).apply { text = "Открыть Codex?" })
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dp(4), 0, 0)
+        }
+        actions.addView(textView(11f, Th.c.accent.toArgb(), true).apply {
+            text = "Открыть"
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            setOnClickListener { openCodex() }
+        })
+        actions.addView(textView(11f, Th.c.muted.toArgb(), false).apply {
+            text = "Позже"
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            setOnClickListener { hidePrompt() }
+        })
+        box.addView(actions)
+        val layout = WindowManager.LayoutParams(
+            dp(210),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.CENTER }
+        runCatching { wm.addView(box, layout) }.onSuccess { prompt = box }
+    }
+
+    private fun hidePrompt() {
+        prompt?.let { view -> runCatching { window?.removeView(view) } }
+        prompt = null
+    }
+
+    private fun openCodex() {
+        hidePrompt()
+        val id = taskId.ifBlank { Prefs.codexActiveTask }.ifBlank { Friends.CODEX }
+        val intent = Intent(this, MainActivity::class.java)
+            .putExtra("open", "chat:$id")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        runCatching { startActivity(intent) }
     }
 
     private suspend fun poll() {
@@ -243,12 +320,12 @@ class CodexOverlayService : Service() {
         }
         reasonView?.text = when {
             error.isNotBlank() -> error.takeLast(1000)
-            reasoning.isNotBlank() -> reasoning.takeLast(1400)
+            reasoning.isNotBlank() -> reasoning.takeLast(700)
             status == "running" -> "…"
             else -> "Плавающее окно Codex"
         }
         answerView?.text = when {
-            answer.isNotBlank() -> answer.takeLast(1800)
+            answer.isNotBlank() -> answer.takeLast(1100)
             status == "running" -> "Ответ появится здесь"
             status == "preparing" -> "Первый запуск: Linux, Python и Codex"
             else -> ""
@@ -266,6 +343,12 @@ class CodexOverlayService : Service() {
 
     companion object {
         private const val CHANNEL = "codex_overlay"
+        @Volatile private var instance: CodexOverlayService? = null
+
+        /** Hide the overlay while Ten is open; show it again when the app goes to the background. */
+        fun appVisible(visible: Boolean) {
+            instance?.setWindowVisible(!visible)
+        }
 
         fun start(ctx: Context, taskId: String = Prefs.codexActiveTask): Boolean {
             if (!Settings.canDrawOverlays(ctx)) return false

@@ -33,6 +33,23 @@ fun CodexSettingsScreen(back: () -> Unit) {
         ) {
             CodexRuntimePanel()
             CardBox {
+                Text("Новые сообщения во время задачи", style = body(16, FontWeight.SemiBold))
+                Text("Что делать, если написать Codex, пока он ещё работает.", style = body(12, color = Muted))
+                var follow by remember { mutableStateOf(Prefs.codexFollowUp) }
+                Seg(
+                    listOf("queue" to "В очередь", "interrupt" to "Перебить"),
+                    follow,
+                ) { value ->
+                    follow = value
+                    Prefs.codexFollowUp = value
+                }
+                Text(
+                    if (follow == "interrupt") "Текущая задача остановится, и Codex сразу возьмётся за новое сообщение."
+                    else "Текущая задача продолжится, а новое сообщение Codex возьмёт сразу после неё.",
+                    style = body(12, color = Muted), lineHeight = 16.sp,
+                )
+            }
+            CardBox {
                 Text("Провайдеры", style = body(16, FontWeight.SemiBold))
                 Text(
                     if (ChatGptAccount.connected) "GPT подключён через аккаунт ChatGPT${if (ChatGptAccount.email.isBlank()) "" else " · ${ChatGptAccount.email}"}."
