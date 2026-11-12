@@ -154,6 +154,7 @@ fun App(voice: Voice) {
         when (scr) {
             Scr.Task -> { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home }
             Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look -> { scr = subFrom; subFrom = Scr.Home }
+            Scr.CodexSettings -> { scr = subFrom; subFrom = Scr.Home }
             Scr.Tg, Scr.Music, Scr.Yt, Scr.YooMoney -> scr = Scr.Settings
             else -> scr = Scr.Home
         }
@@ -187,6 +188,7 @@ fun App(voice: Voice) {
             val go: (Scr) -> Unit = { destination ->
                 focus.clearFocus(); keyboard?.hide()
                 if (destination != Scr.Task) historyRecord = null
+                if (destination == Scr.CodexSettings) subFrom = if (scr == Scr.Settings) Scr.Settings else Scr.Home
                 if (VoiceMsg.recording) tgScope.launch { VoiceMsg.stop(true); scr = destination }
                 else scr = destination
             }
@@ -212,7 +214,7 @@ fun App(voice: Voice) {
                 Scr.History -> HistoryScreen(home) { r -> historyRecord = r; taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt }) { s -> subFrom = Scr.Settings; scr = s }
-                Scr.CodexSettings -> CodexSettingsScreen { scr = Scr.Home }
+                Scr.CodexSettings -> CodexSettingsScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
                 Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)

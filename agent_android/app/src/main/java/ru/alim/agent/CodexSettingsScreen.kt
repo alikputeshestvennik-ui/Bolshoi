@@ -1,5 +1,6 @@
 package ru.alim.agent
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun CodexSettingsScreen(back: () -> Unit) {
     val ctx = LocalContext.current
+    BackHandler { back() }
     Screen("Настройки Codex", back) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState())
