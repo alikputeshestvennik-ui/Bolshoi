@@ -172,6 +172,15 @@ object Docs {
     // ———————————————— сохранение и открытие ————————————————
 
     /** Сохраняет в «Загрузки/Агент». Возвращает ссылку для открытия. */
+    /** Copy a user attachment into a real file so the local Codex process can open it. */
+    fun copyTo(ctx: Context, ref: FileRef, destination: File): File {
+        destination.parentFile?.mkdirs()
+        val input = ctx.contentResolver.openInputStream(ref.uri)
+            ?: error("Не удалось открыть вложение «${ref.name}»")
+        input.use { source -> destination.outputStream().use { out -> source.copyTo(out) } }
+        return destination
+    }
+
     fun save(ctx: Context, name0: String, mime: String, bytes: ByteArray): FileRef {
         val ext = when (mime) { XLSX -> ".xlsx"; PDF -> ".pdf"; else -> ".docx" }
         val name = name0.trim().ifBlank { "Документ" }.replace(Regex("[\\\\/:*?\"<>|]"), " ").removeSuffix(ext).take(80) + ext

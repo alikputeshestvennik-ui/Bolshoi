@@ -110,7 +110,18 @@ class BridgeTest(unittest.TestCase):
             self.assertNotIn("hello $(false)", args)
 
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
-            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "hello $(false)"}), (200, {"result": "done", "task_id": "default"}))
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "hello $(false)"}), (200, {"result": "done", "task_id": "default", "files": []}))
+
+    def test_output_file_is_reported(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            workspace = Path(args[args.index("-C") + 1])
+            (workspace / "result.txt").write_text("created by Codex", encoding="utf-8")
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            status, body = self.request(self.bridge.SECRET, {"goal": "make a file", "task_id": "files-task"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["files"][0]["name"], "result.txt")
+        self.assertGreater(body["files"][0]["size"], 0)
 
     def test_gpt_uses_openai_responses(self):
         def inspect(task, args, prompt, env, output, timeout):

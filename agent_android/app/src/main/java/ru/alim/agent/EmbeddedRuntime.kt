@@ -455,6 +455,12 @@ object EmbeddedRuntime {
             "GIT_SSL_CAINFO" to "${p.prefix}/etc/tls/cert.pem",
             "OPENSSL_CONF" to "${p.prefix}/etc/tls/openssl.cnf",
             "GIT_TERMINAL_PROMPT" to "0",
+            "GIT_EXEC_PATH" to "${p.prefix}/libexec/git-core",
+            "GIT_TEMPLATE_DIR" to "${p.prefix}/share/git-core/templates",
+            "GIT_CONFIG_SYSTEM" to "${p.prefix}/etc/gitconfig",
+            "PYTHONHOME" to p.prefix,
+            "PYTHONUTF8" to "1",
+            "PYTHONNOUSERSITE" to "1",
             "TEN_LOCAL_HOME" to p.tenHome,
             "TEN_CODEX_SANDBOX" to "danger-full-access",
         )

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -77,6 +78,48 @@ class Task:
             "error": self.error[-2000:],
             "returncode": self.returncode,
         }
+
+
+def workspace_snapshot(workspace: Path) -> dict[str, int]:
+    snapshot: dict[str, int] = {}
+    try:
+        for item in workspace.rglob("*"):
+            if not item.is_file() or ".git" in item.parts:
+                continue
+            try:
+                snapshot[str(item)] = item.stat().st_mtime_ns
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return snapshot
+
+
+def changed_files(workspace: Path, before: dict[str, int]) -> list[dict]:
+    result: list[dict] = []
+    try:
+        for item in workspace.rglob("*"):
+            if not item.is_file() or ".git" in item.parts:
+                continue
+            try:
+                stat = item.stat()
+            except OSError:
+                continue
+            if before.get(str(item)) == stat.st_mtime_ns:
+                continue
+            if stat.st_size > 100 * 1024 * 1024:
+                continue
+            result.append({
+                "name": item.name,
+                "path": str(item),
+                "size": stat.st_size,
+                "mime": mimetypes.guess_type(item.name)[0] or "application/octet-stream",
+                "modified": stat.st_mtime_ns,
+            })
+    except OSError:
+        pass
+    result.sort(key=lambda value: value["modified"], reverse=True)
+    return result[:8]
 
 
 def active_task(task_id: str) -> bool:
@@ -388,10 +431,12 @@ class Handler(BaseHTTPRequestHandler):
         task = Task(task_id)
         with TASKS_LOCK:
             TASKS[task_id] = task
+        output_dir: Path | None = None
         try:
             workspace = task_workspace(task_id)
             output_dir = Path(tempfile.mkdtemp(prefix="result-", dir=ROOT))
             output = output_dir / "answer.txt"
+            before_files = workspace_snapshot(workspace)
             sandbox = os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access")
             command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
                        "-C", str(workspace), "-o", str(output), "--json"]
@@ -434,14 +479,14 @@ class Handler(BaseHTTPRequestHandler):
             answer = (result.stdout or "").strip()
             if not answer:
                 return self.reply(502, {"error": "Codex не вернул текстовый результат"})
-            return self.reply(200, {"result": answer, "task_id": task_id})
+            return self.reply(200, {"result": answer, "task_id": task_id, "files": changed_files(workspace, before_files)})
         except subprocess.TimeoutExpired:
             return self.reply(504, {"error": "Время задачи истекло"})
         except (OSError, UnicodeError):
             return self.reply(500, {"error": "Не удалось запустить локальный Codex"})
         finally:
             try:
-                if output_dir.exists():
+                if output_dir is not None and output_dir.exists():
                     for child in output_dir.iterdir():
                         child.unlink(missing_ok=True)
                     output_dir.rmdir()

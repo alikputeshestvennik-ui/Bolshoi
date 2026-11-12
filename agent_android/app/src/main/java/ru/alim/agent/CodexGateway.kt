@@ -2,6 +2,7 @@ package ru.alim.agent
 
 import android.content.Context
 import android.util.Base64
+import androidx.core.content.FileProvider
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import okhttp3.MediaType.Companion.toMediaType
@@ -77,7 +78,7 @@ object CodexGateway {
             check(response.isSuccessful) { "Не удалось остановить задачу" }
         }
     }
-    data class Result(val text: String, val file: Docs.FileRef?)
+    data class Result(val text: String, val files: List<Docs.FileRef>)
     fun run(ctx: Context, goal: String, selected: String, taskId: String = "default"): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
         EmbeddedRuntime.startAsync(ctx)
@@ -113,7 +114,17 @@ object CodexGateway {
         return http.newCall(request).execute().use { response ->
             val result = JSONObject(response.body?.string().orEmpty())
             if (!response.isSuccessful) error(result.optString("error", "Ошибка локального окружения"))
-            Result(result.getString("result"), null)
+            val root = ctx.filesDir.canonicalFile
+            val files = ArrayList<Docs.FileRef>()
+            val array = result.optJSONArray("files") ?: org.json.JSONArray()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val file = runCatching { java.io.File(item.optString("path")).canonicalFile }.getOrNull() ?: continue
+                if (!file.isFile || !file.path.startsWith(root.path + java.io.File.separator)) continue
+                val uri = runCatching { FileProvider.getUriForFile(ctx, ctx.packageName + ".files", file) }.getOrNull() ?: continue
+                files += Docs.FileRef(file.name, uri, item.optString("mime", "application/octet-stream"))
+            }
+            Result(result.getString("result"), files)
         }
     }
 }

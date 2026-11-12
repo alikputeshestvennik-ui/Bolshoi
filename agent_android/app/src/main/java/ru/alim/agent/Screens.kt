@@ -761,7 +761,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     var customModel by remember { mutableStateOf(Prefs.compatibleModel) }
                     var customKey by remember { mutableStateOf("") }
                     var customStatus by remember { mutableStateOf("") }
-                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("HTTPS-адрес OpenAI-совместимого API") }, singleLine = true)
+                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("Базовый HTTPS-адрес, например https://api.example.com/v1") }, singleLine = true)
                     OutlinedTextField(customModel, { customModel = it }, Modifier.fillMaxWidth(), label = { Text("Идентификатор модели") }, singleLine = true)
                     OutlinedTextField(customKey, { customKey = it }, Modifier.fillMaxWidth(), label = { Text("Ключ провайдера") }, singleLine = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
@@ -769,7 +769,7 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                         customStatus = runCatching { CodexGateway.saveCustom(ctx, customUrl, customKey, customModel); customKey = ""; "Сохранено" }.getOrElse { it.message ?: "Ошибка" }
                     }, bg = Card, fg = Ink, border = Line)
                     if (customStatus.isNotBlank()) Text(customStatus, style = body(12, color = Muted))
-                    Text("Подойдёт OpenAI-совместимый HTTPS API с Chat Completions и поддержкой инструментов. Модель должна уметь вызывать инструменты.", style = body(12, color = Muted))
+                    Text("Подойдёт базовый HTTPS-адрес OpenAI-совместимого API (обычно с /v1) и модель с поддержкой инструментов. Ключ хранится зашифрованным на телефоне.", style = body(12, color = Muted))
                 val showOthers = true
                 androidx.compose.runtime.key(showOthers) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))

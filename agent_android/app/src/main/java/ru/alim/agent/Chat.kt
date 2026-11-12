@@ -380,9 +380,11 @@ class ChatStore(val fid: String) {
     fun dropUpd() = onMain { if (msgs.removeAll { it.note && UPD.any { p -> it.text.startsWith(p) } }) save() }
     /** Обычная реплика Пилота в ленте (отчёты поручений и т.п.). */
     fun say(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), status = "read"))
-    fun say(text: String, file: Docs.FileRef?) {
-        val files = if (file == null) "" else JSONArray().put(JSONObject().put("n", file.name).put("u", file.uri.toString()).put("m", file.mime)).toString()
-        add(Msg(newId(), false, text, System.currentTimeMillis(), files = files, status = "read"))
+    fun say(text: String, files: List<Docs.FileRef>) {
+        val json = JSONArray().also { array ->
+            files.forEach { file -> array.put(JSONObject().put("n", file.name).put("u", file.uri.toString()).put("m", file.mime)) }
+        }.toString()
+        add(Msg(newId(), false, text, System.currentTimeMillis(), files = if (files.isEmpty()) "" else json, status = "read"))
     }
 
     /** queued — сообщение пришло, пока шла задача: это продолжение той задачи, отдаём агенту с её контекстом, а не быстрой полосе. */
@@ -400,21 +402,39 @@ class ChatStore(val fid: String) {
         }
         c.delegated = false
         if (Friends.isCodex(fid)) {
-            if (m.att.isNotBlank() || m.voice.isNotBlank()) {
-                say("Режим Codex пока принимает текстовые цели. Пришли задачу текстом."); drainQueue(); return
+            if (m.voice.isNotBlank()) {
+                say("Голосовые в Codex пока не передаются: напиши задачу текстом или приложи файл."); drainQueue(); return
             }
             c.fastBusy = true
             val selectedModel = Prefs.codexModel(fid).ifBlank { Prefs.smartModel }
-            val taskContext = "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text
+            val recent = recentForPrompt(10).take(9000)
+            val files = filesOf(m)
             if (EmbeddedRuntime.state == EmbeddedRuntime.State.READY) note("Codex · выполняю на телефоне…")
             else note("Codex · готовлю локальное окружение…")
             Prefs.codexActiveTask = fid
             if (Prefs.codexOverlay) CodexOverlayService.start(Chat.app, fid)
             io.launch {
-                val reply = runCatching { CodexGateway.run(Chat.app, taskContext, selectedModel, fid) }
+                val taskContext = runCatching {
+                    val paths = EmbeddedRuntime.paths(Chat.app)
+                    val dir = java.io.File(paths.tenHome, "workspace/$fid/attachments").apply { mkdirs() }
+                    val copied = files.mapIndexed { index, ref ->
+                        val safe = ref.name.substringAfterLast('/').substringAfterLast('\\')
+                            .replace(Regex("[^A-Za-z0-9._-]"), "_").take(80).ifBlank { "file" }
+                        Docs.copyTo(Chat.app, ref, java.io.File(dir, "${index + 1}_$safe"))
+                    }
+                    buildString {
+                        append("Текущая задача:\n").append(m.text.take(6000))
+                        if (recent.isNotBlank()) append("\n\nКонтекст переписки:\n").append(recent)
+                        if (copied.isNotEmpty()) {
+                            append("\n\nФайлы, приложенные пользователем (открывай их по этим путям):\n")
+                            copied.forEach { append("- ").append(it.absolutePath).append('\n') }
+                        }
+                    }.take(15900)
+                }
+                val reply = taskContext.mapCatching { CodexGateway.run(Chat.app, it, selectedModel, fid) }
                 withContext(Dispatchers.Main) {
                     c.fastBusy = false
-                    reply.onSuccess { say(it.text, it.file) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    reply.onSuccess { say(it.text, it.files) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
                     drainQueue()
                 }
             }

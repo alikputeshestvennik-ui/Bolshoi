@@ -85,10 +85,12 @@ fun CodexRuntimePanel() {
                 Prefs.codexOverlay = on
                 if (on) {
                     if (Settings.canDrawOverlays(ctx)) CodexOverlayService.start(ctx, Prefs.codexActiveTask)
-                    else ctx.startActivity(
-                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                    else runCatching {
+                        ctx.startActivity(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
                 } else {
                     CodexOverlayService.stop(ctx)
                 }
@@ -96,10 +98,12 @@ fun CodexRuntimePanel() {
         }
         if (floating && !canOverlay) {
             BigButton("Разрешить окно поверх приложений", {
-                ctx.startActivity(
-                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+                runCatching {
+                    ctx.startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
             }, bg = Card, fg = Ink, border = Line)
         } else if (floating) {
             BigButton("Показать окно сейчас", { CodexOverlayService.start(ctx, Prefs.codexActiveTask) }, bg = Card, fg = Ink, border = Line)
