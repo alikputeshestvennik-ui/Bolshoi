@@ -22,6 +22,7 @@ jobs:
         working-directory: ten-agent-runtime
         env:
           TEN_RUN_CODEX_E2E: '1' 
+          TEN_CODEX_SANDBOX: danger-full-access
   android:
     runs-on: ubuntu-latest
     steps:

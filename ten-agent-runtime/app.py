@@ -83,6 +83,13 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
     """Start one isolated, ephemeral Codex app-server and verify the turn outcome."""
     with tempfile.TemporaryDirectory(prefix="ten-codex-") as workspace:
         restore_output(workspace, initial_archive)
+        # GitHub-hosted runners disallow the unprivileged user namespace used by
+        # bubblewrap. The runner itself is disposable and isolated, so Actions
+        # can explicitly opt into full tools inside that VM. Other environments
+        # keep Codex's workspace-write sandbox by default.
+        sandbox_mode = os.getenv("TEN_CODEX_SANDBOX", "workspace-write")
+        if sandbox_mode not in {"workspace-write", "danger-full-access"}:
+            raise ValueError("Unsupported Codex sandbox mode")
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                "HOME": workspace, "ACCESS_TOKEN": token, "LANG": "C.UTF-8"}
         args = ["codex", "app-server", "--listen", "stdio://",
@@ -123,7 +130,7 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
             await request(1, "initialize", {"clientInfo": {"name": "ten", "title": "Тень", "version": "1.0"}})
             await send({"method": "initialized", "params": {}})
             started = await request(2, "thread/start", {"model": model, "cwd": workspace,
-                "approvalPolicy": "never", "sandbox": "workspace-write", "ephemeral": True})
+                "approvalPolicy": "never", "sandbox": sandbox_mode, "ephemeral": True})
             thread_id = started["thread"]["id"]
             await request(3, "turn/start", {"threadId": thread_id, "input": [{"type": "text", "text": "The output/ directory contains the prior saved workspace. Place deliverable and project files there so they persist; keep a concise output/MEMORY.md for continuity where useful. Use the terminal and developer tools to complete the goal.\n\n" + goal}]})
             deltas = []
