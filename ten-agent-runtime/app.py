@@ -83,6 +83,9 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
     """Start one isolated, ephemeral Codex app-server and verify the turn outcome."""
     with tempfile.TemporaryDirectory(prefix="ten-codex-") as workspace:
         restore_output(workspace, initial_archive)
+        sandbox_mode = os.getenv("TEN_CODEX_SANDBOX", "workspace-write")
+        if sandbox_mode not in {"workspace-write", "danger-full-access"}:
+            raise ValueError("Unsupported Codex sandbox mode")
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                "HOME": workspace, "ACCESS_TOKEN": token, "LANG": "C.UTF-8"}
         args = ["codex", "app-server", "--listen", "stdio://",
@@ -123,7 +126,7 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
             await request(1, "initialize", {"clientInfo": {"name": "ten", "title": "Тень", "version": "1.0"}})
             await send({"method": "initialized", "params": {}})
             started = await request(2, "thread/start", {"model": model, "cwd": workspace,
-                "approvalPolicy": "never", "sandbox": "workspace-write", "ephemeral": True})
+                "approvalPolicy": "never", "sandbox": sandbox_mode, "ephemeral": True})
             thread_id = started["thread"]["id"]
             await request(3, "turn/start", {"threadId": thread_id, "input": [{"type": "text", "text": "The output/ directory contains the prior saved workspace. Place deliverable and project files there so they persist; keep a concise output/MEMORY.md for continuity where useful. Use the terminal and developer tools to complete the goal.\n\n" + goal}]})
             deltas = []
@@ -153,6 +156,10 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
 
 
 async def execute_goal(goal: str, token: str, model: str, base_url: str, initial_archive: str | None = None) -> Response:
+    # Codex handles ChatGPT plan streaming and tool requirements directly.
+    if base_url.rstrip('/') == 'https://api.openai.com/v1':
+        output, session_id, archive = await run_codex(goal, token, model, base_url, initial_archive)
+        return Response(result=output, session_id=session_id, archive=archive)
     from agents import Agent, Runner, RunConfig, OpenAIResponsesModel, function_tool
     from openai import AsyncOpenAI
     result_holder: dict[str, str | None] = {}

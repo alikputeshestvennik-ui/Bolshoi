@@ -76,7 +76,16 @@ async def main() -> None:
         output={"ok":True,"result":result.result,"session_id":result.session_id,"archive":result.archive}
     except Exception as exc:
         # Never publish exception details: provider errors can contain credentials.
-        output={"ok":False,"error":"Codex не завершил задачу. Проверь доступ модели, совместимость Responses API и настройки песочницы."}
+        from openai import APIStatusError, APIConnectionError
+        if isinstance(exc, APIStatusError):
+            reason=f"Провайдер отклонил запрос (HTTP {exc.status_code}). Проверь вход, доступ к модели и совместимость API."
+        elif isinstance(exc, APIConnectionError):
+            reason="Не удалось соединиться с провайдером модели."
+        elif isinstance(exc, asyncio.TimeoutError):
+            reason="Время выполнения задачи истекло."
+        else:
+            reason="Не удалось выполнить задачу Codex. Проверь доступ модели и настройки рабочего окружения."
+        output={"ok":False,"error":reason}
     Path("ten-result.enc").write_text(encrypt(output,secret),encoding="ascii")
 
 if __name__ == "__main__": asyncio.run(main())
