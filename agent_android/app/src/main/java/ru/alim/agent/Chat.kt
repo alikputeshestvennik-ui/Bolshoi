@@ -404,10 +404,7 @@ class ChatStore(val fid: String) {
             }
             return
         }
-        if (Prefs.requestModel.startsWith("compatible:")) {
-            say("Для совместимого API включи Codex в поле запроса."); drainQueue(); return
-        }
-        c.requestOverride = Prefs.requestModel
+        c.requestOverride = ""
         val prompt = buildString {
             if (m.replyText.isNotBlank()) append("(Алим отвечает на ${if (m.replyMe) "своё" else "твоё"} сообщение: «${m.replyText}»)\n")
             append(m.text.ifBlank { if (m.att.isNotBlank()) "Посмотри вложения" else "" })

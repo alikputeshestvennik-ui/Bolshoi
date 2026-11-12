@@ -476,7 +476,7 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 @Composable
 fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = false, onSearch: (() -> Unit)? = null) {
     // только иконки, по центру; текущий раздел подсвечен
-    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icActivity, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
+    val items = listOf(Triple(icClock, "История", Scr.History), Triple(icActivity, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
     var activityTick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(3_000); activityTick++ } }
     val active = remember(activityTick, Agent.main.busy, Deleg.items.size, Watch.items.size) {
@@ -488,8 +488,11 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
         Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt -> Scr.Settings
         else -> here
     }
+    val codexOn = Friends.current == Friends.CODEX && cur == Scr.Home
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        NavDot(haze, icChat, "Чат", Modifier.weight(1f), cur == Scr.Home && !codexOn, false, if (cur == Scr.Home) onSearch else null) { Friends.open(Friends.MAIN); go(Scr.Home) }
+        NavDot(haze, icCodex, "Codex", Modifier.weight(1f), codexOn, false, null) { Friends.open(Friends.CODEX); go(Scr.Home) }
         items.forEach { (ic, label, to) ->
             NavDot(haze, ic, label, Modifier.weight(1f), to == cur, active && to == Scr.Active, if (to == Scr.Home) onSearch else null) { go(to) }
         }
@@ -530,6 +533,7 @@ private fun ico(name: String, path: String) = androidx.compose.ui.graphics.vecto
         strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
 }.build()
 private val icChat by lazy { ico("chat", "M4 5h16v11H9l-5 4z") }
+private val icCodex by lazy { ico("codex", "M8 6l-5 6 5 6M16 6l5 6-5 6") }
 private val icActivity by lazy { ico("activity", "M3 12h4l3-7 4 14 3-7h4") }
 private val icClock by lazy { ico("clock", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7v5l3 2") }
 private val icSun by lazy { ico("sun", "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4") }
@@ -757,15 +761,6 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
 @Composable
 fun BottomBarContent(haze: HazeState, here: Scr, go: (Scr) -> Unit, chat: ChatStore, friend: Friend,
                      composerFocused: Boolean, onFocusChange: (Boolean) -> Unit, onSearch: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(Friends.MAIN to "Тень", Friends.CODEX to "Codex · проекты").forEach { (id, title) ->
-            val selected = Friends.current == id
-            androidx.compose.material3.TextButton(onClick = { Friends.open(id); go(Scr.Home) },
-                modifier = Modifier.weight(1f).clip(shp(14.dp)).background(if (selected) AccentSoft else Color.Transparent)) {
-                Text(title, style = body(14, FontWeight.SemiBold, if (selected) Teal else Muted))
-            }
-        }
-    }
     NavBar(haze, here, go, onSearch = onSearch)
     Spacer(Modifier.height(4.dp))
     if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {

@@ -61,13 +61,17 @@ object CodexGateway {
         val token = store(ctx).getString("local_token", "").orEmpty()
         require(token.isNotBlank()) { "Подключи локальное окружение в настройках" }
         require(goal.length <= 16000) { "Задача слишком длинная" }
-        val provider = when { Llm.isDeepSeek(selected) -> "deepseek"; Llm.isAny(selected) -> "any"; else -> "" }
+        val provider = when { Llm.isDeepSeek(selected) -> "deepseek"; Llm.isAny(selected) -> "any"; selected.startsWith("compatible:") -> "compatible"; else -> "" }
         val providerToken = store(ctx).getString("provider_" + provider, "").orEmpty().ifBlank {
-            when (provider) { "deepseek" -> BuildConfig.DEEPSEEK_API.trim(); "any" -> Llm.anyKey; else -> "" }
+            when (provider) { "deepseek" -> BuildConfig.DEEPSEEK_API.trim(); "any" -> Llm.anyKey; "compatible" -> store(ctx).getString("custom_token", "").orEmpty(); else -> "" }
         }
+        val body = JSONObject().put("goal", goal).put("selected", selected).put("provider_token", providerToken)
+        if (provider == "compatible") body.put("base_url", customUrl(ctx))
+        val ghToken = BuildConfig.GH_PAT.trim()
+        if (ghToken.isNotBlank()) body.put("gh_token", ghToken)
         val request = Request.Builder().url("http://127.0.0.1:8766/run")
             .header("Authorization", "Bearer $token")
-            .post(JSONObject().put("goal", goal).put("selected", selected).put("provider_token", providerToken).toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
         return http.newCall(request).execute().use { response ->
             val result = JSONObject(response.body?.string().orEmpty())
             if (!response.isSuccessful) error(result.optString("error", "Ошибка локального окружения"))

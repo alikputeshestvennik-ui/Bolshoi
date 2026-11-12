@@ -93,6 +93,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {'error': 'Некорректная задача'})
         selected = task.get('selected', '')
         provider_token = task.get('provider_token', '')
+        base_url = task.get('base_url', '')
+        gh_token = task.get('gh_token', '')
         if not isinstance(selected, str) or not re.fullmatch(r'[a-zA-Z0-9._/:\-]{0,160}', selected):
             return self.reply(400, {'error': 'Некорректная модель'})
         backend = None
@@ -105,6 +107,11 @@ class Handler(BaseHTTPRequestHandler):
             model_id = selected.split(':', 1)[1]
         elif re.match(r'^(?:cx|cc|ds|ag|kmc)/', selected, re.IGNORECASE):
             backend = 'https://anymodel.org/v1'
+        elif selected.startswith('compatible:'):
+            model_id = selected.split(':', 1)[1]
+            backend = base_url if isinstance(base_url, str) else ''
+            if not re.fullmatch(r'https://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._/-]*)?', backend):
+                return self.reply(400, {'error': 'Некорректный адрес провайдера'})
         elif selected and not selected.startswith('chatgpt:'):
             return self.reply(400, {'error': 'Провайдер пока не поддерживается'})
         if selected.startswith('chatgpt:'):
@@ -121,6 +128,9 @@ class Handler(BaseHTTPRequestHandler):
                 command = ['codex', 'exec', '--skip-git-repo-check', '--sandbox', os.environ.get('TEN_CODEX_SANDBOX', 'workspace-write'),
                            '-C', str(WORK), '-o', str(output), '-']
                 env = os.environ.copy()
+                if gh_token and isinstance(gh_token, str) and gh_token.strip():
+                    env['GH_TOKEN'] = gh_token.strip()
+                    env['GITHUB_TOKEN'] = gh_token.strip()
                 if selected:
                     command[2:2] = ['-m', model_id]
                 if backend:

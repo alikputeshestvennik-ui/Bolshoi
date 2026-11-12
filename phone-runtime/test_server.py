@@ -24,10 +24,16 @@ class BridgeTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown(); cls.server.server_close(); cls.thread.join(); cls.temp.cleanup()
     def request(self, token, value):
-        req = urllib.request.Request(f'http://127.0.0.1:{self.server.server_port}/run', data=json.dumps(value).encode(), headers={'Authorization': 'Bearer '+token})
-        try:
-            with urllib.request.urlopen(req) as r: return r.status, json.load(r)
-        except urllib.error.HTTPError as r: return r.code, json.load(r)
+        import time
+        for attempt in range(3):
+            req = urllib.request.Request(f'http://127.0.0.1:{self.server.server_port}/run', data=json.dumps(value).encode(), headers={'Authorization': 'Bearer '+token})
+            try:
+                with urllib.request.urlopen(req) as r: return r.status, json.load(r)
+            except urllib.error.HTTPError as r:
+                if r.code == 409 and attempt < 2:
+                    time.sleep(0.05); continue
+                return r.code, json.load(r)
+        return 409, {'error': 'busy'}
     def test_cancel_real_process(self):
         import subprocess, time
         result = []
@@ -90,5 +96,26 @@ class BridgeTest(unittest.TestCase):
             self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'any:gpt-5', 'provider_token':'test-secret'})[0],200)
     def test_unknown_provider_rejected(self):
         self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'google:gemini-3.5-flash-lite'})[0],400)
+
+    def test_compatible_requires_https(self):
+        self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'compatible:gpt-4o', 'base_url':'http://api.example.com', 'provider_token':'k'})[0],400)
+    def test_compatible_passes_model_base_and_token(self):
+        def run(args, **kwargs):
+            self.assertEqual(kwargs['env']['TEN_PROVIDER_TOKEN'], 'k')
+            self.assertIn('gpt-4o', args)
+            self.assertIn('https://api.example.com/v1', str(args))
+            Path(args[args.index('-o')+1]).write_text('done')
+            return type('Result', (), {'returncode':0})()
+        with patch.object(self.bridge, 'run_process', side_effect=run):
+            self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'compatible:gpt-4o', 'base_url':'https://api.example.com/v1', 'provider_token':'k'})[0],200)
+    def test_gh_token_passed_to_env(self):
+        def run(args, **kwargs):
+            self.assertEqual(kwargs['env']['GH_TOKEN'], 'ghp_test')
+            self.assertEqual(kwargs['env']['GITHUB_TOKEN'], 'ghp_test')
+            self.assertNotIn('ghp_test', str(args))
+            Path(args[args.index('-o')+1]).write_text('done')
+            return type('Result', (), {'returncode':0})()
+        with patch.object(self.bridge, 'run_process', side_effect=run):
+            self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'deepseek:deepseek-flash', 'provider_token':'k', 'gh_token':'ghp_test'})[0],200)
 
 if __name__ == '__main__': unittest.main()
