@@ -760,9 +760,25 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                         }
                     }
                 }
-                Text("Codex работает прямо в чате через фоновую задачу GitHub Actions. Нужен GH_PAT с доступом к Actions; запрос и результат передаются зашифрованными.", style = body(12, color = Muted))
-                BigButton("Начать новое пространство Codex", { Prefs.codexPreviousRun = "" }, bg = Card, fg = Ink, border = Line)
-                Text("Файлы Codex сохраняются между задачами в зашифрованном архиве GitHub Actions на 14 дней. Сброс начинает новое пространство.", style = body(12, color = Muted))
+                Text("Codex — отдельный чат. Команды и файлы находятся в локальном окружении телефона; модель использует авторизацию и настройки установленного Codex.", style = body(12, color = Muted))
+                listOf("deepseek" to "DeepSeek", "any" to "AnyModel").forEach { (id, name) ->
+                    var key by remember(id) { mutableStateOf("") }
+                    var status by remember(id) { mutableStateOf("") }
+                    OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("Ключ $name") }, singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                    BigButton("Сохранить ключ $name", {
+                        status = runCatching { CodexGateway.saveProviderToken(ctx, id, key); key = ""; "Сохранено" }.getOrElse { it.message.orEmpty() }
+                    }, bg = Card, fg = Ink, border = Line)
+                    if (status.isNotBlank()) Text(status, style = body(12, color = Muted))
+                }
+                var localToken by remember { mutableStateOf("") }
+                var localStatus by remember { mutableStateOf("") }
+                OutlinedTextField(localToken, { localToken = it }, Modifier.fillMaxWidth(), label = { Text("Ключ локального окружения") }, singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                BigButton("Подключить окружение", {
+                    localStatus = runCatching { CodexGateway.saveLocalToken(ctx, localToken); localToken = ""; "Ключ сохранён. Открой чат Codex." }.getOrElse { it.message.orEmpty() }
+                }, bg = Card, fg = Ink, border = Line)
+                if (localStatus.isNotBlank()) Text(localStatus, style = body(12, color = Muted))
                 if (provider == "compatible") {
                     var customUrl by remember { mutableStateOf(runCatching { CodexGateway.customUrl(ctx) }.getOrDefault("")) }
                     var customModel by remember { mutableStateOf(Prefs.compatibleModel) }

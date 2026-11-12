@@ -76,7 +76,7 @@ import java.util.Locale
 @Composable
 fun DashScreen(go: (Scr) -> Unit) {
     val ctx = LocalContext.current
-    val chat = remember { Chat.main }
+    val chat = remember(Friends.current) { Chat.of(Friends.current) }
     val core = chat.core
     val haze = remember { HazeState() }
     var tick by remember { mutableStateOf(0) }
@@ -745,7 +745,7 @@ private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): S
 /** Нижние кнопки разделов и строка ввода — на всех экранах, не только в чате. Отправил сообщение — переходим в чат. */
 @Composable
 fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier = Modifier) {
-    val chat = remember { Chat.of(Friends.MAIN) }
+    val chat = remember(Friends.current) { Chat.of(Friends.current) }
     var composerFocused by remember { mutableStateOf(false) }
     val n0 = remember { chat.msgs.size }
     LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
@@ -757,6 +757,15 @@ fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier 
 @Composable
 fun BottomBarContent(haze: HazeState, here: Scr, go: (Scr) -> Unit, chat: ChatStore, friend: Friend,
                      composerFocused: Boolean, onFocusChange: (Boolean) -> Unit, onSearch: (() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(Friends.MAIN to "Тень", Friends.CODEX to "Codex · проекты").forEach { (id, title) ->
+            val selected = Friends.current == id
+            androidx.compose.material3.TextButton(onClick = { Friends.open(id); go(Scr.Home) },
+                modifier = Modifier.weight(1f).clip(shp(14.dp)).background(if (selected) AccentSoft else Color.Transparent)) {
+                Text(title, style = body(14, FontWeight.SemiBold, if (selected) Teal else Muted))
+            }
+        }
+    }
     NavBar(haze, here, go, onSearch = onSearch)
     Spacer(Modifier.height(4.dp))
     if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {

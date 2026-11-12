@@ -61,7 +61,7 @@ fun ChatControls(go: (Scr) -> Unit) {
     var effortOpen by remember { mutableStateOf(false) }
     var model by remember { mutableStateOf(Prefs.requestModel) }
     var effort by remember { mutableStateOf(Prefs.effort) }
-    var codex by remember { mutableStateOf(Prefs.codexMode) }
+    val codex = Friends.current == Friends.CODEX
     val models = requestModels(Prefs.requestProvider, ChatGptAccount.models)
     Column {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -98,8 +98,8 @@ fun ChatControls(go: (Scr) -> Unit) {
         }
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(if (codex) "● CODEX ВКЛЮЧЁН · ${if (model.isBlank()) modelLabel(Prefs.smartModel) else modelLabel(model)}" else "Исполнитель: Тень", style = body(12, FontWeight.SemiBold, if (codex) Teal else Muted), modifier = Modifier.weight(1f))
-        androidx.compose.material3.TextButton(onClick = { codex = !codex; Prefs.codexMode = codex }) { Text(if (codex) "Выключить Codex" else "Включить Codex") }
+        Text(if (codex) "Codex · на телефоне · ${if (model.isBlank()) modelLabel(Prefs.smartModel) else modelLabel(model)}" else "Исполнитель: Тень", style = body(12, FontWeight.SemiBold, if (codex) Teal else Muted), modifier = Modifier.weight(1f))
+        androidx.compose.material3.TextButton(onClick = { Friends.open(if (codex) Friends.MAIN else Friends.CODEX); go(Scr.Home) }) { Text(if (codex) "Чат Тени" else "Открыть Codex") }
     }
     }
 }

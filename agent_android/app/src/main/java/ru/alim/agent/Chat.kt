@@ -74,6 +74,7 @@ data class Friend(
 
 object Friends {
     const val MAIN = "main"
+    const val CODEX = "codex"
     val list = mutableStateListOf<Friend>()
     /** Открытый сейчас диалог. */
     var current by mutableStateOf(MAIN)
@@ -92,11 +93,12 @@ object Friends {
         }
         if (list.none { it.main }) list.add(0, Friend(MAIN, Prefs.botName, Prefs.botMale, Prefs.botStyle, Prefs.botAvatar))
         // теперь помощник один — остальных друзей не показываем
-        list.removeAll { !it.main }
+        list.removeAll { !it.main && it.id != CODEX }
+        if (list.none { it.id == CODEX }) list.add(Friend(CODEX, "Codex", true, "short", role = "Код и проекты"))
         // переименование: «Пилот» → «Тень» (один раз; если Алим потом даст своё имя — оставим его)
         if (!Prefs.renamedTen) { Prefs.renamedTen = true
             list.firstOrNull { it.main && it.name.equals("Пилот", true) }?.let { f -> save(f.copy(name = "Тень")) } }
-        current = MAIN
+        current = Prefs.lastChat.takeIf { it == MAIN || it == CODEX } ?: MAIN
     }
 
     fun get(id: String): Friend = list.firstOrNull { it.id == id } ?: list.firstOrNull { it.main } ?: Friend(MAIN, "Артур", true, "buddy")
@@ -110,7 +112,7 @@ object Friends {
     }
 
     fun remove(id: String) {
-        if (id == MAIN) return
+        if (id == MAIN || id == CODEX) return
         list.removeAll { it.id == id }
         runCatching { File(Chat.app.filesDir, "chat_$id.json").delete() }
         if (current == id) open(MAIN)
@@ -384,14 +386,14 @@ class ChatStore(val fid: String) {
             return
         }
         c.delegated = false
-        if (Prefs.codexMode) {
+        if (fid == Friends.CODEX) {
             if (m.att.isNotBlank() || m.voice.isNotBlank()) {
                 say("Режим Codex пока принимает текстовые цели. Пришли задачу текстом."); drainQueue(); return
             }
             c.fastBusy = true
             val selectedModel = Prefs.requestModel.ifBlank { Prefs.smartModel }
             val taskContext = "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text
-            note("Codex включён · ${modelLabel(selectedModel)} · запускаю задачу в песочнице…")
+            note("Codex · выполняю на телефоне…")
             io.launch {
                 val reply = runCatching { CodexGateway.run(Chat.app, taskContext, selectedModel) }
                 withContext(Dispatchers.Main) {

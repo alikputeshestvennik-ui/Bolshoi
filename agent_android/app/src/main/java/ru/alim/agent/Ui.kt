@@ -200,7 +200,7 @@ fun App(voice: Voice) {
                 LocalFlexActive provides flex, LocalBarPad provides (if (flex) 12.dp else if (withBar) barDp + 12.dp else 24.dp), LocalBarHaze provides null, LocalNavigate provides go) {
             pageState.SaveableStateProvider(if (scr == Scr.Journal) Scr.Home.name else scr.name) {
             when (scr) {
-                Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
+                Scr.Home, Scr.Journal -> androidx.compose.runtime.key(Friends.current) { ChatScreen(Friends.current, go) }
                 Scr.Active -> ActiveScreen(go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen { scr = subFrom; subFrom = Scr.Home }
