@@ -1,8 +1,8 @@
 # Codex на телефоне
 
 Android-приложение поднимает это окружение само: при первом запуске оно
-распаковывает Termux bootstrap из APK, ставит Python, pip, Git, ripgrep и
-архивные утилиты, затем скачивает статический Codex для arm64 и его
+распаковывает Termux bootstrap из APK, ставит Python, pip, Git, GitHub CLI
+(`gh`), ripgrep и архивные утилиты, затем скачивает статический Codex для arm64 и его
 `codex-code-mode-host`. Termux, ручной ключ и отдельный Linux-сервер не нужны.
 
 Codex сбрасывает переменные `LD_*` при старте, поэтому мост возвращает

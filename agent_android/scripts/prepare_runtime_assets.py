@@ -6,7 +6,7 @@ Run from the repository root (CI does this before the Gradle build):
     python3 agent_android/scripts/prepare_runtime_assets.py
 
 The script is intentionally dependency-free.  It downloads the pinned Termux
-bootstrap, resolves the Python/Git/ripgrep/archive dependency closure from the Termux
+bootstrap, resolves the Python/Git/ripgrep/GitHub CLI/archive dependency closure from the Termux
 aarch64 repository, verifies every SHA256, and copies the local bridge source
 into APK assets.
 """
@@ -34,7 +34,7 @@ BOOTSTRAP_MIRROR = (
 BOOTSTRAP_SHA256 = "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3"
 TERMUX_BASE = "https://packages.termux.dev/apt/termux-main"
 TERMUX_INDEX = f"{TERMUX_BASE}/dists/stable/main/binary-aarch64/Packages"
-PACKAGES = ("python", "python-pip", "git", "ripgrep", "zip", "unzip", "jq")
+PACKAGES = ("python", "python-pip", "git", "gh", "ripgrep", "zip", "unzip", "jq")
 USER_AGENT = {"User-Agent": "ten-android-runtime/1.0"}
 
 

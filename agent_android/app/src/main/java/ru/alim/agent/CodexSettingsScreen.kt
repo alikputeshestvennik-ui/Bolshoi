@@ -85,7 +85,7 @@ fun CodexSettingsScreen(back: () -> Unit) {
                 )
             }
             Text(
-                "Codex работает на телефоне: Python, Git, ripgrep, архивы и файлы доступны без Termux. GitHub-токен уже передаётся из секретов сборки.",
+                "Codex работает на телефоне: Python, Git, GitHub CLI, ripgrep, архивы и файлы доступны без Termux. GitHub-токен уже передаётся из секретов сборки.",
                 style = body(12, color = Muted), lineHeight = 17.sp,
             )
         }

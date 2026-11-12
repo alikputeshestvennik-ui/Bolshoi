@@ -171,6 +171,8 @@ class BridgeTest(unittest.TestCase):
         def inspect(task, args, prompt, env, output, timeout):
             self.assertEqual(env["GH_TOKEN"], "ghp_test")
             self.assertEqual(env["GITHUB_TOKEN"], "ghp_test")
+            self.assertEqual(env["GH_PROMPT_DISABLED"], "1")
+            self.assertEqual(env["GH_NO_UPDATE_NOTIFIER"], "1")
             self.assertNotIn("ghp_test", str(args))
 
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
@@ -223,6 +225,7 @@ class BridgeTest(unittest.TestCase):
             self.assertIn("shell_environment_policy.set.LD_PRELOAD=", command)
             self.assertIn("login=false", command)
             self.assertIn("/data/user/0/ru.alim.agent/files/usr/bin/bash", command)
+            self.assertIn("GitHub CLI gh is installed", command)
 
         environment = {
             "PREFIX": "/data/user/0/ru.alim.agent/files/usr",

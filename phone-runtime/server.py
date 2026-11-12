@@ -417,6 +417,7 @@ def codex_runtime_config(env: dict[str, str]) -> list[str]:
         instructions = (
             "Local Android runtime. For every exec_command call set login=false and "
             f"shell={json.dumps(shell_path)}. Never use a login shell. "
+            "GitHub CLI gh is installed and authenticated through GH_TOKEN; use it for repository, PR and issue operations. "
             "Use the embedded Python, Git and ripgrep from the inherited PATH; "
             "work in the supplied workspace unless the user explicitly asks to clone another repository."
         )
@@ -472,6 +473,8 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         if gh_token and isinstance(gh_token, str) and gh_token.strip():
             env["GH_TOKEN"] = gh_token.strip()
             env["GITHUB_TOKEN"] = gh_token.strip()
+            env["GH_PROMPT_DISABLED"] = "1"
+            env["GH_NO_UPDATE_NOTIFIER"] = "1"
         if backend:
             env["TEN_PROVIDER_TOKEN"] = provider_token.strip()
         if PROXY_READY:
