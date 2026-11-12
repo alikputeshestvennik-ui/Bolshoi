@@ -53,6 +53,7 @@ class CodexOverlayService : Service() {
     private var window: WindowManager? = null
     private var root: View? = null
     private var content: View? = null
+    private var overlayHost: FrameLayout? = null
     private var openOverlay: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var titleView: TextView? = null
@@ -190,9 +191,15 @@ class CodexOverlayService : Service() {
         val frame = FrameLayout(this).apply {
             addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
-        if (runCatching { wm.addView(frame, layout) }.isSuccess) {
-            root = frame
+        // WindowManager ожидает обычный корень окна; вложенный FrameLayout держит слой blur/кнопки.
+        val windowRoot = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(frame, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        if (runCatching { wm.addView(windowRoot, layout) }.isSuccess) {
+            root = windowRoot
             content = card
+            overlayHost = frame
         }
     }
 
@@ -201,6 +208,7 @@ class CodexOverlayService : Service() {
         root?.let { view -> runCatching { window?.removeView(view) } }
         root = null
         content = null
+        overlayHost = null
         titleView = null
         reasonView = null
         answerView = null
@@ -232,7 +240,7 @@ class CodexOverlayService : Service() {
                     if (moved) {
                         layout.x = startX + dx
                         layout.y = startY + dy
-                        runCatching { wm.updateViewLayout(view, layout) }
+                        runCatching { wm.updateViewLayout(root ?: view, layout) }
                     }
                     true
                 }
@@ -248,7 +256,7 @@ class CodexOverlayService : Service() {
 
     private fun showOpenAction() {
         if (openOverlay != null) return
-        val frame = root as? FrameLayout ?: return
+        val frame = overlayHost ?: return
         val card = content ?: return
         if (Build.VERSION.SDK_INT >= 31) {
             val blur = dp(6).toFloat()
@@ -286,7 +294,7 @@ class CodexOverlayService : Service() {
     }
 
     private fun hideOpenAction() {
-        openOverlay?.let { overlay -> (root as? FrameLayout)?.removeView(overlay) }
+        openOverlay?.let { overlay -> overlayHost?.removeView(overlay) }
         openOverlay = null
         content?.let { card ->
             if (Build.VERSION.SDK_INT >= 31) card.setRenderEffect(null) else card.alpha = 1f
