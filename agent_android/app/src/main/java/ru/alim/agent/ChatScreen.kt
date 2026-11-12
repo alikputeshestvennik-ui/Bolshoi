@@ -279,8 +279,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
             } else {
-                if (fid == Friends.MAIN) BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
-                else Composer(haze, chat, f) { composerFocused = it }
+                BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
             }
         }
 
