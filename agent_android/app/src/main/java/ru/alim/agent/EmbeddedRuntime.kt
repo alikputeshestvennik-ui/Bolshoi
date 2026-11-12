@@ -125,6 +125,18 @@ object EmbeddedRuntime {
         error("Локальное окружение ещё готовится: $detail")
     }
 
+    /** Waits until the loopback bridge is accepting requests. */
+    fun awaitServer(ctx: Context, timeoutMs: Long = 15 * 60_000) {
+        startAsync(ctx)
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (healthy()) return
+            if (state == State.ERROR) error(detail)
+            Thread.sleep(500)
+        }
+        error("Локальное окружение ещё готовится: $detail")
+    }
+
     private fun prepare(ctx: Context) {
         try {
             state = State.PREPARING
@@ -200,15 +212,17 @@ object EmbeddedRuntime {
                 while (entry != null) {
                     val name = entry.name
                     if (name == "SYMLINKS.txt") {
-                        BufferedReader(InputStreamReader(zip)).useLines { lines ->
-                            lines.forEach { line ->
-                                val parts = line.split('←')
-                                if (parts.size == 2) {
-                                    val target = parts[0].replace(termuxPrefix, p.prefix)
-                                    val link = File(staging, parts[1])
-                                    link.parentFile?.mkdirs()
-                                    symlinks += target to link.absolutePath
-                                }
+                        // Do not wrap the zip stream in a reader with use{}: closing it
+                        // would close the whole bootstrap stream and make nextEntry()
+                        // fail with "Stream closed".
+                        val links = zip.readBytes().toString(Charsets.UTF_8)
+                        links.lineSequence().forEach { line ->
+                            val parts = line.split('←')
+                            if (parts.size == 2) {
+                                val target = parts[0].replace(termuxPrefix, p.prefix)
+                                val link = File(staging, parts[1])
+                                link.parentFile?.mkdirs()
+                                symlinks += target to link.absolutePath
                             }
                         }
                     } else {

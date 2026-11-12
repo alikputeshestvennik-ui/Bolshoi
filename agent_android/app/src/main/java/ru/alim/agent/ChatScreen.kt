@@ -224,7 +224,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         // ——— шапка ———
         if (!ChatSel.on && search == null && fid == Friends.MAIN) {
             Box(
-                Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 62.dp, end = 14.dp)
+                Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 47.dp)
                     .size(36.dp).glass(haze, circ)
                     .clickable(onClickLabel = "Открыть Codex") {
                         Friends.open(Prefs.lastCodex.takeIf { Friends.isCodex(it) } ?: Friends.CODEX)

@@ -443,6 +443,8 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, *args):
         return
 
@@ -451,8 +453,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
+        self.wfile.flush()
+        self.close_connection = True
 
     def authorized(self) -> bool:
         return hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + SECRET)

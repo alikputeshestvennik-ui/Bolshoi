@@ -138,6 +138,7 @@ object CodexGateway {
         EmbeddedRuntime.startAsync(ctx)
         val token = token(ctx)
         require(token.isNotBlank()) { "Локальное окружение ещё готовится" }
+        EmbeddedRuntime.awaitServer(ctx)
         val provider = when {
             Llm.isDeepSeek(routed) -> "deepseek"
             Llm.isAny(routed) -> "any"
