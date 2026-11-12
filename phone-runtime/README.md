@@ -23,9 +23,9 @@ Codex сбрасывает переменные `LD_*` при старте, по
 Провайдеры:
 
 - `chatgpt:<model>` — OpenAI Responses API через вход в аккаунт Тени;
-- `deepseek:<model>` — прямой DeepSeek API из секретов сборки;
-- `any:<model>` и `cx/`, `cc/`, `ds/`, `ag/`, `kmc/` — AnyModel из секретов;
-- `compatible:<model>` — свой OpenAI-совместимый HTTPS endpoint и ключ.
+- `deepseek:<model>` — прямой DeepSeek API из секретов сборки (OpenAI Responses);
+- `any:<model>` и `cx/`, `cc/`, `ds/`, `ag/`, `kmc/` — AnyModel из секретов (OpenAI Responses);
+- `compatible:<model>` — свой HTTPS endpoint с OpenAI Responses API (`/responses`) и ключ.
 
 Плавающее PiP-окно показывает reasoning и последний ответ поверх других
 приложений. Оно включается в настройках и требует разрешения «поверх других

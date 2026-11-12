@@ -449,10 +449,8 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 model_id = selected.split(":", 1)[1]
             command += ["-m", model_id]
         backend = None
-        wire_api = "chat"
         if selected.startswith("chatgpt:"):
             backend = "https://api.openai.com/v1"
-            wire_api = "responses"
         elif selected.startswith("deepseek:"):
             backend = "https://api.deepseek.com"
         elif selected.startswith("any:") or re.match(r"^(?:cx|cc|ds|ag|kmc)/", selected, re.IGNORECASE):
@@ -465,7 +463,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 "-c", 'model_providers.ten_provider.name="Ten provider"',
                 "-c", "model_providers.ten_provider.base_url=" + json.dumps(backend),
                 "-c", 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
-                "-c", 'model_providers.ten_provider.wire_api="' + wire_api + '"',
+                "-c", 'model_providers.ten_provider.wire_api="responses"',
                 "-c", "model_providers.ten_provider.requires_openai_auth=false",
             ]
         command.append("-")

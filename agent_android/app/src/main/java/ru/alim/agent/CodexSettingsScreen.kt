@@ -80,7 +80,7 @@ fun CodexSettingsScreen(back: () -> Unit) {
                 }, bg = Card, fg = Ink, border = Line)
                 if (customStatus.isNotBlank()) Text(customStatus, style = body(12, color = Muted))
                 Text(
-                    "Нужен HTTPS-адрес API (обычно с /v1) и модель с поддержкой инструментов. Ключ хранится зашифрованным на телефоне.",
+                    "Нужен HTTPS-адрес API (обычно с /v1), поддержка OpenAI Responses (`/responses`) и модель с инструментами. Ключ хранится зашифрованным на телефоне.",
                     style = body(12, color = Muted), lineHeight = 16.sp,
                 )
             }

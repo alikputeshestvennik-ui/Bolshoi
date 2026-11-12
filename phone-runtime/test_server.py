@@ -99,7 +99,8 @@ class BridgeTest(unittest.TestCase):
             self.assertEqual(env["TEN_PROVIDER_TOKEN"], "test-secret")
             self.assertNotIn("test-secret", str(args))
             self.assertIn("deepseek-flash", args)
-            self.assertIn('wire_api="chat"', str(args))
+            self.assertIn('wire_api="responses"', str(args))
+            self.assertNotIn('wire_api="chat"', str(args))
 
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "deepseek:deepseek-flash", "provider_token": "test-secret"})[0], 200)
@@ -140,6 +141,7 @@ class BridgeTest(unittest.TestCase):
         def inspect(task, args, prompt, env, output, timeout):
             self.assertEqual(env["TEN_PROVIDER_TOKEN"], "test-secret")
             self.assertIn("cc/claude-opus-5-5", args)
+            self.assertIn('wire_api="responses"', str(args))
 
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "cc/claude-opus-5-5", "provider_token": "test-secret"})[0], 200)
@@ -163,6 +165,7 @@ class BridgeTest(unittest.TestCase):
             self.assertEqual(env["TEN_PROVIDER_TOKEN"], "k")
             self.assertIn("gpt-4o", args)
             self.assertIn("https://api.example.com/v1", str(args))
+            self.assertIn('wire_api="responses"', str(args))
 
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "compatible:gpt-4o", "base_url": "https://api.example.com/v1", "provider_token": "k"})[0], 200)
