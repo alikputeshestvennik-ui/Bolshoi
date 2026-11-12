@@ -1,5 +1,11 @@
 package ru.alim.agent
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +60,38 @@ private val codexTrashIcon by lazy { lineIco("codex-trash", "M4 7h16M9 7V4h6v3M6
 private val codexPlusIcon by lazy { lineIco("codex-plus", "M12 5v14M5 12h14", 2.2f) }
 private val codexStopIcon by lazy { lineIco("codex-stop", "M7 7h10v10H7z", 2f) }
 
+data class CodexActivity(
+    val running: Boolean = false,
+    val reasoning: String = "",
+    val answer: String = "",
+)
+
+/** Одно живое состояние Codex-задачи для шапки, баббла и кнопки остановки. */
+@Composable
+fun rememberCodexActivity(fid: String, enabled: Boolean = true): CodexActivity {
+    var state by remember(fid) { mutableStateOf(CodexActivity()) }
+    LaunchedEffect(fid, enabled) {
+        if (!enabled) {
+            state = CodexActivity()
+            return@LaunchedEffect
+        }
+        while (true) {
+            val snapshot = withContext(Dispatchers.IO) {
+                runCatching { CodexGateway.status(Chat.app, fid) }.getOrNull()
+            }
+            if (snapshot != null) {
+                state = CodexActivity(
+                    running = snapshot.optString("status") in setOf("queued", "running"),
+                    reasoning = snapshot.optString("reasoning").trim(),
+                    answer = snapshot.optString("answer").trim(),
+                )
+            }
+            delay(900)
+        }
+    }
+    return state
+}
+
 @Composable
 private fun CodexBarButton(icon: ImageVector, label: String, size: Int = 40, onClick: () -> Unit) {
     Box(Modifier.size(size.dp).clip(circ).clickable(onClickLabel = label, onClick = onClick), contentAlignment = Alignment.Center) {
@@ -62,20 +100,12 @@ private fun CodexBarButton(icon: ImageVector, label: String, size: Int = 40, onC
 }
 
 @Composable
-fun CodexTopBar(fid: String, go: (Scr) -> Unit, onDelete: () -> Unit) {
+fun CodexTopBar(fid: String, go: (Scr) -> Unit, onDelete: () -> Unit, running: Boolean = false) {
     val chats = Friends.list.filter { Friends.isCodex(it.id) }
     val strip = rememberLazyListState()
-    var running by remember(fid) { mutableStateOf(false) }
     LaunchedEffect(fid, chats.size) {
         val index = chats.indexOfFirst { it.id == fid }
         if (index >= 0) runCatching { strip.animateScrollToItem(index) }
-    }
-    LaunchedEffect(fid) {
-        while (true) {
-            val snapshot = withContext(Dispatchers.IO) { runCatching { CodexGateway.status(Chat.app, fid) }.getOrNull() }
-            running = snapshot?.optString("status") in setOf("queued", "running")
-            delay(900)
-        }
     }
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp)
@@ -112,7 +142,6 @@ fun CodexTopBar(fid: String, go: (Scr) -> Unit, onDelete: () -> Unit) {
             }
         }
         if (running) CodexBarButton(codexStopIcon, "Остановить Codex", 36) {
-            running = false
             Chat.of(fid).stopCodex()
         }
         CodexBarButton(codexSettingsIcon, "Настройки Codex") { go(Scr.CodexSettings) }
@@ -137,9 +166,6 @@ fun CodexKeyboardBar(fid: String, go: (Scr) -> Unit) {
     val autoModel = allModels.firstOrNull().orEmpty()
     var providerOpen by remember(fid) { mutableStateOf(false) }
     var modelOpen by remember(fid) { mutableStateOf(false) }
-    var reasoning by remember(fid) { mutableStateOf("") }
-    var answer by remember(fid) { mutableStateOf("") }
-    var running by remember(fid) { mutableStateOf(false) }
 
     fun pickProvider(id: String) {
         provider = id
@@ -149,20 +175,6 @@ fun CodexKeyboardBar(fid: String, go: (Scr) -> Unit) {
         model = next
         Prefs.setCodexProvider(fid, id)
         Prefs.setCodexModel(fid, next)
-    }
-
-    LaunchedEffect(fid) {
-        while (true) {
-            val snapshot = withContext(Dispatchers.IO) {
-                runCatching { CodexGateway.status(Chat.app, fid) }.getOrNull()
-            }
-            if (snapshot != null) {
-                reasoning = snapshot.optString("reasoning").trim()
-                answer = snapshot.optString("answer").trim()
-                running = snapshot.optString("status") in setOf("queued", "running")
-            }
-            delay(900)
-        }
     }
 
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -211,23 +223,34 @@ fun CodexKeyboardBar(fid: String, go: (Scr) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Прозрачный баббл над полем ввода: только пока задача реально идёт. */
+@Composable
+fun CodexRunBubble(activity: CodexActivity) {
+    AnimatedVisibility(
+        visible = activity.running,
+        enter = fadeIn(tween(180)) + expandVertically(tween(180)),
+        exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
+    ) {
         Column(
-            Modifier.fillMaxWidth().clip(shp(12.dp)).background(Th.c.inBubble.copy(alpha = 0.7f))
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shp(12.dp))
+                .background(Th.c.inBubble.copy(alpha = 0.7f)).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (running) ThinkDots()
-                Text(if (running) "Codex думает" else "Раздумья", style = body(11, FontWeight.SemiBold, Teal))
+                ThinkDots()
+                Text("Codex думает", style = body(11, FontWeight.SemiBold, Teal))
             }
             Text(
-                reasoning.ifBlank { if (running) "Codex обдумывает задачу…" else "Раздумья появятся, когда Codex начнёт задачу." },
-                style = body(13, color = if (reasoning.isBlank()) Muted else Ink), lineHeight = 18.sp,
+                activity.reasoning.ifBlank { "Codex обдумывает задачу…" },
+                style = body(13, color = if (activity.reasoning.isBlank()) Muted else Ink), lineHeight = 18.sp,
                 maxLines = 5, overflow = TextOverflow.Ellipsis,
             )
-            if (answer.isNotBlank()) {
+            if (activity.answer.isNotBlank()) {
                 Text("Последний ответ", style = body(11, FontWeight.SemiBold, Muted))
-                Text(answer, style = body(13, color = Ink), lineHeight = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(activity.answer, style = body(13, color = Ink), lineHeight = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
         }
     }

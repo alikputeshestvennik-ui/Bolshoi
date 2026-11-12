@@ -7,7 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -20,6 +23,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
@@ -48,7 +52,8 @@ class CodexOverlayService : Service() {
     private var pollJob: Job? = null
     private var window: WindowManager? = null
     private var root: View? = null
-    private var prompt: View? = null
+    private var content: View? = null
+    private var openOverlay: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var titleView: TextView? = null
     private var reasonView: TextView? = null
@@ -181,15 +186,21 @@ class CodexOverlayService : Service() {
             y = dp(96)
         }
         params = layout
-        installDrag(card, wm, layout) { showOpenPrompt() }
-        runCatching { wm.addView(card, layout) }
-        root = card
+        installDrag(card, wm, layout) { showOpenAction() }
+        val frame = FrameLayout(this).apply {
+            addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+        if (runCatching { wm.addView(frame, layout) }.isSuccess) {
+            root = frame
+            content = card
+        }
     }
 
     private fun hideWindow() {
-        hidePrompt()
+        hideOpenAction()
         root?.let { view -> runCatching { window?.removeView(view) } }
         root = null
+        content = null
         titleView = null
         reasonView = null
         answerView = null
@@ -235,52 +246,55 @@ class CodexOverlayService : Service() {
         }
     }
 
-    private fun showOpenPrompt() {
-        if (prompt != null || root == null) return
-        val wm = window ?: return
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(8))
+    private fun showOpenAction() {
+        if (openOverlay != null) return
+        val frame = root as? FrameLayout ?: return
+        val card = content ?: return
+        if (Build.VERSION.SDK_INT >= 31) {
+            val blur = dp(6).toFloat()
+            card.setRenderEffect(RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP))
+        } else {
+            card.alpha = 0.45f
+        }
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.argb(115, 0, 0, 0))
+            isClickable = true
+            setOnClickListener { hideOpenAction() }
+        }
+        val go = TextView(this).apply {
+            text = "Перейти"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(Th.c.onAccent.toArgb())
+            gravity = Gravity.CENTER
+            minWidth = dp(96)
+            minHeight = dp(44)
+            setPadding(dp(22), dp(9), dp(22), dp(9))
             background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(Th.c.card.toArgb())
-                setStroke(dp(1), Th.c.accent.copy(alpha = 0.7f).toArgb())
+                cornerRadius = dp(22).toFloat()
+                setColor(Th.c.accent.toArgb())
             }
-        }
-        box.addView(textView(11f, Th.c.ink.toArgb(), true).apply { text = "Открыть Codex?" })
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            setPadding(0, dp(4), 0, 0)
-        }
-        actions.addView(textView(11f, Th.c.accent.toArgb(), true).apply {
-            text = "Открыть"
-            setPadding(dp(8), dp(5), dp(8), dp(5))
+            elevation = dp(6).toFloat()
             setOnClickListener { openCodex() }
-        })
-        actions.addView(textView(11f, Th.c.muted.toArgb(), false).apply {
-            text = "Позже"
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-            setOnClickListener { hidePrompt() }
-        })
-        box.addView(actions)
-        val layout = WindowManager.LayoutParams(
-            dp(210),
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT,
-        ).apply { gravity = Gravity.CENTER }
-        runCatching { wm.addView(box, layout) }.onSuccess { prompt = box }
+        }
+        overlay.addView(go, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER,
+        ))
+        frame.addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        openOverlay = overlay
     }
 
-    private fun hidePrompt() {
-        prompt?.let { view -> runCatching { window?.removeView(view) } }
-        prompt = null
+    private fun hideOpenAction() {
+        openOverlay?.let { overlay -> (root as? FrameLayout)?.removeView(overlay) }
+        openOverlay = null
+        content?.let { card ->
+            if (Build.VERSION.SDK_INT >= 31) card.setRenderEffect(null) else card.alpha = 1f
+        }
     }
 
     private fun openCodex() {
-        hidePrompt()
+        hideOpenAction()
         val id = taskId.ifBlank { Prefs.codexActiveTask }.ifBlank { Friends.CODEX }
         val intent = Intent(this, MainActivity::class.java)
             .putExtra("open", "chat:$id")

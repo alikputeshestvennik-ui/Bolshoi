@@ -120,6 +120,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     val chat = remember(fid) { Chat.of(fid) }
     val core = chat.core
     val f = chat.friend
+    val codexMode = Friends.isCodex(fid)
+    val codexActivity = rememberCodexActivity(fid, codexMode)
     LaunchedEffect(fid, chat.msgs.size) { chat.markRead(); runCatching { androidx.core.app.NotificationManagerCompat.from(Chat.app).cancel(chat.notifId()) } }
     val ctx = LocalContext.current
     val haze = remember { HazeState() }
@@ -236,7 +238,7 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             }
         }
         if (!ChatSel.on && search == null && Friends.isCodex(fid)) {
-            CodexTopBar(fid, go) { askDelete = true }
+            CodexTopBar(fid, go, { askDelete = true }, running = codexActivity.running)
         }
         if (ChatSel.on) Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -303,9 +305,15 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), null, tint = Ink, modifier = Modifier.size(22.dp)); HGap(8)
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
-            } else if (Friends.isCodex(fid)) {
-                if (composerFocused && WindowInsets.ime.getBottom(LocalDensity.current) > 0) CodexKeyboardBar(fid, go)
-                Composer(haze, chat, f, onInputFocusChange = { composerFocused = it })
+            } else if (codexMode) {
+                if (composerFocused) CodexKeyboardBar(fid, go)
+                CodexRunBubble(codexActivity)
+                Composer(
+                    haze, chat, f,
+                    onInputFocusChange = { composerFocused = it },
+                    codexRunning = codexActivity.running,
+                    onStopCodex = { chat.stopCodex() },
+                )
             } else {
                 BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
             }
@@ -643,7 +651,14 @@ fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
 // ———————————————— ввод и голосовое ————————————————
 
 @Composable
-fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (Boolean) -> Unit = {}) {
+fun Composer(
+    haze: HazeState,
+    chat: ChatStore,
+    f: Friend,
+    onInputFocusChange: (Boolean) -> Unit = {},
+    codexRunning: Boolean = false,
+    onStopCodex: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -708,8 +723,9 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
                 Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(36.dp).clickable { attach() }.padding(6.dp))
             }
         }
-        // кнопка: отправить / микрофон
+        // кнопка: отправить / остановить Codex / микрофон
         val canSend = text.isNotBlank() || Attach.pending.isNotEmpty()
+        val showStop = codexRunning && !canSend && !rec
         val big = rec && !locked
         val sc by animateFloatAsState(if (big) 1.7f else 1f, label = "mic")
         if (rec && !locked) {
@@ -722,7 +738,8 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
         }
         Box(Modifier.align(Alignment.BottomEnd).size(48.dp).scale(sc).clip(circ).background(Teal)
             .then(
-                if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
+                if (showStop) Modifier.clickable(onClickLabel = "Остановить Codex") { onStopCodex() }
+                else if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
                 else Modifier.pointerInput(Unit) {
                     val cancelPx = with(density) { 110.dp.toPx() }
@@ -754,7 +771,8 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
                     }
                 }
             ), contentAlignment = Alignment.Center) {
-            if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+            if (showStop) Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icStopButton), "Остановить Codex", tint = OnAccent, modifier = Modifier.size(21.dp))
+            else if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
             else MicIcon(OnAccent, 22.dp)
         }
     }
@@ -827,6 +845,7 @@ private fun vec(name: String, path: String, w: Float = 1.9f) =
     }.build()
 
 private val icCopy by lazy { vec("copy", "M9 9h10v12H9zM5 15V3h10") }
+private val icStopButton by lazy { vec("stop-button", "M7 7h10v10H7z", 2f) }
 private val icReply by lazy { vec("reply", "M10 6L4 12l6 6M4 12h10a6 6 0 0 1 6 6v1") }
 private val icForward by lazy { vec("fwd", "M14 6l6 6-6 6M20 12H10a6 6 0 0 0-6 6v1") }
 private val icTrash by lazy { vec("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6") }
