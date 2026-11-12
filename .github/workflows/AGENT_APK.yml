@@ -83,6 +83,7 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANYMODEL_KEY: ${{ secrets.ANYMODEL_KEY }}
+          DEEPSEEK_API: ${{ secrets.DEEPSEEK_API }}
           YOOMONEY_CLIENT_ID: ${{ secrets.YOOMONEY_CLIENT_ID }}
           YANDEX_SEARCH_KEY: ${{ secrets.YANDEX_SEARCH_KEY }}
           YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
@@ -119,7 +120,7 @@ jobs:
           retention-days: 14
 
       - name: Publish APK for direct download
-        if: github.ref_name != 'feature/ui-refresh' && github.ref_name != 'feature/ten-approved'
+        if: github.ref_name != 'feature/ui-refresh' && github.ref_name != 'feature/ten-approved' && github.ref_name != 'feature/ten-flex-mode' && github.ref_name != 'codex/ten-direct-deepseek'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,45 @@
+name: Ten Codex task
+run-name: "Тень Codex · ${{ inputs.request_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Идентификатор задачи
+        required: true
+        type: string
+      payload:
+        description: Зашифрованная задача
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  codex:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install runtime
+        run: |
+          python -m pip install -r ten-agent-runtime/requirements.txt
+          npm install -g @openai/codex@0.167.0
+          for tool in python3 node npm git gcc g++ java javac go rustc cargo curl; do command -v "$tool" || true; done
+      - name: Execute encrypted task
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          TEN_PAYLOAD: ${{ inputs.payload }}
+          TEN_CODEX_SANDBOX: danger-full-access
+        run: python ten-agent-runtime/worker.py
+      - name: Store encrypted result
+        uses: actions/upload-artifact@v4
+        with:
+          name: ten-result-${{ inputs.request_id }}
+          path: ten-result.enc
+          if-no-files-found: error
+          retention-days: 14

@@ -41,6 +41,24 @@ object Llm {
         fun cost(model: String): Double = if (apiCost > 0) apiCost else Prefs.price(model, inTok, outTok)
     }
 
+    fun isDeepSeek(m: String) = m.startsWith("deepseek:")
+    private fun deepSeekChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
+        val key = BuildConfig.DEEPSEEK_API.trim()
+        if (key.isBlank()) error("В сборке нет ключа DEEPSEEK_API — проверь секрет GitHub и пересобери")
+        val body = JSONObject().put("model", model.removePrefix("deepseek:"))
+            .put("messages", messages).put("max_tokens", maxTokens)
+        if (json) body.put("response_format", JSONObject().put("type", "json_object"))
+        val request = Request.Builder().url("https://api.deepseek.com/chat/completions")
+            .header("Authorization", "Bearer $key").post(body.toString().toRequestBody(JSON)).build()
+        val (code, result) = anyHttp.newCall(request).execute().use { it.code to (it.body?.string() ?: "") }
+        if (code !in 200..299) error("DeepSeek: ошибка HTTP $code")
+        val response = JSONObject(result)
+        val value = content(response.getJSONArray("choices").getJSONObject(0).getJSONObject("message"))
+        val usage = response.optJSONObject("usage") ?: JSONObject()
+        lastUsed = model; whyNotWanted = ""
+        return Reply(value, usage.optInt("prompt_tokens"), usage.optInt("completion_tokens"), 0.0)
+    }
+
     /** YandexGPT и другие модели Yandex AI Studio: «yandexgpt-5.1/latest» или полный «gpt://каталог/…». */
     fun isYandex(m: String) = m.startsWith("gpt://") || m.startsWith("yc:") || m.startsWith("yandex", true)
     /** Google AI Studio: «google:gemini-3.5-flash-lite», «gemini-…», «gemma-…». Нужен VPN. */
@@ -264,7 +282,8 @@ object Llm {
     }
 
     private fun chatRaw(model: String, messages: JSONArray, maxTokens: Int, json: Boolean, onPart: ((String, String) -> Unit)? = null): Reply =
-        if (isChatGpt(model)) chatGpt(model, messages, onPart)
+        if (isDeepSeek(model)) deepSeekChat(model, messages, maxTokens, json)
+        else if (isChatGpt(model)) chatGpt(model, messages, onPart)
         else if (isAny(model)) anyChat(model, messages, maxTokens, json, onPart)
         else if (isYandex(model)) yandexChat(model, messages, maxTokens, json)
         else error("Модель «$model» больше не поддерживается (GPTunnel убран) — выбери модель в настройках")
@@ -280,6 +299,11 @@ object Llm {
                 lastStreamTok = r.inputTokens.toLong() + r.outputTokens
                 lastUsed = model; whyNotWanted = ""
                 r.text
+            }
+            isDeepSeek(model) -> {
+                val key = BuildConfig.DEEPSEEK_API.trim()
+                if (key.isBlank()) error("нет ключа DEEPSEEK_API")
+                streamSse("https://api.deepseek.com/chat/completions", "Bearer $key", model.removePrefix("deepseek:"), messages, maxTokens, onDelta)
             }
             isYandex(model) -> {
                 val k = YaCloud.llmKey

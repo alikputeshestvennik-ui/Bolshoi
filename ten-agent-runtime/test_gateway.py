@@ -1,0 +1,132 @@
+import asyncio
+import os
+import unittest
+from unittest.mock import patch
+from fastapi import HTTPException
+import app
+
+class GatewayTest(unittest.TestCase):
+    def test_auth_required(self):
+        with patch.dict(os.environ, {"TEN_AGENT_TOKEN": "secret"}):
+            with self.assertRaises(HTTPException): app.authenticate("Bearer wrong")
+            app.authenticate("Bearer secret")
+    def test_no_server_configuration(self):
+        with patch.dict(os.environ, {"TEN_AGENT_TOKEN": ""}):
+            with self.assertRaises(HTTPException) as err: app.authenticate(None)
+            self.assertEqual(err.exception.status_code, 503)
+    def test_request_validation(self):
+        with self.assertRaises(ValueError): app.Request(goal="", model="deepseek-flash", base_url="https://api.deepseek.com")
+
+class EndpointTest(unittest.IsolatedAsyncioTestCase):
+    async def test_rejects_unapproved_backend(self):
+        req = app.Request(goal="проверка", model="deepseek-flash", base_url="https://untrusted.example")
+        with patch.dict(os.environ, {"TEN_AGENT_TOKEN": "secret", "TEN_PROVIDER_URLS": "https://api.deepseek.com"}):
+            with self.assertRaises(HTTPException) as err:
+                await app.run(req, authorization="Bearer secret", x_provider_token="key")
+        self.assertEqual(err.exception.status_code, 400)
+    async def test_success_uses_selected_backend(self):
+        from unittest.mock import AsyncMock
+        req = app.Request(goal="цель", model="deepseek-flash", base_url="https://api.deepseek.com/")
+        fake = AsyncMock(return_value=app.Response(result="готово", session_id="s1"))
+        with patch.dict(os.environ, {"TEN_AGENT_TOKEN": "secret", "TEN_PROVIDER_URLS": "https://api.deepseek.com"}), patch.object(app, "execute_goal", fake):
+            result = await app.run(req, authorization="Bearer secret", x_provider_token="key")
+        self.assertEqual(result.result, "готово")
+        fake.assert_awaited_once_with("цель", "key", "deepseek-flash", "https://api.deepseek.com")
+    async def test_failure_is_not_reported_as_success(self):
+        from unittest.mock import AsyncMock
+        req = app.Request(goal="цель", model="deepseek-flash", base_url="https://api.deepseek.com")
+        with patch.dict(os.environ, {"TEN_AGENT_TOKEN": "secret"}), patch.object(app, "execute_goal", AsyncMock(side_effect=RuntimeError("secret detail"))):
+            with self.assertRaises(HTTPException) as err:
+                await app.run(req, authorization="Bearer secret", x_provider_token="key")
+        self.assertEqual(err.exception.status_code, 502)
+        self.assertNotIn("secret detail", err.exception.detail)
+
+if __name__ == "__main__": unittest.main()
+
+class CodexProtocolTest(unittest.IsolatedAsyncioTestCase):
+    async def invoke(self, status):
+        import json
+        from unittest.mock import AsyncMock, Mock, patch
+        messages=[{"id":1,"result":{}}, {"id":2,"result":{"thread":{"id":"thread-1"}}},
+                  {"id":3,"result":{}}, {"method":"item/agentMessage/delta","params":{"delta":"готово"}},
+                  {"method":"turn/completed","params":{"turn":{"status":status}}}]
+        reader=asyncio.StreamReader()
+        reader.feed_data(b''.join((json.dumps(m)+'\n').encode() for m in messages));reader.feed_eof()
+        fake=Mock();fake.stdout=reader;fake.stdin=Mock();fake.stdin.drain=AsyncMock();fake.returncode=0
+        with patch('app.asyncio.create_subprocess_exec', AsyncMock(return_value=fake)) as spawn:
+            if status == 'completed':
+                self.assertEqual(await app.run_codex('цель','provider-secret','deepseek-flash','https://api.deepseek.com'), ('готово','thread-1',None))
+            else:
+                with self.assertRaises(RuntimeError): await app.run_codex('цель','provider-secret','deepseek-flash','https://api.deepseek.com')
+            options=spawn.await_args.kwargs
+            self.assertEqual(options['env']['ACCESS_TOKEN'],'provider-secret')
+            self.assertNotIn('GH_PAT', options['env'])
+            self.assertTrue(options['start_new_session'])
+            self.assertIn('sandbox_workspace_write.network_access=true', spawn.await_args.args)
+            self.assertIn('shell_environment_policy.ignore_default_excludes=false', spawn.await_args.args)
+        wire=b''.join(call.args[0] for call in fake.stdin.write.call_args_list).decode()
+        self.assertIn('thread/start',wire)
+        self.assertIn('workspace-write',wire)
+        self.assertNotIn('provider-secret',wire)
+    async def test_success(self): await self.invoke('completed')
+    async def test_failed_turn(self): await self.invoke('failed')
+
+class OutputFilesTest(unittest.TestCase):
+    def test_collects_only_deliverables(self):
+        import base64, io, tempfile, zipfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'output').mkdir();(root/'output'/'result.txt').write_text('готово')
+            (root/'secret.txt').write_text('outside')
+            (root/'output'/'node_modules').mkdir(); (root/'output'/'node_modules'/'dependency.js').write_text('ignored')
+            (root/'output'/'link').symlink_to(root/'secret.txt')
+            encoded=app.package_output(d)
+            with zipfile.ZipFile(io.BytesIO(base64.b64decode(encoded))) as z:
+                self.assertEqual(z.namelist(),['result.txt'])
+                self.assertEqual(z.read('result.txt').decode(),'готово')
+
+class WorkspaceRestoreTest(unittest.TestCase):
+    def test_restores_saved_files(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            (Path(one)/'output').mkdir();(Path(one)/'output'/'work.py').write_text('print(42)');(Path(one)/'output'/'work.py').chmod(0o755)
+            encoded=app.package_output(one)
+            app.restore_output(two,encoded)
+            self.assertEqual((Path(two)/'output'/'work.py').read_text(),'print(42)')
+            self.assertTrue((Path(two)/'output'/'work.py').stat().st_mode & 0o100)
+    def test_rejects_traversal(self):
+        import base64, io, tempfile, zipfile
+        data=io.BytesIO()
+        with zipfile.ZipFile(data,'w') as z:z.writestr('../escape','bad')
+        with tempfile.TemporaryDirectory() as d, self.assertRaises(ValueError):
+            app.restore_output(d,base64.b64encode(data.getvalue()).decode())
+
+class AgentsSDKIntegrationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_sdk_routes_selected_provider_and_uses_codex_result(self):
+        import json
+        import httpx
+        import openai
+        from unittest.mock import AsyncMock, patch
+        calls=[]
+        async def handler(request):
+            self.assertEqual(str(request.url), 'https://api.deepseek.com/responses')
+            body=json.loads(request.content);calls.append(body)
+            self.assertEqual(body['model'],'deepseek-flash')
+            self.assertEqual(request.headers['authorization'],'Bearer test-provider-token')
+            if len(calls)==1:
+                output=[{'type':'function_call','id':'fc_1','call_id':'call_1','name':'codex_workspace','arguments':'{"task":"вычисли 2+2"}','status':'completed'}]
+            else:
+                output=[{'type':'message','id':'msg_1','role':'assistant','status':'completed','content':[{'type':'output_text','text':'Результат: 4','annotations':[]}]}]
+            return httpx.Response(200,json={'id':'resp_'+str(len(calls)),'object':'response','created_at':1,'model':'deepseek-flash','status':'completed','output':output,'parallel_tool_calls':False,'tool_choice':'auto','tools':[]})
+        original=openai.AsyncOpenAI
+        def client(*args,**kwargs):
+            kwargs['http_client']=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            return original(*args,**kwargs)
+        codex=AsyncMock(return_value=('4','thread-1',None))
+        with patch.object(openai,'AsyncOpenAI',client), patch.object(app,'run_codex',codex):
+            result=await app.execute_goal('вычисли 2+2','test-provider-token','deepseek-flash','https://api.deepseek.com')
+        self.assertEqual(result.result,'Результат: 4')
+        self.assertEqual(result.session_id,'thread-1')
+        self.assertEqual(len(calls),2)
+        codex.assert_awaited_once_with('вычисли 2+2','test-provider-token','deepseek-flash','https://api.deepseek.com',None)
