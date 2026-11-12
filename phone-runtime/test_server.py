@@ -69,4 +69,26 @@ class BridgeTest(unittest.TestCase):
         with patch.object(self.bridge, 'run_process', side_effect=run):
             self.assertEqual(self.request(self.bridge.SECRET, {'goal':'hello $(false)'}), (200, {'result':'done'}))
 
+    def test_anymodel_native_id_requires_key(self):
+        self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'cc/claude-opus-5-5'})[0],400)
+    def test_anymodel_native_id_passes_model_and_env(self):
+        def run(args, **kwargs):
+            self.assertEqual(kwargs['env']['TEN_PROVIDER_TOKEN'], 'test-secret')
+            self.assertNotIn('test-secret', str(args))
+            self.assertIn('cc/claude-opus-5-5', args)
+            Path(args[args.index('-o')+1]).write_text('done')
+            return type('Result', (), {'returncode':0})()
+        with patch.object(self.bridge, 'run_process', side_effect=run):
+            self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'cc/claude-opus-5-5', 'provider_token':'test-secret'}), (200, {'result':'done'}))
+    def test_any_prefix_strips_to_model_id(self):
+        def run(args, **kwargs):
+            self.assertIn('gpt-5', args)
+            self.assertNotIn('any:gpt-5', str(args))
+            Path(args[args.index('-o')+1]).write_text('done')
+            return type('Result', (), {'returncode':0})()
+        with patch.object(self.bridge, 'run_process', side_effect=run):
+            self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'any:gpt-5', 'provider_token':'test-secret'})[0],200)
+    def test_unknown_provider_rejected(self):
+        self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'google:gemini-3.5-flash-lite'})[0],400)
+
 if __name__ == '__main__': unittest.main()

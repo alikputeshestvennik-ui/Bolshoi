@@ -96,12 +96,21 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(selected, str) or not re.fullmatch(r'[a-zA-Z0-9._/:\-]{0,160}', selected):
             return self.reply(400, {'error': 'Некорректная модель'})
         backend = None
+        model_id = selected
         if selected.startswith('deepseek:'):
             backend = 'https://api.deepseek.com'
+            model_id = selected.split(':', 1)[1]
         elif selected.startswith('any:'):
+            backend = 'https://anymodel.org/v1'
+            model_id = selected.split(':', 1)[1]
+        elif re.match(r'^(?:cx|cc|ds|ag|kmc)/', selected, re.IGNORECASE):
             backend = 'https://anymodel.org/v1'
         elif selected and not selected.startswith('chatgpt:'):
             return self.reply(400, {'error': 'Провайдер пока не поддерживается'})
+        if selected.startswith('chatgpt:'):
+            model_id = selected.split(':', 1)[1]
+        if selected and not model_id.strip():
+            return self.reply(400, {'error': 'Некорректная модель'})
         if backend and (not isinstance(provider_token, str) or not provider_token.strip()):
             return self.reply(400, {'error': 'Укажи ключ выбранного провайдера'})
         if not LOCK.acquire(blocking=False):
@@ -113,7 +122,7 @@ class Handler(BaseHTTPRequestHandler):
                            '-C', str(WORK), '-o', str(output), '-']
                 env = os.environ.copy()
                 if selected:
-                    command[2:2] = ['-m', selected.split(':', 1)[1]]
+                    command[2:2] = ['-m', model_id]
                 if backend:
                     env['TEN_PROVIDER_TOKEN'] = provider_token.strip()
                     command[2:2] = ['-c', 'model_provider="ten_provider"',
