@@ -160,6 +160,12 @@ async def run_codex(goal: str, token: str, model: str, base_url: str, initial_ar
 
 
 async def execute_goal(goal: str, token: str, model: str, base_url: str, initial_archive: str | None = None) -> Response:
+    # ChatGPT plan Responses has stricter tool and streaming requirements than
+    # the standard SDK orchestration path. Codex app-server implements those
+    # requirements itself, including streaming and store=false.
+    if base_url.rstrip('/') == 'https://api.openai.com/v1':
+        output, session_id, archive = await run_codex(goal, token, model, base_url, initial_archive)
+        return Response(result=output, session_id=session_id, archive=archive)
     from agents import Agent, Runner, RunConfig, OpenAIResponsesModel, function_tool
     from openai import AsyncOpenAI
     result_holder: dict[str, str | None] = {}
