@@ -47,6 +47,15 @@ object CodexGateway {
         require(token.isNotBlank()) { "Введите ключ" }
         store(ctx).edit().putString("provider_" + provider, token.trim()).apply()
     }
+    fun cancel(ctx: Context) {
+        val token = store(ctx).getString("local_token", "").orEmpty()
+        val request = Request.Builder().url("http://127.0.0.1:8766/cancel")
+            .header("Authorization", "Bearer $token")
+            .post("{}".toRequestBody("application/json".toMediaType())).build()
+        http.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "Не удалось остановить задачу" }
+        }
+    }
     data class Result(val text: String, val file: Docs.FileRef?)
     fun run(ctx: Context, goal: String, selected: String): Result {
         val token = store(ctx).getString("local_token", "").orEmpty()

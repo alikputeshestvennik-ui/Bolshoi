@@ -6,6 +6,7 @@ from pathlib import Path
 import secrets
 import re
 import subprocess
+import signal
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +22,39 @@ SECRET = TOKEN.read_text().strip()
 WORK = ROOT / 'workspace'
 WORK.mkdir(exist_ok=True)
 LOCK = threading.Lock()
+PROCESS_LOCK = threading.Lock()
+PROCESS = None
+
+
+def stop_process():
+    with PROCESS_LOCK:
+        if PROCESS is None or PROCESS.poll() is not None:
+            return False
+        try:
+            os.killpg(PROCESS.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return True
+
+
+def run_process(command, **kwargs):
+    global PROCESS
+    goal = kwargs.pop('input')
+    timeout = kwargs.pop('timeout')
+    with PROCESS_LOCK:
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, start_new_session=True, **kwargs)
+        PROCESS = process
+    try:
+        try:
+            stdout, stderr = process.communicate(goal, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            stop_process()
+            process.communicate()
+            raise
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    finally:
+        with PROCESS_LOCK:
+            PROCESS = None
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -41,10 +75,12 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404, {'error': 'Неизвестный адрес'})
 
     def do_POST(self):
-        if self.path != '/run':
+        if self.path not in {'/run', '/cancel'}:
             return self.reply(404, {'error': 'Неизвестный адрес'})
         if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + SECRET):
             return self.reply(401, {'error': 'Проверь ключ локального окружения'})
+        if self.path == '/cancel':
+            return self.reply(200, {'stopped': stop_process()})
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 100000:
@@ -86,11 +122,13 @@ class Handler(BaseHTTPRequestHandler):
                         '-c', 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
                         '-c', 'model_providers.ten_provider.wire_api="responses"',
                         '-c', 'model_providers.ten_provider.requires_openai_auth=false']
-                result = subprocess.run(command, input=goal, text=True, env=env, stdout=subprocess.DEVNULL,
+                result = run_process(command, input=goal, text=True, env=env, stdout=subprocess.DEVNULL,
                                         stderr=subprocess.PIPE, timeout=1200)
                 diagnostic = getattr(result, 'stderr', '') or ''
                 if 'error building bubblewrap command' in diagnostic or 'cannot establish app-server socket mount isolation' in diagnostic:
                     return self.reply(503, {'error': 'Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено.'})
+                if result.returncode == -signal.SIGKILL:
+                    return self.reply(409, {'error': 'Задача остановлена'})
                 if result.returncode != 0:
                     return self.reply(502, {'error': 'Локальный Codex завершился с ошибкой. Проверь вход и запуск Codex в терминале.'})
                 answer = output.read_text() if output.exists() else ''

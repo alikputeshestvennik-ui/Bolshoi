@@ -99,6 +99,13 @@ fun ChatControls(go: (Scr) -> Unit) {
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(if (codex) "Codex · на телефоне · ${if (model.isBlank()) modelLabel(Prefs.smartModel) else modelLabel(model)}" else "Исполнитель: Тень", style = body(12, FontWeight.SemiBold, if (codex) Teal else Muted), modifier = Modifier.weight(1f))
+        if (codex) androidx.compose.material3.TextButton(onClick = {
+            Thread {
+                runCatching { CodexGateway.cancel(Chat.app) }.onFailure {
+                    Chat.of(Friends.CODEX).say(it.message ?: "Не удалось остановить задачу")
+                }
+            }.start()
+        }) { Text("Остановить") }
         androidx.compose.material3.TextButton(onClick = { Friends.open(if (codex) Friends.MAIN else Friends.CODEX); go(Scr.Home) }) { Text(if (codex) "Чат Тени" else "Открыть Codex") }
     }
     }

@@ -28,6 +28,20 @@ class BridgeTest(unittest.TestCase):
         try:
             with urllib.request.urlopen(req) as r: return r.status, json.load(r)
         except urllib.error.HTTPError as r: return r.code, json.load(r)
+    def test_cancel_real_process(self):
+        import subprocess, time
+        result = []
+        runner = threading.Thread(target=lambda: result.append(self.bridge.run_process(
+            ['python3', '-c', 'import time; time.sleep(60)'], input='', text=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=10)))
+        runner.start()
+        for _ in range(100):
+            if self.bridge.PROCESS is not None: break
+            time.sleep(0.01)
+        self.assertTrue(self.bridge.stop_process())
+        runner.join(5)
+        self.assertFalse(runner.is_alive())
+        self.assertEqual(result[0].returncode, -9)
     def test_bad_token(self):
         self.assertEqual(self.request('wrong', {'goal':'test'})[0],401)
     def test_invalid_goal(self):
@@ -44,7 +58,7 @@ class BridgeTest(unittest.TestCase):
             self.assertIn('deepseek-flash', args)
             Path(args[args.index('-o')+1]).write_text('done')
             return type('Result', (), {'returncode':0})()
-        with patch.object(self.bridge.subprocess, 'run', side_effect=run):
+        with patch.object(self.bridge, 'run_process', side_effect=run):
             self.assertEqual(self.request(self.bridge.SECRET, {'goal':'test', 'selected':'deepseek:deepseek-flash', 'provider_token':'test-secret'})[0],200)
     def test_command_receives_prompt_as_stdin(self):
         def run(args, **kwargs):
@@ -52,7 +66,7 @@ class BridgeTest(unittest.TestCase):
             self.assertNotIn('hello $(false)', args)
             Path(args[args.index('-o')+1]).write_text('done')
             return type('Result', (), {'returncode':0})()
-        with patch.object(self.bridge.subprocess, 'run', side_effect=run):
+        with patch.object(self.bridge, 'run_process', side_effect=run):
             self.assertEqual(self.request(self.bridge.SECRET, {'goal':'hello $(false)'}), (200, {'result':'done'}))
 
 if __name__ == '__main__': unittest.main()
