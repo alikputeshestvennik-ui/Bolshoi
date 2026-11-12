@@ -155,8 +155,8 @@ object EmbeddedRuntime {
                 progress = 0.05f
                 extractBootstrap(ctx, p)
             }
-            if (!File(p.prefix, "bin/python3").exists()) {
-                detail = "Устанавливаю Python и Git…"
+            if (!File(p.prefix, "bin/python3").exists() || !File(p.prefix, "bin/gh").exists()) {
+                detail = "Устанавливаю Python, Git и GitHub CLI…"
                 progress = 0.25f
                 installBundledPackages(ctx, p)
             }
