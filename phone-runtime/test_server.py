@@ -213,6 +213,56 @@ class BridgeTest(unittest.TestCase):
         process.wait(timeout=5)
         self.assertEqual(process.returncode, -9)
 
+    def test_android_shell_environment_is_restored(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            command = " ".join(args)
+            self.assertIn("allow_login_shell=false", command)
+            self.assertIn("features.shell_snapshot=false", command)
+            self.assertIn("features.code_mode_host=true", command)
+            self.assertIn("shell_environment_policy.set.LD_LIBRARY_PATH=", command)
+            self.assertIn("shell_environment_policy.set.LD_PRELOAD=", command)
+            self.assertIn("login=false", command)
+            self.assertIn("/data/user/0/ru.alim.agent/files/usr/bin/bash", command)
+
+        environment = {
+            "PREFIX": "/data/user/0/ru.alim.agent/files/usr",
+            "SHELL": "/data/user/0/ru.alim.agent/files/usr/bin/bash",
+            "LD_LIBRARY_PATH": "/data/user/0/ru.alim.agent/files/usr/lib",
+            "LD_PRELOAD": "/data/user/0/ru.alim.agent/files/usr/lib/libtermux-exec.so",
+        }
+        with patch.dict(os.environ, environment),                 patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test"})[0], 200)
+
+    def test_command_failure_is_reported_instead_of_a_polite_answer(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            self.bridge.handle_event(task, {
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "command": ["/bin/sh", "-c", "git clone https://github.com/a/b"],
+                    "status": "failed",
+                    "exit_code": 127,
+                    "aggregated_output": "git: inaccessible or not found",
+                },
+            })
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(answer="Не удалось открыть GitHub", inspect=inspect)):
+            status, body = self.request(self.bridge.SECRET, {"goal": "test"})
+        self.assertEqual(status, 502)
+        self.assertIn("Инструмент выполнения команд Codex не запустился", body["error"])
+        self.assertIn("git: inaccessible or not found", body["error"])
+
+    def test_successful_command_allows_a_normal_answer(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            self.bridge.handle_event(task, {
+                "type": "item.completed",
+                "item": {"type": "command_execution", "command": ["/bin/sh", "-c", "true"],
+                         "status": "completed", "exit_code": 0, "aggregated_output": ""},
+            })
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(answer="Готово", inspect=inspect)):
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test"})[0], 200)
+
     def test_health_does_not_leak_task_details(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.server.server_port}/health")
         with urllib.request.urlopen(req, timeout=10) as response:

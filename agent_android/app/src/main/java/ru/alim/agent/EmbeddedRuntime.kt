@@ -35,6 +35,9 @@ object EmbeddedRuntime {
     private const val CODEX_URL =
         "https://github.com/openai/codex/releases/download/rust-v$CODEX_VERSION/codex-aarch64-unknown-linux-musl.tar.gz"
     private const val CODEX_SHA256 = "ed81fa2c7d209689af061b6f305ed554218de92a1c2c4019142b28f66fa64add"
+    private const val CODE_MODE_HOST_URL =
+        "https://github.com/openai/codex/releases/download/rust-v$CODEX_VERSION/codex-code-mode-host-aarch64-unknown-linux-musl.tar.gz"
+    private const val CODE_MODE_HOST_SHA256 = "3c8843f105cb75a267e05057fc841cdf4a00ff4a68510c0f9f7eb8fb129f82ce"
 
     enum class State { OFF, PREPARING, DOWNLOADING, STARTING, READY, ERROR }
 
@@ -165,6 +168,12 @@ object EmbeddedRuntime {
                 detail = "Скачиваю Codex для arm64 (~110 МБ)…"
                 progress = 0.35f
                 downloadCodex(p)
+            }
+            if (!validCodeModeHost(p)) {
+                state = State.DOWNLOADING
+                detail = "Скачиваю инструменты Codex (~27 МБ)…"
+                progress = 0.78f
+                downloadCodeModeHost(p)
             }
             writeServer(ctx, p)
             writeConfig(p)
@@ -338,6 +347,11 @@ object EmbeddedRuntime {
         return codex.isFile && codex.length() > 50_000_000
     }
 
+    private fun validCodeModeHost(p: Paths): Boolean {
+        val host = File(p.prefix, "bin/codex-code-mode-host")
+        return host.isFile && host.length() > 10_000_000
+    }
+
     private fun downloadCodex(p: Paths) {
         val dir = File(p.prefix, "tmp/codex-download")
         dir.deleteRecursively()
@@ -360,6 +374,27 @@ object EmbeddedRuntime {
         progress = 0.75f
     }
 
+    private fun downloadCodeModeHost(p: Paths) {
+        val dir = File(p.prefix, "tmp/code-mode-host-download")
+        dir.deleteRecursively()
+        dir.mkdirs()
+        val script = """
+            set -e
+            cd ${q(dir.absolutePath)}
+            curl -fL --retry 3 --connect-timeout 20 --max-time 600 -o host.tar.gz ${q(CODE_MODE_HOST_URL)}
+            sum="${'$'}(sha256sum host.tar.gz | cut -d' ' -f1)"
+            [ "${'$'}sum" = ${q(CODE_MODE_HOST_SHA256)} ] || { echo "SHA256 mismatch: ${'$'}sum"; exit 12; }
+            tar xzf host.tar.gz
+            [ -f codex-code-mode-host-aarch64-unknown-linux-musl ] || { echo "code-mode host missing"; exit 13; }
+            mv codex-code-mode-host-aarch64-unknown-linux-musl ${q(File(p.prefix, "bin/codex-code-mode-host").absolutePath)}
+            chmod 700 ${q(File(p.prefix, "bin/codex-code-mode-host").absolutePath)}
+            rm -rf ${q(dir.absolutePath)}
+        """.trimIndent()
+        runShell(p, script, 700)
+        if (!validCodeModeHost(p)) error("Инструменты Codex не установились")
+        progress = 0.82f
+    }
+
     private fun writeServer(ctx: Context, p: Paths) {
         val dir = File(p.home, "ten_runtime")
         dir.mkdirs()
@@ -377,6 +412,11 @@ object EmbeddedRuntime {
             """
             approval_policy = "never"
             sandbox_mode = "danger-full-access"
+            allow_login_shell = false
+
+            [features]
+            shell_snapshot = false
+            code_mode_host = true
             """.trimIndent() + "\n"
         )
         File(p.tenHome, "workspace").mkdirs()

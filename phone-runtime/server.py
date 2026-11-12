@@ -64,6 +64,9 @@ class Task:
         self.last_reasoning = ""
         self.last_answer = ""
         self.error = ""
+        self.last_tool_error = ""
+        self.tool_successes = 0
+        self.tool_failures = 0
         self.returncode: int | None = None
         self.files: list[dict] = []
         self.lock = threading.Lock()
@@ -77,6 +80,9 @@ class Task:
             "reasoning": self.last_reasoning[-4000:],
             "answer": self.last_answer[-8000:],
             "error": self.error[-2000:],
+            "tool_error": self.last_tool_error[-2000:],
+            "tool_successes": self.tool_successes,
+            "tool_failures": self.tool_failures,
             "returncode": self.returncode,
             "files": self.files,
         }
@@ -171,6 +177,35 @@ def _reasoning_text(item: dict) -> str:
     return ""
 
 
+TOOL_RUNTIME_FAILURES = (
+    "failed to spawn",
+    "code mode is unavailable",
+    "stream closed",
+    "error while loading shared libraries",
+    "cannot execute",
+    "cannot link executable",
+    "inaccessible or not found",
+    "command not found",
+    "permission denied",
+)
+
+
+def _tool_runtime_failed(task: Task) -> bool:
+    detail = task.last_tool_error.lower()
+    return task.tool_successes == 0 and any(marker in detail for marker in TOOL_RUNTIME_FAILURES)
+
+
+def _tool_error_text(item: dict) -> str:
+    command = item.get("command")
+    if isinstance(command, list):
+        command = " ".join(str(part) for part in command)
+    output = item.get("aggregated_output") or item.get("output") or item.get("error")
+    if isinstance(output, dict):
+        output = output.get("message") or output.get("code")
+    pieces = [str(value).strip() for value in (command, output) if value]
+    return ": ".join(pieces)
+
+
 def handle_event(task: Task, event: dict) -> None:
     kind = event.get("type", "")
     if kind in ("error", "turn.failed"):
@@ -179,6 +214,7 @@ def handle_event(task: Task, event: dict) -> None:
             error = error.get("message") or error.get("code")
         if error:
             task.error = str(error)[-2000:]
+            task.last_tool_error = str(error)[-2000:]
         if kind == "turn.failed":
             task.status = "failed"
         return
@@ -187,6 +223,22 @@ def handle_event(task: Task, event: dict) -> None:
         if not isinstance(item, dict):
             return
         item_type = str(item.get("type", "")).lower()
+        status = str(item.get("status", "")).lower()
+        if item_type in ("command_execution", "exec_command"):
+            if status == "completed" and item.get("exit_code") in (None, 0):
+                task.tool_successes += 1
+            elif status in ("failed", "declined") or item.get("exit_code") not in (None, 0):
+                task.tool_failures += 1
+                message = _tool_error_text(item)
+                if message:
+                    task.last_tool_error = message[-2000:]
+            return
+        if item_type == "error":
+            message = str(item.get("message") or _reasoning_text(item)).strip()
+            lowered = message.lower()
+            if message and ("code mode is unavailable" in lowered or "failed to spawn" in lowered):
+                task.last_tool_error = message[-2000:]
+            return
         text = _reasoning_text(item)
         if not text:
             return
@@ -340,6 +392,38 @@ def start_proxy() -> bool:
     return True
 
 
+def codex_runtime_config(env: dict[str, str]) -> list[str]:
+    """Configuration that makes Codex tools usable inside the Android bootstrap.
+
+    Codex clears LD_* variables before main() for security.  The Termux
+    executables still need their relocated library path and termux-exec shim, so
+    put those values back into the *child* environment explicitly.  A login shell
+    is disabled because Android's /bin/sh profile can reset PATH away from the
+    embedded prefix.
+    """
+    options = [
+        "-c", "allow_login_shell=false",
+        "-c", "features.shell_snapshot=false",
+        "-c", "features.code_mode_host=true",
+    ]
+    library_path = env.get("LD_LIBRARY_PATH", "")
+    preload = env.get("LD_PRELOAD", "")
+    if library_path:
+        options += ["-c", "shell_environment_policy.set.LD_LIBRARY_PATH=" + json.dumps(library_path)]
+    if preload:
+        options += ["-c", "shell_environment_policy.set.LD_PRELOAD=" + json.dumps(preload)]
+    shell_path = env.get("SHELL", "")
+    if shell_path and os.path.isabs(shell_path):
+        instructions = (
+            "Local Android runtime. For every exec_command call set login=false and "
+            f"shell={json.dumps(shell_path)}. Never use a login shell. "
+            "Use the embedded Python, Git and ripgrep from the inherited PATH; "
+            "work in the supplied workspace unless the user explicitly asks to clone another repository."
+        )
+        options += ["-c", "developer_instructions=" + json.dumps(instructions)]
+    return options
+
+
 def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                  base_url: str, gh_token: str) -> tuple[int, dict]:
     """Run Codex and return an HTTP-style status and JSON payload.
@@ -357,6 +441,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         sandbox = os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access")
         command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
                    "-C", str(workspace), "-o", str(output), "--json"]
+        command += codex_runtime_config(os.environ)
         if selected:
             model_id = selected
             if selected.startswith(("chatgpt:", "deepseek:", "any:", "compatible:")):
@@ -415,6 +500,12 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         answer = (result.stdout or "").strip()
         if not answer:
             message = "Codex не вернул текстовый результат"
+            task.status = "failed"
+            task.error = message
+            return 502, {"error": message, "task_id": task.id}
+        if task.tool_failures and _tool_runtime_failed(task):
+            details = task.last_tool_error or "команда завершилась с ошибкой"
+            message = "Инструмент выполнения команд Codex не запустился: " + details.replace("\n", " ")[:500]
             task.status = "failed"
             task.error = message
             return 502, {"error": message, "task_id": task.id}
