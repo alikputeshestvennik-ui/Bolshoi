@@ -145,6 +145,9 @@ object EmbeddedRuntime {
                 progress = 0.25f
                 installBundledPackages(ctx, p)
             }
+            rewriteAbsoluteSymlinks(p)
+            rewriteShebangs(p)
+
             if (!validCodex(p)) {
                 state = State.DOWNLOADING
                 detail = "Скачиваю Codex для arm64 (~110 МБ)…"
@@ -364,6 +367,17 @@ object EmbeddedRuntime {
         )
         File(p.tenHome, "workspace").mkdirs()
         File(p.home, "workspace").mkdirs()
+        File(p.home, ".gitconfig").writeText(
+            """
+            [user]
+                name = Ten Agent
+                email = ten-agent@users.noreply.github.com
+            [init]
+                defaultBranch = main
+            [credential]
+                helper = "!f() { echo username=x-access-token; echo password=${'$'}GH_TOKEN; }; f"
+            """.trimIndent() + "\n"
+        )
         // Keep a likely repository location ready for git clone.
         File(workspace).mkdirs()
     }
@@ -501,6 +515,7 @@ object EmbeddedRuntime {
             "GIT_EXEC_PATH" to "${p.prefix}/libexec/git-core",
             "GIT_TEMPLATE_DIR" to "${p.prefix}/share/git-core/templates",
             "GIT_CONFIG_SYSTEM" to "${p.prefix}/etc/gitconfig",
+            "GIT_CONFIG_GLOBAL" to "${p.home}/.gitconfig",
             "PYTHONHOME" to p.prefix,
             "PYTHONUTF8" to "1",
             "PYTHONNOUSERSITE" to "1",

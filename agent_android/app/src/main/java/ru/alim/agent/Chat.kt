@@ -406,7 +406,7 @@ class ChatStore(val fid: String) {
                 say("Голосовые в Codex пока не передаются: напиши задачу текстом или приложи файл."); drainQueue(); return
             }
             c.fastBusy = true
-            val selectedModel = Prefs.codexModel(fid).ifBlank { Prefs.smartModel }
+            val selectedModel = Llm.codexModel(Prefs.codexModel(fid).ifBlank { Prefs.smartModel })
             val recent = recentForPrompt(10).take(9000)
             val files = Chat.filesOf(m)
             if (EmbeddedRuntime.state == EmbeddedRuntime.State.READY) note("Codex · выполняю на телефоне…")

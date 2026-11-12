@@ -19,6 +19,12 @@ class ModelRoutingTest {
             assertTrue(Prefs.BG_MODELS.contains(id))
         }
     }
+    @Test fun codexAutoNeverInheritsYandexOrGoogleModels() {
+        assertEquals("cc/claude-sonnet-5", Llm.codexModel("yc:aliceai-llm-flash"))
+        assertEquals("cc/claude-sonnet-5", Llm.codexModel("google:gemini-3.5-flash-lite"))
+        assertEquals("deepseek:deepseek-flash", Llm.codexModel("deepseek:deepseek-flash"))
+        assertEquals("chatgpt:gpt-6.1-sol", Llm.codexModel("chatgpt:gpt-6.1-sol"))
+    }
     @Test fun directLabelsIncludeProviderAndModel() {
         assertTrue(modelLabel("deepseek:deepseek-flash").contains("deepseek-flash"))
         assertTrue(modelLabel("deepseek:deepseek-flash").contains("DeepSeek"))

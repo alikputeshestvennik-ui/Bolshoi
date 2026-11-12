@@ -134,14 +134,15 @@ object CodexGateway {
 
     fun run(ctx: Context, goal: String, selected: String, taskId: String = "default"): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
+        val routed = Llm.codexModel(selected)
         EmbeddedRuntime.startAsync(ctx)
         val token = token(ctx)
         require(token.isNotBlank()) { "Локальное окружение ещё готовится" }
         val provider = when {
-            Llm.isDeepSeek(selected) -> "deepseek"
-            Llm.isAny(selected) -> "any"
-            selected.startsWith("compatible:") -> "compatible"
-            selected.startsWith("chatgpt:") || Llm.isChatGpt(selected) -> "chatgpt"
+            Llm.isDeepSeek(routed) -> "deepseek"
+            Llm.isAny(routed) -> "any"
+            routed.startsWith("compatible:") -> "compatible"
+            routed.startsWith("chatgpt:") || Llm.isChatGpt(routed) -> "chatgpt"
             else -> ""
         }
         val providerToken = if (provider == "chatgpt") {
@@ -156,7 +157,7 @@ object CodexGateway {
                 }
             }
         }
-        val body = JSONObject().put("goal", goal).put("selected", selected)
+        val body = JSONObject().put("goal", goal).put("selected", routed)
             .put("provider_token", providerToken).put("task_id", taskId)
         if (provider == "compatible") body.put("base_url", customUrl(ctx))
         val ghToken = BuildConfig.GH_PAT.trim()
