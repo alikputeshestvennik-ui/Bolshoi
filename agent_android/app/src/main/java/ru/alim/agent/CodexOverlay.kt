@@ -9,8 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.RenderEffect
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -21,6 +19,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.FrameLayout
@@ -132,6 +131,7 @@ class CodexOverlayService : Service() {
         window = wm
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            minimumHeight = dp(64)
             setPadding(dp(10), dp(8), dp(10), dp(9))
             background = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
@@ -191,7 +191,7 @@ class CodexOverlayService : Service() {
         val frame = FrameLayout(this).apply {
             addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
-        // WindowManager ожидает обычный корень окна; вложенный FrameLayout держит слой blur/кнопки.
+        // WindowManager ожидает обычный корень окна; вложенный FrameLayout держит слой затемнения и кнопки.
         val windowRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(frame, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -225,6 +225,8 @@ class CodexOverlayService : Service() {
         var startX = 0
         var startY = 0
         var moved = false
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        view.setOnClickListener { onTap() }
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -236,7 +238,7 @@ class CodexOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - downX).toInt()
                     val dy = (event.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > dp(3) || kotlin.math.abs(dy) > dp(3)) moved = true
+                    if (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop) moved = true
                     if (moved) {
                         layout.x = startX + dx
                         layout.y = startY + dy
@@ -245,7 +247,7 @@ class CodexOverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) onTap()
+                    if (!moved) view.performClick()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> true
@@ -258,14 +260,13 @@ class CodexOverlayService : Service() {
         if (openOverlay != null) return
         val frame = overlayHost ?: return
         val card = content ?: return
-        if (Build.VERSION.SDK_INT >= 31) {
-            val blur = dp(6).toFloat()
-            card.setRenderEffect(RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP))
-        } else {
-            card.alpha = 0.45f
-        }
         val overlay = FrameLayout(this).apply {
-            setBackgroundColor(Color.argb(115, 0, 0, 0))
+            // Sibling Z order must put both the scrim and its button above the card.
+            elevation = card.elevation + dp(1)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.argb(150, 0, 0, 0))
+            }
             isClickable = true
             setOnClickListener { hideOpenAction() }
         }
@@ -296,9 +297,6 @@ class CodexOverlayService : Service() {
     private fun hideOpenAction() {
         openOverlay?.let { overlay -> overlayHost?.removeView(overlay) }
         openOverlay = null
-        content?.let { card ->
-            if (Build.VERSION.SDK_INT >= 31) card.setRenderEffect(null) else card.alpha = 1f
-        }
     }
 
     private fun openCodex() {

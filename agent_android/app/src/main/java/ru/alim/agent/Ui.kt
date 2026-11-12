@@ -142,7 +142,14 @@ fun App(voice: Voice) {
     LaunchedEffect(open) {
         if (open == "digest") { scr = Scr.Digest; Nav.open = "" }
         if (open == "update") { scr = Scr.Home; Nav.open = ""; Updater.run(Agent.app) }
-        if (open.startsWith("chat:")) { scr = Scr.Home; Nav.open = "" }
+        if (open.startsWith("chat:")) {
+            val id = open.removePrefix("chat:")
+            val target = Friends.list.firstOrNull { it.id == id }?.id
+                ?: if (Friends.isCodex(id)) Friends.CODEX else Friends.MAIN
+            Friends.open(target)
+            scr = Scr.Home
+            Nav.open = ""
+        }
         if (open == "yt") {
             Nav.open = ""
             Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { historyRecord = null; Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
