@@ -408,7 +408,7 @@ class ChatStore(val fid: String) {
             c.fastBusy = true
             val selectedModel = Prefs.codexModel(fid).ifBlank { Prefs.smartModel }
             val recent = recentForPrompt(10).take(9000)
-            val files = filesOf(m)
+            val files = Chat.filesOf(m)
             if (EmbeddedRuntime.state == EmbeddedRuntime.State.READY) note("Codex · выполняю на телефоне…")
             else note("Codex · готовлю локальное окружение…")
             Prefs.codexActiveTask = fid

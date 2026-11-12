@@ -240,6 +240,7 @@ object EmbeddedRuntime {
         File(p.home).mkdirs()
         File(p.tmp).mkdirs()
         fixAptConfig(p)
+        rewriteShebangs(p)
     }
 
     private fun installBundledPackages(ctx: Context, p: Paths) {
@@ -271,6 +272,27 @@ object EmbeddedRuntime {
         """.trimIndent()
         runShell(p, script, 300)
         if (!File(p.prefix, "bin/python3").exists()) error("Python не установился")
+        rewriteShebangs(p)
+    }
+
+    /** Termux packages embed /data/data/com.termux/files/usr in script shebangs. */
+    private fun rewriteShebangs(p: Paths) {
+        val termuxPrefix = "/data/data/com.termux/files/usr"
+        for (root in listOf(File(p.prefix, "bin"), File(p.prefix, "libexec"))) {
+            if (!root.isDirectory) continue
+            root.walkTopDown().forEach { file ->
+                if (!file.isFile || java.nio.file.Files.isSymbolicLink(file.toPath()) || file.length() > 2_000_000) return@forEach
+                val head = ByteArray(2)
+                val ok = runCatching {
+                    file.inputStream().use { input -> input.read(head) == 2 && head[0] == '#'.code.toByte() && head[1] == '!'.code.toByte() }
+                }.getOrDefault(false)
+                if (!ok) return@forEach
+                runCatching {
+                    val text = file.readText()
+                    if (text.contains(termuxPrefix)) file.writeText(text.replace(termuxPrefix, p.prefix))
+                }
+            }
+        }
     }
 
     private fun validCodex(p: Paths): Boolean {
