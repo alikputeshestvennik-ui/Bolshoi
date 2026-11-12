@@ -222,6 +222,19 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             .background(Brush.verticalGradient(listOf(fadeBottom.copy(alpha = 0f), fadeBottom.copy(alpha = 0.75f), fadeBottom.copy(alpha = 0.95f)))))
 
         // ——— шапка ———
+        if (!ChatSel.on && search == null && fid == Friends.MAIN) {
+            Box(
+                Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 62.dp, end = 14.dp)
+                    .size(36.dp).glass(haze, circ)
+                    .clickable(onClickLabel = "Открыть Codex") {
+                        Friends.open(Prefs.lastCodex.takeIf { Friends.isCodex(it) } ?: Friends.CODEX)
+                        go(Scr.Home)
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icCodexBubble), "Codex", tint = Teal, modifier = Modifier.size(17.dp))
+            }
+        }
         if (!ChatSel.on && search == null && Friends.isCodex(fid)) {
             CodexTopBar(fid, go) { askDelete = true }
         }
@@ -269,7 +282,12 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(if (flex) Modifier.height(0.dp).then(Modifier.clipToBounds()) else Modifier.navigationBarsPadding().imePadding()).background(Card).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp)
+        val codexMode = Friends.isCodex(fid)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .then(if (flex) Modifier.height(0.dp).then(Modifier.clipToBounds()) else Modifier.navigationBarsPadding().imePadding())
+            .background(if (codexMode) Color.Transparent else Card)
+            .padding(horizontal = if (codexMode) 10.dp else 16.dp)
+            .padding(top = 4.dp, bottom = if (codexMode) 10.dp else 4.dp)
             .onSizeChanged { composerH = it.height }) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
@@ -814,6 +832,7 @@ private val icForward by lazy { vec("fwd", "M14 6l6 6-6 6M20 12H10a6 6 0 0 0-6 6
 private val icTrash by lazy { vec("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6") }
 private val icDown by lazy { vec("down", "M6 9l6 6 6-6", 2.2f) }
 private val icMenu by lazy { vec("menu", "M4 6h16M4 12h16M4 18h10") }
+private val icCodexBubble by lazy { vec("codex-bubble", "M8 6l-5 6 5 6M16 6l5 6-5 6") }
 
 @Composable
 fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false, f: Friend = Friends.main) {

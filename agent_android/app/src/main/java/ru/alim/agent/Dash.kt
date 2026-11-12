@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -488,11 +486,9 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
         Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt, Scr.CodexSettings -> Scr.Settings
         else -> here
     }
-    val codexOn = Friends.isCodex(Friends.current) && cur == Scr.Home
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        NavDot(haze, icChat, "Чат", Modifier.weight(1f), cur == Scr.Home && !codexOn, false, if (cur == Scr.Home) onSearch else null) { Friends.open(Friends.MAIN); go(Scr.Home) }
-        NavDot(haze, icCodex, "Codex", Modifier.weight(1f), codexOn, false, null) { Friends.open(Prefs.lastCodex.takeIf { Friends.isCodex(it) } ?: Friends.CODEX); go(Scr.Home) }
+        NavDot(haze, icChat, "Чат", Modifier.weight(1f), cur == Scr.Home, false, if (cur == Scr.Home) onSearch else null) { Friends.open(Friends.MAIN); go(Scr.Home) }
         items.forEach { (ic, label, to) ->
             NavDot(haze, ic, label, Modifier.weight(1f), to == cur, active && to == Scr.Active, if (to == Scr.Home) onSearch else null) { go(to) }
         }
@@ -533,7 +529,6 @@ private fun ico(name: String, path: String) = androidx.compose.ui.graphics.vecto
         strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round, strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round)
 }.build()
 private val icChat by lazy { ico("chat", "M4 5h16v11H9l-5 4z") }
-private val icCodex by lazy { ico("codex", "M8 6l-5 6 5 6M16 6l5 6-5 6") }
 private val icActivity by lazy { ico("activity", "M3 12h4l3-7 4 14 3-7h4") }
 private val icClock by lazy { ico("clock", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7v5l3 2") }
 private val icSun by lazy { ico("sun", "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4") }
@@ -763,8 +758,5 @@ fun BottomBarContent(haze: HazeState, here: Scr, go: (Scr) -> Unit, chat: ChatSt
                      composerFocused: Boolean, onFocusChange: (Boolean) -> Unit, onSearch: (() -> Unit)? = null) {
     NavBar(haze, here, go, onSearch = onSearch)
     Spacer(Modifier.height(4.dp))
-    if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {
-        ChatControls(go); Spacer(Modifier.height(8.dp))
-    }
     Composer(haze, chat, friend, onFocusChange)
 }

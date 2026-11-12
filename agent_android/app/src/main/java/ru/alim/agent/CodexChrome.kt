@@ -115,7 +115,10 @@ fun CodexKeyboardBar(fid: String, go: (Scr) -> Unit) {
         })
     }
     val providers = listOf("codex" to "GPT", "deepseek" to "DeepSeek", "anymodel" to "AnyModel", "compatible" to "Другой API")
-    val models = requestModels(provider, ChatGptAccount.models)
+    val providerOrder = providers.map { it.first }
+    val allModels = requestModels("all", ChatGptAccount.models).distinct()
+        .filter { Llm.codexModel(it) == it && modelProvider(it) in providerOrder }
+        .sortedWith(compareBy({ providerOrder.indexOf(modelProvider(it)) }, { modelLabel(it).lowercase() }))
     var providerOpen by remember(fid) { mutableStateOf(false) }
     var modelOpen by remember(fid) { mutableStateOf(false) }
     var showReasoning by remember(fid) { mutableStateOf(false) }
@@ -172,15 +175,20 @@ fun CodexKeyboardBar(fid: String, go: (Scr) -> Unit) {
                         trailingIcon = if (model.isBlank()) ({ Icon(Icons.Filled.Check, "Выбрано", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
                         onClick = { model = ""; Prefs.setCodexModel(fid, ""); modelOpen = false },
                     )
-                    models.forEach { id ->
+                    allModels.forEach { id ->
                         val selected = id == model
                         DropdownMenuItem(
                             text = { Text(modelLabel(id), style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
                             trailingIcon = if (selected) ({ Icon(Icons.Filled.Check, "Выбрана", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
-                            onClick = { model = id; Prefs.setCodexModel(fid, id); modelOpen = false },
+                            onClick = {
+                                model = id
+                                provider = modelProvider(id).let { if (it in providerOrder) it else "anymodel" }
+                                Prefs.setCodexModel(fid, id)
+                                modelOpen = false
+                            },
                         )
                     }
-                    if (models.isEmpty()) DropdownMenuItem(text = { Text("Нет моделей этого провайдера", style = body(13, color = Muted)) }, onClick = { modelOpen = false })
+                    if (allModels.isEmpty()) DropdownMenuItem(text = { Text("Нет доступных моделей", style = body(13, color = Muted)) }, onClick = { modelOpen = false })
                 }
             }
             Box(
