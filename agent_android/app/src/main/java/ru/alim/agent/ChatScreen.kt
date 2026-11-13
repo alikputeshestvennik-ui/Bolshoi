@@ -706,7 +706,7 @@ fun Composer(
 
     Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
         // поле — растёт вместе с текстом (до 6 строк)
-        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = if (codexDictation) 108.dp else 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
+        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
@@ -724,7 +724,9 @@ fun Composer(
                 Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(36.dp).clickable { attach() }.padding(6.dp))
             }
         }
-        if (codexDictation) {
+        val canSend = text.isNotEmpty() || Attach.pending.isNotEmpty()
+        val showCodexMic = codexDictation && !canSend
+        if (showCodexMic) {
             Box(Modifier.align(Alignment.BottomEnd)) {
                 androidx.compose.runtime.key(f.id) {
                     CodexVoiceInput { transcript ->
@@ -734,7 +736,6 @@ fun Composer(
             }
         }
         // кнопка: отправить / остановить Codex / микрофон
-        val canSend = text.isNotBlank() || Attach.pending.isNotEmpty()
         val showStop = codexRunning && !canSend && !rec
         val big = rec && !locked
         val sc by animateFloatAsState(if (big) 1.7f else 1f, label = "mic")
@@ -746,46 +747,47 @@ fun Composer(
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.BottomEnd).offset(x = if (codexDictation) (-54).dp else 0.dp).size(48.dp).scale(sc).clip(circ).background(Teal)
-            .then(
-                if (showStop) Modifier.clickable(onClickLabel = "Остановить Codex") { onStopCodex() }
-                else if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
-                else if (codexDictation) Modifier
-                else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
-                else Modifier.pointerInput(Unit) {
-                    val cancelPx = with(density) { 110.dp.toPx() }
-                    val lockPx = with(density) { 80.dp.toPx() }
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                            micPerm.launch(Manifest.permission.RECORD_AUDIO); return@awaitEachGesture
-                        }
-                        hint = null
-                        VoiceMsg.stopPlay()
-                        if (!VoiceMsg.start()) { hint = "Микрофон занят"; return@awaitEachGesture }
-                        dragX = 0f; dragY = 0f
-                        var outcome = 0 // 0 отправить, 1 отмена, 2 закрепить
-                        while (true) {
-                            val ev = awaitPointerEvent()
-                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                            dragX = (ch.position.x - down.position.x).coerceAtMost(0f)
-                            dragY = (ch.position.y - down.position.y).coerceAtMost(0f)
-                            if (-dragX > cancelPx) { outcome = 1; break }
-                            if (-dragY > lockPx) { outcome = 2; break }
-                            if (!ch.pressed) break
-                        }
-                        when (outcome) {
-                            1 -> finishVoice(true)
-                            2 -> { locked = true; dragX = 0f; dragY = 0f }
-                            else -> finishVoice(false)
+        if (!showCodexMic) {
+            Box(Modifier.align(Alignment.BottomEnd).size(48.dp).scale(sc).clip(circ).background(Teal)
+                .then(
+                    if (showStop) Modifier.clickable(onClickLabel = "Остановить Codex") { onStopCodex() }
+                    else if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
+                    else if (codexDictation) Modifier
+                    else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
+                    else Modifier.pointerInput(Unit) {
+                        val cancelPx = with(density) { 110.dp.toPx() }
+                        val lockPx = with(density) { 80.dp.toPx() }
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                micPerm.launch(Manifest.permission.RECORD_AUDIO); return@awaitEachGesture
+                            }
+                            hint = null
+                            VoiceMsg.stopPlay()
+                            if (!VoiceMsg.start()) { hint = "Микрофон занят"; return@awaitEachGesture }
+                            dragX = 0f; dragY = 0f
+                            var outcome = 0 // 0 отправить, 1 отмена, 2 закрепить
+                            while (true) {
+                                val ev = awaitPointerEvent()
+                                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                dragX = (ch.position.x - down.position.x).coerceAtMost(0f)
+                                dragY = (ch.position.y - down.position.y).coerceAtMost(0f)
+                                if (-dragX > cancelPx) { outcome = 1; break }
+                                if (-dragY > lockPx) { outcome = 2; break }
+                                if (!ch.pressed) break
+                            }
+                            when (outcome) {
+                                1 -> finishVoice(true)
+                                2 -> { locked = true; dragX = 0f; dragY = 0f }
+                                else -> finishVoice(false)
+                            }
                         }
                     }
-                }
-            ), contentAlignment = Alignment.Center) {
-            if (showStop) Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icStopButton), "Остановить Codex", tint = OnAccent, modifier = Modifier.size(21.dp))
-            else if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
-            else if (codexDictation) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = Muted, modifier = Modifier.size(21.dp))
-            else MicIcon(OnAccent, 22.dp)
+                ), contentAlignment = Alignment.Center) {
+                if (showStop) Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icStopButton), "Остановить Codex", tint = OnAccent, modifier = Modifier.size(21.dp))
+                else if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+                else MicIcon(OnAccent, 22.dp)
+            }
         }
     }
 }
