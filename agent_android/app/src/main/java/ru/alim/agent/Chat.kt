@@ -74,6 +74,8 @@ data class Friend(
 
 object Friends {
     const val MAIN = "main"
+    const val CODEX = "codex"
+    fun isCodex(id: String) = id == CODEX || id.startsWith("codex-")
     val list = mutableStateListOf<Friend>()
     /** Открытый сейчас диалог. */
     var current by mutableStateOf(MAIN)
@@ -91,12 +93,14 @@ object Friends {
             }
         }
         if (list.none { it.main }) list.add(0, Friend(MAIN, Prefs.botName, Prefs.botMale, Prefs.botStyle, Prefs.botAvatar))
-        // теперь помощник один — остальных друзей не показываем
-        list.removeAll { !it.main }
+        // теперь помощник один — остальных друзей не показываем, но диалоги Codex сохраняем
+        list.removeAll { !it.main && !isCodex(it.id) }
+        if (list.none { it.id == CODEX }) list.add(Friend(CODEX, "Codex", true, "short", role = "Код и проекты"))
+        if (list.none { it.id == Prefs.lastCodex }) Prefs.lastCodex = CODEX
         // переименование: «Пилот» → «Тень» (один раз; если Алим потом даст своё имя — оставим его)
         if (!Prefs.renamedTen) { Prefs.renamedTen = true
             list.firstOrNull { it.main && it.name.equals("Пилот", true) }?.let { f -> save(f.copy(name = "Тень")) } }
-        current = MAIN
+        current = Prefs.lastChat.takeIf { it == MAIN || isCodex(it) } ?: MAIN
     }
 
     fun get(id: String): Friend = list.firstOrNull { it.id == id } ?: list.firstOrNull { it.main } ?: Friend(MAIN, "Артур", true, "buddy")
@@ -110,10 +114,11 @@ object Friends {
     }
 
     fun remove(id: String) {
-        if (id == MAIN) return
+        if (id == MAIN || id == CODEX) return
         list.removeAll { it.id == id }
         runCatching { File(Chat.app.filesDir, "chat_$id.json").delete() }
         if (current == id) open(MAIN)
+        if (Prefs.lastCodex == id) Prefs.lastCodex = CODEX
         persist()
     }
 
@@ -122,7 +127,17 @@ object Friends {
         save(f); return f
     }
 
-    fun open(id: String) { current = id; Prefs.lastChat = id }
+    /** Новый независимый диалог Codex со своим провайдером, моделью и рабочей папкой. */
+    fun newCodex(): Friend {
+        val n = list.count { isCodex(it.id) } + 1
+        val f = Friend("codex-" + System.currentTimeMillis(), if (n <= 1) "Codex" else "Codex $n", true, "short", role = "Код и проекты")
+        save(f); open(f.id); return f
+    }
+
+    fun open(id: String) {
+        current = id; Prefs.lastChat = id
+        if (isCodex(id)) Prefs.lastCodex = id
+    }
 
     const val MUSTAFA = "Кавказский акцент, говорит неспешно, тепло и уверенно, как старший брат. Вставляет «слушай, брат», «Иншаллах», " +
         "«Машаллах», «Альхамдулиллях», «валлах», «дон» — в случайных местах, но не в каждой фразе. Любит пошутить, по-доброму подкалывает."
@@ -266,6 +281,9 @@ class ChatStore(val fid: String) {
     private lateinit var file: File
     private var lastId = 0L
     private val queue = ArrayList<Long>()
+    @Volatile private var codexInterrupted = false
+    @Volatile private var codexStopping = false
+    @Volatile private var codexCancelInFlight = false
     private var voiceCount = 0
     private var lastUserVoice = false
     /** Для чьей просьбы сейчас работает главный (id друга). */
@@ -365,15 +383,33 @@ class ChatStore(val fid: String) {
     fun dropUpd() = onMain { if (msgs.removeAll { it.note && UPD.any { p -> it.text.startsWith(p) } }) save() }
     /** Обычная реплика Пилота в ленте (отчёты поручений и т.п.). */
     fun say(text: String) = add(Msg(newId(), false, text, System.currentTimeMillis(), status = "read"))
-    fun say(text: String, file: Docs.FileRef?) {
-        val files = if (file == null) "" else JSONArray().put(JSONObject().put("n", file.name).put("u", file.uri.toString()).put("m", file.mime)).toString()
-        add(Msg(newId(), false, text, System.currentTimeMillis(), files = files, status = "read"))
+    fun say(text: String, files: List<Docs.FileRef>) {
+        val json = JSONArray().also { array ->
+            files.forEach { file -> array.put(JSONObject().put("n", file.name).put("u", file.uri.toString()).put("m", file.mime)) }
+        }.toString()
+        add(Msg(newId(), false, text, System.currentTimeMillis(), files = if (files.isEmpty()) "" else json, status = "read"))
     }
 
     /** queued — сообщение пришло, пока шла задача: это продолжение той задачи, отдаём агенту с её контекстом, а не быстрой полосе. */
     private fun dispatch(m: Msg, queued: Boolean = false) {
         val c = core
-        if (c.busy || c.fastBusy) { if (m.id !in queue) queue += m.id; return }
+        if (c.busy || c.fastBusy) {
+            if (Friends.isCodex(fid) && c.fastBusy && Prefs.codexFollowUp == "interrupt") {
+                if (!codexInterrupted) note("Codex · перебиваю текущую задачу…")
+                codexInterrupted = true
+                if (m.id !in queue) queue += m.id
+                if (!codexCancelInFlight) {
+                    codexCancelInFlight = true
+                    io.launch {
+                        runCatching { CodexGateway.cancel(Chat.app, fid) }
+                        withContext(Dispatchers.Main) { codexCancelInFlight = false }
+                    }
+                }
+                return
+            }
+            if (m.id !in queue) queue += m.id
+            return
+        }
         if (m.note && m.from.isNotBlank()) {
             c.requestOverride = ""
             delegatedFor = m.from
@@ -384,28 +420,60 @@ class ChatStore(val fid: String) {
             return
         }
         c.delegated = false
-        if (Prefs.codexMode) {
-            if (m.att.isNotBlank() || m.voice.isNotBlank()) {
-                say("Режим Codex пока принимает текстовые цели. Пришли задачу текстом."); drainQueue(); return
+        if (Friends.isCodex(fid)) {
+            if (m.voice.isNotBlank()) {
+                say("Голосовые в Codex пока не передаются: напиши задачу текстом или приложи файл."); drainQueue(); return
             }
             c.fastBusy = true
-            val selectedModel = Prefs.requestModel.ifBlank { Prefs.smartModel }
-            val taskContext = "Контекст переписки:\n" + recentForPrompt(10) + "\n\nТекущая задача:\n" + m.text
-            note("Codex включён · ${modelLabel(selectedModel)} · запускаю задачу в песочнице…")
+            val provider = Prefs.codexProvider(fid)
+            val autoModel = requestModels(provider, ChatGptAccount.models).firstOrNull()
+            val selectedModel = Llm.codexModel(Prefs.codexModel(fid).ifBlank { autoModel ?: Prefs.smartModel })
+            val recent = recentForPrompt(10).take(9000)
+            val files = Chat.filesOf(m)
+            if (EmbeddedRuntime.state != EmbeddedRuntime.State.READY) note("Codex · готовлю локальное окружение…")
+            Prefs.codexActiveTask = fid
+            if (Prefs.codexOverlay) CodexOverlayService.start(Chat.app, fid)
             io.launch {
-                val reply = runCatching { CodexGateway.run(Chat.app, taskContext, selectedModel) }
+                val taskContext = runCatching {
+                    val paths = EmbeddedRuntime.paths(Chat.app)
+                    val dir = java.io.File(paths.tenHome, "workspace/$fid/attachments").apply { mkdirs() }
+                    val copied = files.mapIndexed { index, ref ->
+                        val safe = ref.name.substringAfterLast('/').substringAfterLast('\\')
+                            .replace(Regex("[^A-Za-z0-9._-]"), "_").take(80).ifBlank { "file" }
+                        Docs.copyTo(Chat.app, ref, java.io.File(dir, "${index + 1}_$safe"))
+                    }
+                    buildString {
+                        append("Текущая задача:\n").append(m.text.take(6000))
+                        if (recent.isNotBlank()) append("\n\nКонтекст переписки:\n").append(recent)
+                        if (copied.isNotEmpty()) {
+                            append("\n\nФайлы, приложенные пользователем (открывай их по этим путям):\n")
+                            copied.forEach { append("- ").append(it.absolutePath).append('\n') }
+                        }
+                    }.take(15900)
+                }
+                val reply = taskContext.mapCatching { CodexGateway.run(Chat.app, it, selectedModel, fid) }
                 withContext(Dispatchers.Main) {
                     c.fastBusy = false
-                    reply.onSuccess { say(it.text, it.file) }.onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    when {
+                        codexStopping -> {
+                            codexStopping = false
+                            codexInterrupted = false
+                            queue.clear()
+                            note("Codex · остановил задачу.")
+                        }
+                        codexInterrupted -> {
+                            codexInterrupted = false
+                            note("Codex · перебил задачу, беру новое сообщение.")
+                        }
+                        else -> reply.onSuccess { say(it.text, it.files) }
+                            .onFailure { say("Codex не выполнил задачу: ${it.message ?: "ошибка сервиса"}") }
+                    }
                     drainQueue()
                 }
             }
             return
         }
-        if (Prefs.requestModel.startsWith("compatible:")) {
-            say("Для совместимого API включи Codex в поле запроса."); drainQueue(); return
-        }
-        c.requestOverride = Prefs.requestModel
+        c.requestOverride = ""
         val prompt = buildString {
             if (m.replyText.isNotBlank()) append("(Алим отвечает на ${if (m.replyMe) "своё" else "твоё"} сообщение: «${m.replyText}»)\n")
             append(m.text.ifBlank { if (m.att.isNotBlank()) "Посмотри вложения" else "" })
@@ -522,6 +590,29 @@ class ChatStore(val fid: String) {
             queue.removeAt(0)
             msgs.firstOrNull { it.id == next }?.let { dispatch(it, queued = true) }
         }, 300)
+    }
+
+    /** Stop the current Codex session and drop anything that was waiting behind it. */
+    fun stopCodex() = onMain {
+        queue.clear()
+        codexInterrupted = false
+        codexStopping = true
+        if (!codexCancelInFlight) {
+            codexCancelInFlight = true
+            io.launch {
+                val failure = runCatching { CodexGateway.cancel(Chat.app, fid) }.exceptionOrNull()
+                withContext(Dispatchers.Main) {
+                    codexCancelInFlight = false
+                    if (failure != null) {
+                        codexStopping = false
+                        note("Не удалось остановить Codex: ${failure.message ?: "ошибка"}")
+                    } else if (!core.fastBusy) {
+                        codexStopping = false
+                        note("Codex · остановил задачу.")
+                    }
+                }
+            }
+        }
     }
 
     /** Связь вернулась — отправляем то, что Алим написал без сети. */

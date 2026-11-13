@@ -45,7 +45,7 @@ private val brainIcon by lazy { lineIco("brain", "M12 5a3 3 0 0 0-5.5-1.6A3.4 3.
 private val bulbIcon by lazy { lineIco("bulb-picker", "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.7 1 1.5 1 2.5h6c0-1 .2-1.8 1-2.5A6 6 0 0 0 12 3z") }
 
 @Composable
-private fun PickerButton(icon: ImageVector, label: String, accessibility: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun PickerButton(icon: ImageVector, label: String, accessibility: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(modifier.height(46.dp).clip(shp(12.dp)).background(AccentSoft).border(1.dp, Line, shp(12.dp))
         .clickable(onClickLabel = accessibility, onClick = onClick).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(rememberVectorPainter(icon), null, tint = Teal, modifier = Modifier.size(18.dp))
@@ -57,49 +57,98 @@ private fun PickerButton(icon: ImageVector, label: String, accessibility: String
 
 @Composable
 fun ChatControls(go: (Scr) -> Unit) {
-    var modelsOpen by remember { mutableStateOf(false) }
-    var effortOpen by remember { mutableStateOf(false) }
-    var model by remember { mutableStateOf(Prefs.requestModel) }
-    var effort by remember { mutableStateOf(Prefs.effort) }
-    var codex by remember { mutableStateOf(Prefs.codexMode) }
-    val models = requestModels(Prefs.requestProvider, ChatGptAccount.models)
-    Column {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) {
-            PickerButton(brainIcon, if (model.isBlank()) "Автоматически" else modelLabel(model), "Выбрать модель", Modifier.fillMaxWidth()) { modelsOpen = true }
-            DropdownMenu(modelsOpen, { modelsOpen = false }, modifier = Modifier.heightIn(max = 280.dp), shape = shp(16.dp), containerColor = Card,
-                properties = PopupProperties(focusable = false)) {
-                DropdownMenuItem(text = { Text(if (codex) "Автоматически · модель роли «Руки»" else "Автоматически · роли и оркестрация", style = body(13, if (model.isBlank()) FontWeight.SemiBold else FontWeight.Normal, if (model.isBlank()) Teal else Ink)) },
-                    trailingIcon = if (model.isBlank()) ({ Icon(Icons.Filled.Check, "Выбрана", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
-                    onClick = { model = ""; Prefs.requestModel = ""; modelsOpen = false })
-                if (models.isEmpty()) DropdownMenuItem(text = { Text("Обновить список моделей в настройках", style = body(13, color = Muted)) }, onClick = { modelsOpen = false; go(Scr.Settings) })
-                models.forEach { id ->
-                    val selected = id == model
-                    DropdownMenuItem(text = { Text(modelLabel(id), style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
-                        modifier = Modifier.padding(horizontal = 6.dp).clip(shp(10.dp)).background(if (selected) AccentSoft else Color.Transparent),
-                        trailingIcon = if (selected) ({ Icon(Icons.Filled.Check, "Выбрана", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
-                        onClick = { model = id; Prefs.requestModel = id; modelsOpen = false })
+    val fid = Friends.current
+    val codex = Friends.isCodex(fid)
+    var modelsOpen by remember(fid) { mutableStateOf(false) }
+    var providersOpen by remember(fid) { mutableStateOf(false) }
+    var chatsOpen by remember(fid) { mutableStateOf(false) }
+    var model by remember(fid) { mutableStateOf(Prefs.codexModel(fid)) }
+    val providers = listOf("codex" to "GPT", "deepseek" to "DeepSeek", "anymodel" to "AnyModel", "compatible" to "Другой API")
+    var provider by remember(fid) {
+        mutableStateOf(modelProvider(model.ifBlank { Llm.codexModel(Prefs.smartModel) }).let { if (it in listOf("codex", "deepseek", "anymodel", "compatible")) it else "anymodel" })
+    }
+    val models = requestModels(provider, ChatGptAccount.models)
+    val codexChats = Friends.list.filter { Friends.isCodex(it.id) }
+    fun selectProvider(id: String) {
+        provider = id
+        providersOpen = false
+        modelsOpen = false
+        val next = requestModels(id, ChatGptAccount.models).firstOrNull().orEmpty()
+        model = next
+        Prefs.setCodexModel(fid, next)
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (codex) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) {
+                    PickerButton(dialogIcon, Friends.get(fid).name, "Выбрать диалог Codex", Modifier.fillMaxWidth()) { chatsOpen = true }
+                    DropdownMenu(chatsOpen, { chatsOpen = false }, modifier = Modifier.heightIn(max = 320.dp), shape = shp(16.dp), containerColor = Card,
+                        properties = PopupProperties(focusable = false)) {
+                        codexChats.forEach { chat ->
+                            val selected = chat.id == fid
+                            DropdownMenuItem(
+                                text = { Text(chat.name, style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
+                                trailingIcon = if (selected) ({ Icon(Icons.Filled.Check, "Открыт", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
+                                onClick = { Friends.open(chat.id); chatsOpen = false; go(Scr.Home) })
+                        }
+                        DropdownMenuItem(text = { Text("Новый диалог Codex", style = body(13, FontWeight.SemiBold, Teal)) },
+                            onClick = { Friends.newCodex(); chatsOpen = false; go(Scr.Home) })
+                    }
                 }
-                DropdownMenuItem(text = { Text("Модели для задач и фона…", style = body(13, color = Teal)) }, onClick = { modelsOpen = false; go(Scr.Settings) })
+                Box(Modifier.size(46.dp).clip(shp(12.dp)).background(Card).border(1.dp, Line, shp(12.dp))
+                    .clickable(onClickLabel = "Новый диалог Codex") { Friends.newCodex(); go(Scr.Home) }, contentAlignment = Alignment.Center) {
+                    Text("+", style = body(22, FontWeight.SemiBold, Teal))
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(0.9f)) {
+                    PickerButton(providerIcon, providers.firstOrNull { it.first == provider }?.second ?: "Провайдер", "Выбрать провайдера", Modifier.fillMaxWidth()) { providersOpen = true }
+                    DropdownMenu(providersOpen, { providersOpen = false }, modifier = Modifier.heightIn(max = 320.dp), shape = shp(16.dp), containerColor = Card,
+                        properties = PopupProperties(focusable = false)) {
+                        providers.forEach { (id, title) ->
+                            val selected = provider == id
+                            DropdownMenuItem(text = { Text(title, style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
+                                trailingIcon = if (selected) ({ Icon(Icons.Filled.Check, "Выбран", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
+                                onClick = { selectProvider(id) })
+                        }
+                        DropdownMenuItem(text = { Text("Добавить провайдера по API-ключу…", style = body(13, color = Teal)) },
+                            onClick = { providersOpen = false; go(Scr.Settings) })
+                    }
+                }
+                Box(Modifier.weight(1.1f)) {
+                    PickerButton(brainIcon, if (model.isBlank()) "Авто · ${modelLabel(Llm.codexModel(Prefs.smartModel))}" else modelLabel(model), "Выбрать модель", Modifier.fillMaxWidth()) { modelsOpen = true }
+                    DropdownMenu(modelsOpen, { modelsOpen = false }, modifier = Modifier.heightIn(max = 280.dp), shape = shp(16.dp), containerColor = Card,
+                        properties = PopupProperties(focusable = false)) {
+                        DropdownMenuItem(text = { Text("Авто · ${modelLabel(Llm.codexModel(Prefs.smartModel))}", style = body(13, if (model.isBlank()) FontWeight.SemiBold else FontWeight.Normal, if (model.isBlank()) Teal else Ink)) },
+                            trailingIcon = if (model.isBlank()) ({ Icon(Icons.Filled.Check, "Выбрано", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
+                            onClick = { model = ""; Prefs.setCodexModel(fid, ""); modelsOpen = false })
+                        if (models.isEmpty()) DropdownMenuItem(text = { Text(if (provider == "compatible") "Добавь провайдера в настройках" else "Нет моделей этого провайдера", style = body(13, color = Muted)) },
+                            onClick = { modelsOpen = false; go(Scr.Settings) })
+                        models.forEach { id ->
+                            val selected = id == model
+                            DropdownMenuItem(text = { Text(modelLabel(id), style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
+                                modifier = Modifier.padding(horizontal = 6.dp).clip(shp(10.dp)).background(if (selected) AccentSoft else Color.Transparent),
+                                trailingIcon = if (selected) ({ Icon(Icons.Filled.Check, "Выбрана", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
+                                onClick = { model = id; Prefs.setCodexModel(fid, id); modelsOpen = false })
+                        }
+                        DropdownMenuItem(text = { Text("Добавить провайдера по API-ключу…", style = body(13, color = Teal)) }, onClick = { modelsOpen = false; go(Scr.Settings) })
+                    }
+                }
             }
         }
-        if (Llm.isChatGpt(model) || Llm.isAny(Prefs.smartModel)) Box(Modifier.weight(1f)) {
-            val levels = listOf("low" to "Быстро", "medium" to "Средне", "high" to "Тщательно")
-            PickerButton(bulbIcon, levels.firstOrNull { it.first == effort }?.second ?: "Средне", "Уровень размышлений", Modifier.fillMaxWidth()) { effortOpen = true }
-            DropdownMenu(effortOpen, { effortOpen = false }, shape = shp(16.dp), containerColor = Card, properties = PopupProperties(focusable = false)) {
-                levels.forEach { (id, title) ->
-                    val selected = effort == id
-                    DropdownMenuItem(text = { Text(title, style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
-                        modifier = Modifier.padding(horizontal = 6.dp).clip(shp(10.dp)).background(if (selected) AccentSoft else Color.Transparent),
-                        trailingIcon = if (selected) ({ Icon(Icons.Filled.Check, "Выбрано", tint = Teal, modifier = Modifier.size(18.dp)) }) else null,
-                        onClick = { effort = id; Prefs.effort = id; effortOpen = false })
-                }
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (codex) "Codex · локально" else "Исполнитель: Тень", style = body(12, FontWeight.SemiBold, if (codex) Teal else Muted), modifier = Modifier.weight(1f))
+            if (codex) androidx.compose.material3.TextButton(onClick = {
+                Thread {
+                    runCatching { CodexGateway.cancel(Chat.app, fid) }.onFailure {
+                        Chat.of(fid).say(it.message ?: "Не удалось остановить задачу")
+                    }
+                }.start()
+            }) { Text("Остановить") }
+            androidx.compose.material3.TextButton(onClick = { Friends.open(if (codex) Friends.MAIN else Prefs.lastCodex.takeIf { Friends.isCodex(it) } ?: Friends.CODEX); go(Scr.Home) }) { Text(if (codex) "Чат Тени" else "Открыть Codex") }
         }
-    }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(if (codex) "● CODEX ВКЛЮЧЁН · ${if (model.isBlank()) modelLabel(Prefs.smartModel) else modelLabel(model)}" else "Исполнитель: Тень", style = body(12, FontWeight.SemiBold, if (codex) Teal else Muted), modifier = Modifier.weight(1f))
-        androidx.compose.material3.TextButton(onClick = { codex = !codex; Prefs.codexMode = codex }) { Text(if (codex) "Выключить Codex" else "Включить Codex") }
-    }
     }
 }
+
+private val dialogIcon by lazy { lineIco("dialogs", "M4 5h16v10H4zM8 19h8M12 15v4") }
+private val providerIcon by lazy { lineIco("provider", "M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9.5a3.5 3.5 0 1 1 .5 6.96H7z") }

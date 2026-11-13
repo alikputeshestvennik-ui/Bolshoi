@@ -475,25 +475,8 @@ object Agent {
             Tools.parseDeadline(if (follow) rootTask else text)
             val seenAll = StringBuilder(if (assemble || follow) rootTask + "\n" + text else text)   // всё, что реально вернули инструменты: по нему сверяем цифры отчёта
             seen = seenAll
-            // несколько независимых вариантов (города, магазины) — части делают копии Тени одновременно, главная только собирает
+            // независимые варианты больше не делятся на части — задача идёт целиком
             var splitLeft = -1
-            if (isMain && hard0 && !follow && !assemble && extra.isBlank() && Prefs.split) {
-                val st = Step("Смотрю, можно ли разделить на части"); steps.add(st)
-                val plan = runCatching { Split.plan(text, smart(), this@Core) }.getOrNull()
-                st.done = true; st.detail = plan?.let { p -> "делю на ${p.parts.size}: " + p.parts.joinToString(", ") { it.title } + if (p.shared.isNotBlank()) " + общий участок" else "" } ?: ("одна задача — делаю целиком" + Split.why.takeIf { it.isNotBlank() }?.let { " (${it.take(120)})" }.orEmpty())
-                if (plan != null) {
-                    val got = runCatching { Split.run(this@Core, plan, text) }.getOrNull()
-                    if (got != null && !stopped) {
-                        seenAll.append('\n').append(got)
-                        // сырые результаты поисков частей — чтобы сверка источников не считала их цифры «выдуманными»
-                        seenAll.append('\n').append(Split.evidence)
-                        // ответы частей — к той же просьбе (одно сообщение пользователя подряд)
-                        val last = msgs.optJSONObject(msgs.length() - 1)
-                        last?.put("content", last.optString("content") + "\n\n" + got)
-                        if (Split.built) { splitLeft = 0; cap = minOf(cap, 8) } else { splitLeft = 3 + 6 * Split.failedParts; cap = minOf(cap, 14 + 6 * Split.failedParts) }
-                    }
-                }
-            }
             if (base != null) for (k in 0 until base.length()) base.optJSONObject(k)?.takeIf { it.optString("role") == "user" && it.optString("content").startsWith("РЕЗУЛЬТАТ ") }?.let { seenAll.append('\n').append(it.optString("content")) }
             var evRetry = 0
             var gapRetry = 0

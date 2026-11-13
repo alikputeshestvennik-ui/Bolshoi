@@ -3,6 +3,10 @@ package ru.alim.agent
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -91,10 +100,33 @@ fun fileBadge(mime: String): Pair<String, Color> = when (mime) {
     else -> "DOC" to if (Th.c.square) Th.c.ink else Color(0xFF2B579A)
 }
 
-/** Файлы, которые сделал агент: нажатие — открыть в Word/Excel/Документах, «Отправить» — поделиться. */
+/** Файлы, которые сделал агент: нажатие — открыть, ↓ — сохранить в Загрузки, «Отправить» — поделиться. */
 @Composable
 fun FileCards(files: List<Docs.FileRef>) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingSave by remember { mutableStateOf<Docs.FileRef?>(null) }
+    val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { target ->
+        val file = pendingSave
+        pendingSave = null
+        if (target != null && file != null) scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Docs.copyTo(ctx, file, target) } }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(ctx, result.fold({ "Сохранено: ${file.name}" }, { "Не удалось сохранить: ${it.message.orEmpty()}" }), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    fun save(file: Docs.FileRef) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Docs.saveToDownloads(ctx, file) } }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(ctx, result.fold({ "Сохранено в Загрузки/Пилот/$it" }, { "Не удалось сохранить: ${it.message.orEmpty()}" }), Toast.LENGTH_LONG).show()
+            }
+        } else {
+            pendingSave = file
+            saveAs.launch(file.name)
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         files.forEach { f ->
             if (f.mime == Viz.MIME) { VizCard(f); return@forEach }
@@ -109,18 +141,29 @@ fun FileCards(files: List<Docs.FileRef>) {
                 HGap(12)
                 Column(Modifier.weight(1f)) {
                     Text(f.name, style = body(14, FontWeight.SemiBold), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("Загрузки/Свои · нажми, чтобы открыть", style = body(12, color = Muted))
+                    val codexFile = Uri.decode(f.uri.toString()).contains("/.ten-local/workspace/")
+                    Text(if (codexFile) "Рабочая папка Codex · ↓ сохранит в Загрузки" else "Загрузки/Пилот · нажми, чтобы открыть",
+                        style = body(12, color = Muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                Box(Modifier.size(44.dp).clip(shp(22.dp)).clickable(onClickLabel = "Поделиться") {
-                    runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                }, contentAlignment = Alignment.Center) {
-                    androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icShareUp), "Поделиться", tint = Teal, modifier = Modifier.size(22.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Box(Modifier.size(40.dp).clip(shp(20.dp)).clickable(onClickLabel = "Сохранить в Загрузки") { save(f) },
+                        contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icDownload), "Сохранить в Загрузки",
+                            tint = Teal, modifier = Modifier.size(21.dp))
+                    }
+                    Box(Modifier.size(40.dp).clip(shp(20.dp)).clickable(onClickLabel = "Поделиться") {
+                        runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Отправить").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }, contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icShareUp), "Поделиться", tint = Teal, modifier = Modifier.size(21.dp))
+                    }
                 }
             }
         }
     }
 }
+
+private val icDownload by lazy { lineIco("download", "M12 3v11M7.5 9.5 12 14l4.5-4.5M5 20h14", 2f) }
 
 @Composable
 private fun NetImage(url: String) {

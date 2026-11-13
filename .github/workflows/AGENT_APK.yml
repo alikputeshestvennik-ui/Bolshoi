@@ -7,6 +7,7 @@ on:
       - 'codex/chatgpt-signin'
     paths:
       - 'agent_android/**'
+      - 'phone-runtime/**'
       - '.github/workflows/AGENT_APK.yml'
 
 permissions:
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -51,6 +52,24 @@ jobs:
         with:
           gradle-version: '8.13'
           cache-provider: basic
+
+      - name: Test local Codex bridge
+        if: hashFiles('phone-runtime/test_server.py') != ''
+        run: python3 -m unittest discover -s phone-runtime -v
+
+      - name: Prepare embedded Codex runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 agent_android/scripts/prepare_runtime_assets.py
+          test -s agent_android/app/src/main/assets/bootstrap-aarch64.zip
+          test -s agent_android/app/src/main/assets/runtime/server.py
+          test -s agent_android/app/src/main/assets/runtime/manifest.json
+          count=$(find agent_android/app/src/main/assets/runtime/debs -name '*.deb' | wc -l)
+          test "$count" -ge 20
+          echo "Runtime deb packages: $count"
+          du -sh agent_android/app/src/main/assets
+          sha256sum agent_android/app/src/main/assets/bootstrap-aarch64.zip
 
       - name: Prepare release keystore
         env:
@@ -111,6 +130,24 @@ jobs:
           msg=$( { grep -E "^e: " "$RUNNER_TEMP/build.log"; grep -E "What went wrong" -A6 "$RUNNER_TEMP/build.log"; } | sed 's#file:///home/runner/work/Bolshoi/Bolshoi/agent_android/app/src/main/java/ru/alim/agent/##' | head -40 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Build errors::${msg}"
 
+      - name: Verify release signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$apksigner" verify --verbose --print-certs agent_android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload phone runtime
+        if: hashFiles('phone-runtime/server.py') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ten-phone-runtime
+          path: |
+            phone-runtime/*.py
+            phone-runtime/*.sh
+            phone-runtime/README.md
+          retention-days: 14
+
       - name: Upload signed APK
         uses: actions/upload-artifact@v7
         with:
@@ -120,7 +157,7 @@ jobs:
           retention-days: 14
 
       - name: Publish APK for direct download
-        if: github.ref_name != 'feature/ui-refresh' && github.ref_name != 'feature/ten-approved' && github.ref_name != 'feature/ten-flex-mode' && github.ref_name != 'codex/ten-direct-deepseek'
+        if: github.ref_name == 'main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

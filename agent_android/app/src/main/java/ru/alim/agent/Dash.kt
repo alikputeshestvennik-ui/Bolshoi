@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -76,7 +74,7 @@ import java.util.Locale
 @Composable
 fun DashScreen(go: (Scr) -> Unit) {
     val ctx = LocalContext.current
-    val chat = remember { Chat.main }
+    val chat = remember(Friends.current) { Chat.of(Friends.current) }
     val core = chat.core
     val haze = remember { HazeState() }
     var tick by remember { mutableStateOf(0) }
@@ -476,7 +474,7 @@ internal fun BuySheet(o: org.json.JSONObject, close: () -> Unit) {
 @Composable
 fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = false, onSearch: (() -> Unit)? = null) {
     // только иконки, по центру; текущий раздел подсвечен
-    val items = listOf(Triple(icChat, "Чат", Scr.Home), Triple(icClock, "История", Scr.History), Triple(icActivity, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
+    val items = listOf(Triple(icClock, "История", Scr.History), Triple(icActivity, "Задачи", Scr.Active), Triple(icGear, "Настройки", Scr.Settings))
     var activityTick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(3_000); activityTick++ } }
     val active = remember(activityTick, Agent.main.busy, Deleg.items.size, Watch.items.size) {
@@ -485,11 +483,12 @@ fun NavBar(haze: HazeState, here: Scr, go: (Scr) -> Unit, searchOn: Boolean = fa
     val cur = when (here) {
         Scr.Journal -> Scr.Home
         Scr.Digest -> Scr.History
-        Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt -> Scr.Settings
+        Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look, Scr.YooMoney, Scr.Tg, Scr.Music, Scr.Yt, Scr.CodexSettings -> Scr.Settings
         else -> here
     }
     // одинаковые кнопки, собраны по центру (не растягиваются на всю ширину)
     Row(Modifier.fillMaxWidth().clip(shp(18.dp)).background(Card), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        NavDot(haze, icChat, "Чат", Modifier.weight(1f), cur == Scr.Home, false, if (cur == Scr.Home) onSearch else null) { Friends.open(Friends.MAIN); go(Scr.Home) }
         items.forEach { (ic, label, to) ->
             NavDot(haze, ic, label, Modifier.weight(1f), to == cur, active && to == Scr.Active, if (to == Scr.Home) onSearch else null) { go(to) }
         }
@@ -745,7 +744,7 @@ private fun bestFromTable(ctx: android.content.Context, uri: android.net.Uri): S
 /** Нижние кнопки разделов и строка ввода — на всех экранах, не только в чате. Отправил сообщение — переходим в чат. */
 @Composable
 fun GlobalBar(here: Scr, go: (Scr) -> Unit, haze: HazeState, modifier: Modifier = Modifier) {
-    val chat = remember { Chat.of(Friends.MAIN) }
+    val chat = remember(Friends.current) { Chat.of(Friends.current) }
     var composerFocused by remember { mutableStateOf(false) }
     val n0 = remember { chat.msgs.size }
     LaunchedEffect(chat.msgs.size) { if (chat.msgs.size > n0 && chat.msgs.lastOrNull()?.me == true) go(Scr.Home) }
@@ -759,8 +758,5 @@ fun BottomBarContent(haze: HazeState, here: Scr, go: (Scr) -> Unit, chat: ChatSt
                      composerFocused: Boolean, onFocusChange: (Boolean) -> Unit, onSearch: (() -> Unit)? = null) {
     NavBar(haze, here, go, onSearch = onSearch)
     Spacer(Modifier.height(4.dp))
-    if (composerFocused && WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0) {
-        ChatControls(go); Spacer(Modifier.height(8.dp))
-    }
     Composer(haze, chat, friend, onFocusChange)
 }

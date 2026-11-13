@@ -120,6 +120,8 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     val chat = remember(fid) { Chat.of(fid) }
     val core = chat.core
     val f = chat.friend
+    val codexMode = Friends.isCodex(fid)
+    val codexActivity = rememberCodexActivity(fid, codexMode)
     LaunchedEffect(fid, chat.msgs.size) { chat.markRead(); runCatching { androidx.core.app.NotificationManagerCompat.from(Chat.app).cancel(chat.notifId()) } }
     val ctx = LocalContext.current
     val haze = remember { HazeState() }
@@ -168,9 +170,12 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
     var tick by remember { mutableStateOf(0) }
     var composerH by remember { mutableStateOf(220) }
     var composerFocused by remember { mutableStateOf(false) }
+    var askDelete by remember(fid) { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
 
     androidx.activity.compose.BackHandler(enabled = ChatSel.on || search != null) { if (ChatSel.on) ChatSel.ids.clear() else search = null }
+    // Назад из Codex-диалога возвращает в чат Тени, а не выбрасывает в лаунчер.
+    androidx.activity.compose.BackHandler(enabled = Friends.isCodex(fid) && !ChatSel.on && search == null) { Friends.open(Friends.MAIN) }
     // в кабине без фото-обоев фон рисует общая сцена полёта под экраном (Ui) — здесь прозрачно
     val skyBehind = false   // кабины больше нет — фон всегда тема
     Box(Modifier.fillMaxSize().then(if (skyBehind) Modifier else Modifier.background(Th.c.bg))) {
@@ -181,8 +186,9 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             // лента идёт во весь экран — под шторкой и нижней полосой, отступы только внутри
             val bars = if (flex) 0.dp else WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val topExtra = if (Friends.isCodex(fid)) 72.dp else 20.dp
             LazyColumn(Modifier.fillMaxSize(), state = list, reverseLayout = true,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 20.dp, bottom = bars + (if (flex) 0.dp else with(LocalDensity.current) { composerH.toDp() }) + 18.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + topExtra, bottom = bars + (if (flex) 0.dp else with(LocalDensity.current) { composerH.toDp() }) + 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (!flex) core.pending?.let { p -> item(key = "confirm") { ConfirmCard(p, core) } }
                 if (!flex && core.busy && core.pending == null) item(key = "typing") { if (fid == Friends.MAIN && core.steps.isNotEmpty()) ThinkPanel(core) else Typing(core) }
@@ -218,6 +224,22 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
             .background(Brush.verticalGradient(listOf(fadeBottom.copy(alpha = 0f), fadeBottom.copy(alpha = 0.75f), fadeBottom.copy(alpha = 0.95f)))))
 
         // ——— шапка ———
+        if (!ChatSel.on && search == null && fid == Friends.MAIN) {
+            Box(
+                Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 47.dp)
+                    .size(36.dp).glass(haze, circ)
+                    .clickable(onClickLabel = "Открыть Codex") {
+                        Friends.open(Prefs.lastCodex.takeIf { Friends.isCodex(it) } ?: Friends.CODEX)
+                        go(Scr.Home)
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icCodexBubble), "Codex", tint = Teal, modifier = Modifier.size(17.dp))
+            }
+        }
+        if (!ChatSel.on && search == null && Friends.isCodex(fid)) {
+            CodexTopBar(fid, go, { askDelete = true }, running = codexActivity.running)
+        }
         if (ChatSel.on) Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(48.dp).glass(haze, circ).clickable(onClickLabel = "Снять выделение") { ChatSel.ids.clear() }, contentAlignment = Alignment.Center) {
@@ -262,7 +284,12 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
         }
 
         // ——— ввод ———
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(if (flex) Modifier.height(0.dp).then(Modifier.clipToBounds()) else Modifier.navigationBarsPadding().imePadding()).background(Card).padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 4.dp)
+        val codexMode = Friends.isCodex(fid)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .then(if (flex) Modifier.height(0.dp).then(Modifier.clipToBounds()) else Modifier.navigationBarsPadding().imePadding())
+            .background(if (codexMode) Color.Transparent else Card)
+            .padding(horizontal = if (codexMode) 10.dp else 16.dp)
+            .padding(top = 4.dp, bottom = if (codexMode) 10.dp else 4.dp)
             .onSizeChanged { composerH = it.height }) {
             if (ChatSel.on) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val one = ChatSel.ids.size == 1
@@ -278,9 +305,17 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                     Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icForward), null, tint = Ink, modifier = Modifier.size(22.dp)); HGap(8)
                     Text("Переслать", style = body(16, FontWeight.SemiBold))
                 }
+            } else if (codexMode) {
+                if (composerFocused) CodexKeyboardBar(fid, go)
+                CodexRunBubble(codexActivity)
+                Composer(
+                    haze, chat, f,
+                    onInputFocusChange = { composerFocused = it },
+                    codexRunning = codexActivity.running,
+                    onStopCodex = { chat.stopCodex() },
+                )
             } else {
-                if (fid == Friends.MAIN) BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
-                else Composer(haze, chat, f) { composerFocused = it }
+                BottomBarContent(haze, Scr.Home, go, chat, f, composerFocused, { composerFocused = it }, onSearch = { search = "" })
             }
         }
 
@@ -294,6 +329,23 @@ fun ChatScreen(fid: String, go: (Scr) -> Unit) {
                 .clickable(onClickLabel = "Вниз") { scope.launch { list.animateScrollToItem(0) } }, contentAlignment = Alignment.Center) {
                 Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icDown), "Вниз", tint = Ink, modifier = Modifier.size(24.dp))
             }
+        }
+        if (askDelete) {
+            val canRemove = fid != Friends.CODEX
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { askDelete = false },
+                title = { Text(if (canRemove) "Удалить диалог?" else "Очистить диалог?") },
+                text = { Text(if (canRemove) "«${f.name}» и вся переписка будут удалены." else "Переписка Codex будет очищена. Сам режим останется.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton({
+                        askDelete = false
+                        if (canRemove) Friends.remove(fid) else chat.delete(chat.msgs.map { it.id }.toList())
+                        Friends.open(Friends.CODEX)
+                        go(Scr.Home)
+                    }) { Text(if (canRemove) "Удалить" else "Очистить", color = Danger) }
+                },
+                dismissButton = { androidx.compose.material3.TextButton({ askDelete = false }) { Text("Отмена") } },
+            )
         }
     }
 }
@@ -599,8 +651,16 @@ fun ConfirmCard(p: Agent.Pending, core: Agent.Core) {
 // ———————————————— ввод и голосовое ————————————————
 
 @Composable
-fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (Boolean) -> Unit = {}) {
+fun Composer(
+    haze: HazeState,
+    chat: ChatStore,
+    f: Friend,
+    onInputFocusChange: (Boolean) -> Unit = {},
+    codexRunning: Boolean = false,
+    onStopCodex: () -> Unit = {},
+) {
     val ctx = LocalContext.current
+    val codexDictation = Friends.isCodex(f.id)
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     var text by androidx.compose.runtime.saveable.rememberSaveable(f.id) { mutableStateOf("") }
@@ -613,7 +673,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
     val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         hint = if (ok) "Теперь зажми микрофон и говори" else "Нужен доступ к микрофону"
     }
-    val rec = VoiceMsg.recording
+    val rec = !codexDictation && VoiceMsg.recording
 
     fun finishVoice(cancel: Boolean) {
         locked = false; dragX = 0f; dragY = 0f
@@ -646,7 +706,7 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
 
     Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
         // поле — растёт вместе с текстом (до 6 строк)
-        Row(Modifier.fillMaxWidth().padding(end = 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
+        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
@@ -664,8 +724,19 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
                 Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(36.dp).clickable { attach() }.padding(6.dp))
             }
         }
-        // кнопка: отправить / микрофон
-        val canSend = text.isNotBlank() || Attach.pending.isNotEmpty()
+        val canSend = text.isNotEmpty() || Attach.pending.isNotEmpty()
+        val showCodexMic = codexDictation && !canSend
+        if (showCodexMic) {
+            Box(Modifier.align(Alignment.BottomEnd)) {
+                androidx.compose.runtime.key(f.id) {
+                    CodexVoiceInput { transcript ->
+                        text = if (text.isBlank()) transcript else text.trimEnd() + " " + transcript
+                    }
+                }
+            }
+        }
+        // кнопка: отправить / остановить Codex / микрофон
+        val showStop = codexRunning && !canSend && !rec
         val big = rec && !locked
         val sc by animateFloatAsState(if (big) 1.7f else 1f, label = "mic")
         if (rec && !locked) {
@@ -676,42 +747,47 @@ fun Composer(haze: HazeState, chat: ChatStore, f: Friend, onInputFocusChange: (B
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.BottomEnd).size(48.dp).scale(sc).clip(circ).background(Teal)
-            .then(
-                if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
-                else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
-                else Modifier.pointerInput(Unit) {
-                    val cancelPx = with(density) { 110.dp.toPx() }
-                    val lockPx = with(density) { 80.dp.toPx() }
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                            micPerm.launch(Manifest.permission.RECORD_AUDIO); return@awaitEachGesture
-                        }
-                        hint = null
-                        VoiceMsg.stopPlay()
-                        if (!VoiceMsg.start()) { hint = "Микрофон занят"; return@awaitEachGesture }
-                        dragX = 0f; dragY = 0f
-                        var outcome = 0 // 0 отправить, 1 отмена, 2 закрепить
-                        while (true) {
-                            val ev = awaitPointerEvent()
-                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                            dragX = (ch.position.x - down.position.x).coerceAtMost(0f)
-                            dragY = (ch.position.y - down.position.y).coerceAtMost(0f)
-                            if (-dragX > cancelPx) { outcome = 1; break }
-                            if (-dragY > lockPx) { outcome = 2; break }
-                            if (!ch.pressed) break
-                        }
-                        when (outcome) {
-                            1 -> finishVoice(true)
-                            2 -> { locked = true; dragX = 0f; dragY = 0f }
-                            else -> finishVoice(false)
+        if (!showCodexMic) {
+            Box(Modifier.align(Alignment.BottomEnd).size(48.dp).scale(sc).clip(circ).background(Teal)
+                .then(
+                    if (showStop) Modifier.clickable(onClickLabel = "Остановить Codex") { onStopCodex() }
+                    else if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
+                    else if (codexDictation) Modifier
+                    else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
+                    else Modifier.pointerInput(Unit) {
+                        val cancelPx = with(density) { 110.dp.toPx() }
+                        val lockPx = with(density) { 80.dp.toPx() }
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                micPerm.launch(Manifest.permission.RECORD_AUDIO); return@awaitEachGesture
+                            }
+                            hint = null
+                            VoiceMsg.stopPlay()
+                            if (!VoiceMsg.start()) { hint = "Микрофон занят"; return@awaitEachGesture }
+                            dragX = 0f; dragY = 0f
+                            var outcome = 0 // 0 отправить, 1 отмена, 2 закрепить
+                            while (true) {
+                                val ev = awaitPointerEvent()
+                                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                dragX = (ch.position.x - down.position.x).coerceAtMost(0f)
+                                dragY = (ch.position.y - down.position.y).coerceAtMost(0f)
+                                if (-dragX > cancelPx) { outcome = 1; break }
+                                if (-dragY > lockPx) { outcome = 2; break }
+                                if (!ch.pressed) break
+                            }
+                            when (outcome) {
+                                1 -> finishVoice(true)
+                                2 -> { locked = true; dragX = 0f; dragY = 0f }
+                                else -> finishVoice(false)
+                            }
                         }
                     }
-                }
-            ), contentAlignment = Alignment.Center) {
-            if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
-            else MicIcon(OnAccent, 22.dp)
+                ), contentAlignment = Alignment.Center) {
+                if (showStop) Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icStopButton), "Остановить Codex", tint = OnAccent, modifier = Modifier.size(21.dp))
+                else if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+                else MicIcon(OnAccent, 22.dp)
+            }
         }
     }
 }
@@ -783,11 +859,13 @@ private fun vec(name: String, path: String, w: Float = 1.9f) =
     }.build()
 
 private val icCopy by lazy { vec("copy", "M9 9h10v12H9zM5 15V3h10") }
+private val icStopButton by lazy { vec("stop-button", "M7 7h10v10H7z", 2f) }
 private val icReply by lazy { vec("reply", "M10 6L4 12l6 6M4 12h10a6 6 0 0 1 6 6v1") }
 private val icForward by lazy { vec("fwd", "M14 6l6 6-6 6M20 12H10a6 6 0 0 0-6 6v1") }
 private val icTrash by lazy { vec("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6") }
 private val icDown by lazy { vec("down", "M6 9l6 6 6-6", 2.2f) }
 private val icMenu by lazy { vec("menu", "M4 6h16M4 12h16M4 18h10") }
+private val icCodexBubble by lazy { vec("codex-bubble", "M8 6l-5 6 5 6M16 6l5 6-5 6") }
 
 @Composable
 fun Avatar(size: androidx.compose.ui.unit.Dp, online: Boolean = false, f: Friend = Friends.main) {

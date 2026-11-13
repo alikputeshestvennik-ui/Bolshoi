@@ -42,6 +42,14 @@ object Llm {
     }
 
     fun isDeepSeek(m: String) = m.startsWith("deepseek:")
+
+    /** Модель, которую принимает локальный Codex. Яндекс и Google идут только через обычный чат. */
+    fun codexModel(m: String): String {
+        val value = m.trim()
+        val supported = isChatGpt(value) || isDeepSeek(value) || isAny(value) ||
+            (value.startsWith("compatible:") && value.length > "compatible:".length)
+        return if (supported) value else "cc/claude-sonnet-5"
+    }
     private fun deepSeekChat(model: String, messages: JSONArray, maxTokens: Int, json: Boolean): Reply {
         val key = BuildConfig.DEEPSEEK_API.trim()
         if (key.isBlank()) error("В сборке нет ключа DEEPSEEK_API — проверь секрет GitHub и пересобери")

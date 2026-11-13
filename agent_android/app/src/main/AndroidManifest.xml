@@ -26,6 +26,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
@@ -65,6 +66,7 @@
     <permission android:name="ru.alim.agent.permission.HOME" android:protectionLevel="signature" />
 
     <application
+        android:networkSecurityConfig="@xml/network_security_config"
         android:label="Тень"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
@@ -113,6 +115,10 @@
         <service android:name=".ArturService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Личный ассистент: держит связь с пользователем, присылает ему сообщения и напоминания" />
+        </service>
+        <service android:name=".CodexOverlayService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Плавающее окно Codex: показывает ход задачи и последний ответ поверх других приложений" />
         </service>
         <receiver android:name=".PlanAlarm" android:exported="false" />
         <receiver android:name=".BootIn" android:exported="true">

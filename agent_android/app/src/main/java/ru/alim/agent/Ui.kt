@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Scr { Home, Journal, Active, Task, Tg, Music, Yt, History, Rules, Settings, YooMoney, Memory, Digest, Profile, Look, Initiative }
+enum class Scr { Home, Journal, Active, Task, Tg, Music, Yt, History, Rules, Settings, CodexSettings, YooMoney, Memory, Digest, Profile, Look, Initiative }
 
 val LocalFlexActive = androidx.compose.runtime.staticCompositionLocalOf { false }
 
@@ -142,7 +142,14 @@ fun App(voice: Voice) {
     LaunchedEffect(open) {
         if (open == "digest") { scr = Scr.Digest; Nav.open = "" }
         if (open == "update") { scr = Scr.Home; Nav.open = ""; Updater.run(Agent.app) }
-        if (open.startsWith("chat:")) { scr = Scr.Home; Nav.open = "" }
+        if (open.startsWith("chat:")) {
+            val id = open.removePrefix("chat:")
+            val target = Friends.list.firstOrNull { it.id == id }?.id
+                ?: if (Friends.isCodex(id)) Friends.CODEX else Friends.MAIN
+            Friends.open(target)
+            scr = Scr.Home
+            Nav.open = ""
+        }
         if (open == "yt") {
             Nav.open = ""
             Journal.all(uiCtx).lastOrNull { it.title.startsWith("Подборка YouTube") }?.let { historyRecord = null; Agent.showPast(it); taskBack = Scr.Home; scr = Scr.Task }
@@ -154,6 +161,7 @@ fun App(voice: Voice) {
         when (scr) {
             Scr.Task -> { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home }
             Scr.Memory, Scr.Initiative, Scr.Rules, Scr.Look -> { scr = subFrom; subFrom = Scr.Home }
+            Scr.CodexSettings -> { scr = subFrom; subFrom = Scr.Home }
             Scr.Tg, Scr.Music, Scr.Yt, Scr.YooMoney -> scr = Scr.Settings
             else -> scr = Scr.Home
         }
@@ -187,11 +195,12 @@ fun App(voice: Voice) {
             val go: (Scr) -> Unit = { destination ->
                 focus.clearFocus(); keyboard?.hide()
                 if (destination != Scr.Task) historyRecord = null
+                if (destination == Scr.CodexSettings) subFrom = if (scr == Scr.Settings) Scr.Settings else Scr.Home
                 if (VoiceMsg.recording) tgScope.launch { VoiceMsg.stop(true); scr = destination }
                 else scr = destination
             }
             val home: () -> Unit = { if (scr == Scr.Task) { if (historyRecord == null) Agent.close(); historyRecord = null; scr = taskBack; taskBack = Scr.Home } else scr = Scr.Home }
-            val withBar = !flex && scr != Scr.Home && scr != Scr.Journal && (scr != Scr.Task || historyRecord != null)
+            val withBar = !flex && scr != Scr.Home && scr != Scr.Journal && scr != Scr.CodexSettings && (scr != Scr.Task || historyRecord != null)
             var barH by remember { mutableStateOf(0) }
             val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barH.toDp() }
             val barHaze = remember { dev.chrisbanes.haze.HazeState() }
@@ -200,7 +209,7 @@ fun App(voice: Voice) {
                 LocalFlexActive provides flex, LocalBarPad provides (if (flex) 12.dp else if (withBar) barDp + 12.dp else 24.dp), LocalBarHaze provides null, LocalNavigate provides go) {
             pageState.SaveableStateProvider(if (scr == Scr.Journal) Scr.Home.name else scr.name) {
             when (scr) {
-                Scr.Home, Scr.Journal -> ChatScreen(Friends.MAIN, go)
+                Scr.Home, Scr.Journal -> androidx.compose.runtime.key(Friends.current) { ChatScreen(Friends.current, go) }
                 Scr.Active -> ActiveScreen(go)
                 Scr.Profile -> ProfileScreen(Friends.MAIN, home)
                 Scr.Look -> LookScreen { scr = subFrom; subFrom = Scr.Home }
@@ -212,6 +221,7 @@ fun App(voice: Voice) {
                 Scr.History -> HistoryScreen(home) { r -> historyRecord = r; taskBack = Scr.History; scr = Scr.Task }
                 Scr.Rules -> RulesScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Settings -> SettingsScreen(home, { perms.launch(neededPerms()) }, { scr = Scr.YooMoney }, { scr = Scr.Tg }, { scr = Scr.Music }, { scr = Scr.Yt }) { s -> subFrom = Scr.Settings; scr = s }
+                Scr.CodexSettings -> CodexSettingsScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.YooMoney -> YooScreen { scr = Scr.Settings }
                 Scr.Memory -> MemoryScreen { scr = subFrom; subFrom = Scr.Home }
                 Scr.Digest -> DigestScreen(home)

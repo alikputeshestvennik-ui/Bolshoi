@@ -32,6 +32,17 @@ object Prefs {
     var codexMode: Boolean get() = b("request_codex_mode", false); set(v) = putB("request_codex_mode", v)
     var requestProvider: String get() = s("request_provider", "all"); set(v) = put("request_provider", v)
     var requestModel: String get() = s("request_model", ""); set(v) = put("request_model", v)
+    /** Provider/model выбран отдельно для каждого диалога Codex. */
+    fun codexModel(id: String): String = s("codex_model_" + id, "")
+    fun setCodexModel(id: String, value: String) = put("codex_model_" + id, value.trim())
+    fun codexProvider(id: String): String = s("codex_provider_" + id, "")
+    fun setCodexProvider(id: String, value: String) = put("codex_provider_" + id, value.trim())
+    var lastCodex: String get() = s("last_codex", "codex"); set(v) = put("last_codex", v)
+    /** Плавающее окно Codex: reasoning и последний ответ поверх других приложений. */
+    var codexOverlay: Boolean get() = b("codex_overlay", false); set(v) = putB("codex_overlay", v)
+    var codexActiveTask: String get() = s("codex_active_task", ""); set(v) = put("codex_active_task", v)
+    /** Что делать с сообщением, пришедшим во время работы Codex: queue — очередь, interrupt — перебить задачу. */
+    var codexFollowUp: String get() = s("codex_follow_up", "queue"); set(v) = put("codex_follow_up", v.trim().ifBlank { "queue" })
     var showOtherModels: Boolean get() = b("show_other_models", false); set(v) = putB("show_other_models", v)
     var fastModel: String get() = pick(s("fm", ""), CHAT_MODELS, "yc:aliceai-llm-flash"); set(v) = put("fm", v.trim())
     /** Быстрая полоса: простую болтовню Пилот отвечает сразу лёгкой моделью (с потоковым выводом), минуя полный цикл агента. */
@@ -54,8 +65,6 @@ object Prefs {
     var flight3dStarting: Boolean get() = b("f3d_start", false); set(v) = sp.edit().putBoolean("f3d_start", v).commit().let {}
     /** Модель независимой проверки важных задач ("" — как «Руки»). Лучше другой «породы», чем главная. */
     var checkModel: String get() = s("chk", ""); set(v) = put("chk", v.trim())
-    /** Большая задача из нескольких независимых вариантов — по частям, копиями Тени одновременно. */
-    var split: Boolean get() = b("split", true); set(v) = putB("split", v)
     /** Проверять каждую большую задачу, а не только важные. */
     var checkAll: Boolean get() = b("chkAll", false); set(v) = putB("chkAll", v)
     var smartModel: String get() = pick(s("sm", ""), HANDS_MODELS, "cc/claude-sonnet-5"); set(v) = put("sm", v.trim())

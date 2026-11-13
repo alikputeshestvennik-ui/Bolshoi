@@ -621,6 +621,9 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                     "ChatGPT" to if (ChatGptAccount.connected) ChatGptAccount.email.ifBlank { "подключён" } else "не подключён",
                     "Telegram" to Tg.statusText, "Почта Gmail" to "почтовые ящики"))
                 group("Модели и расход", listOf("Модели и использование" to "чат · задачи · фон · проверка", "Лимит расходов" to "платные сервисы"))
+                SetGroup("Codex") {
+                    SetRow("Настройки Codex", "провайдеры · Python · файлы", first = true) { open(Scr.CodexSettings) }
+                }
                 SetGroup("Поведение Тени") {
                     listOf(Triple("Что Тень помнит", "память", Scr.Memory), Triple("Сам пишет первым", "инициатива и расписание", Scr.Initiative), Triple("Отвечать за меня", "поручения и переговоры", Scr.Rules)).forEachIndexed { i, (name, sub, destination) ->
                         SetRow(name, sub, first = i == 0) { open(destination) }
@@ -745,39 +748,6 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 PermsPage(rows, askPerms) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             Section("Модели и использование", "чат · задачи · фон · проверка", Muted) {
-                var provider by remember { mutableStateOf(Prefs.requestProvider) }
-                Text("Провайдер для выбора в поле запроса", style = body(14, FontWeight.SemiBold))
-                Text("Автоматический режим использует модели ролей ниже. Ручной выбор действует на чат и основную модель задачи; фон и независимая проверка сохраняют свои настройки.", style = body(12, color = Muted))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("all" to "Все", "codex" to "Codex / ChatGPT", "anymodel" to "AnyModel", "deepseek" to "DeepSeek", "yandex" to "Яндекс", "compatible" to "Другой API").forEach { (id, name) ->
-                        val selected = provider == id
-                        Box(Modifier.height(40.dp).clip(shp(12.dp)).background(if (selected) Line else Bg)
-                            .clickable {
-                                provider = id; Prefs.requestProvider = id
-                                if (Prefs.requestModel.isNotBlank() && id != "all" && modelProvider(Prefs.requestModel) != id) Prefs.requestModel = ""
-                            }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                            Text(name, style = body(13, FontWeight.SemiBold, if (selected) Ink else Muted))
-                        }
-                    }
-                }
-                Text("Codex работает прямо в чате через фоновую задачу GitHub Actions. Нужен GH_PAT с доступом к Actions; запрос и результат передаются зашифрованными.", style = body(12, color = Muted))
-                BigButton("Начать новое пространство Codex", { Prefs.codexPreviousRun = "" }, bg = Card, fg = Ink, border = Line)
-                Text("Файлы Codex сохраняются между задачами в зашифрованном архиве GitHub Actions на 14 дней. Сброс начинает новое пространство.", style = body(12, color = Muted))
-                if (provider == "compatible") {
-                    var customUrl by remember { mutableStateOf(runCatching { CodexGateway.customUrl(ctx) }.getOrDefault("")) }
-                    var customModel by remember { mutableStateOf(Prefs.compatibleModel) }
-                    var customKey by remember { mutableStateOf("") }
-                    var customStatus by remember { mutableStateOf("") }
-                    OutlinedTextField(customUrl, { customUrl = it }, Modifier.fillMaxWidth(), label = { Text("HTTPS-адрес Responses API") }, singleLine = true)
-                    OutlinedTextField(customModel, { customModel = it }, Modifier.fillMaxWidth(), label = { Text("Идентификатор модели") }, singleLine = true)
-                    OutlinedTextField(customKey, { customKey = it }, Modifier.fillMaxWidth(), label = { Text("Ключ провайдера") }, singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-                    BigButton("Сохранить провайдера", {
-                        customStatus = runCatching { CodexGateway.saveCustom(ctx, customUrl, customKey, customModel); customKey = ""; "Сохранено" }.getOrElse { it.message ?: "Ошибка" }
-                    }, bg = Card, fg = Ink, border = Line)
-                    if (customStatus.isNotBlank()) Text(customStatus, style = body(12, color = Muted))
-                    Text("Для Codex нужен публичный HTTPS Responses API с поддержкой инструментов; одного Chat Completions недостаточно.", style = body(12, color = Muted))
-                }
                 val showOthers = true
                 androidx.compose.runtime.key(showOthers) {
                 if (Llm.anyKey.isBlank() && listOf(fast, smart, bgm).any { Llm.isAny(it) }) Text("Нет ключа ANYMODEL_KEY — модели AnyModel недоступны", style = body(13, color = Amber))
@@ -797,16 +767,6 @@ fun SettingsScreen(back: () -> Unit, askPerms: () -> Unit, openYoo: () -> Unit, 
                 ModelEditor("Руки — сложные дела (много шагов, подборки)", "smart", smart, smartIn, smartOut,
                     { smart = it; Prefs.smartModel = it }, { smartIn = it; Prefs.smartIn = it }, { smartOut = it; Prefs.smartOut = it })
                 ModelEditor("Фон — уведомления, сводки, сам пишет", "bg", bgm, "0", "0", { bgm = it; Prefs.bgModel = it }, {}, {})
-                var spl by remember { mutableStateOf(Prefs.split) }
-                CardBox {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Делить на части", style = body(14, FontWeight.SemiBold))
-                            Text("Несколько городов, магазинов, дат — каждую часть делает отдельная копия Тени одновременно, потом Тень собирает таблицу и вывод.", style = body(12, color = Muted), lineHeight = 16.sp)
-                        }
-                        Toggle(spl) { spl = it; Prefs.split = it }
-                    }
-                }
                 var chk by remember { mutableStateOf(Prefs.checkModel.ifBlank { Prefs.smartModel }) }
                 var chkAll by remember { mutableStateOf(Prefs.checkAll) }
                 ModelEditor("Проверка — независимый взгляд на важные задачи (лучше другая модель, чем у «Рук»)", "check", chk, "0", "0", { chk = it; Prefs.checkModel = it }, {}, {}) {

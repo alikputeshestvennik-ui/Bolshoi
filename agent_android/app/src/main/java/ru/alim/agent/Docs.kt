@@ -172,6 +172,50 @@ object Docs {
     // ———————————————— сохранение и открытие ————————————————
 
     /** Сохраняет в «Загрузки/Агент». Возвращает ссылку для открытия. */
+    /** Copy a user attachment into a real file so the local Codex process can open it. */
+    fun copyTo(ctx: Context, ref: FileRef, destination: File): File {
+        destination.parentFile?.mkdirs()
+        val input = ctx.contentResolver.openInputStream(ref.uri)
+            ?: error("Не удалось открыть вложение «${ref.name}»")
+        input.use { source -> destination.outputStream().use { out -> source.copyTo(out) } }
+        return destination
+    }
+
+    /** Copy a file from the app-private Codex workspace to a destination chosen by the user. */
+    fun copyTo(ctx: Context, ref: FileRef, destination: Uri) {
+        val input = ctx.contentResolver.openInputStream(ref.uri)
+            ?: error("Не удалось открыть файл «${ref.name}»")
+        input.use { source ->
+            val output = ctx.contentResolver.openOutputStream(destination)
+                ?: error("Не удалось записать файл «${ref.name}»")
+            output.use { target -> source.copyTo(target) }
+        }
+    }
+
+    /** Save a Codex-created file to the public Downloads/Пилот folder (Android 10+). */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    fun saveToDownloads(ctx: Context, ref: FileRef): String {
+        val name = ref.name.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[\\\\/:*?\"<>|]"), " ").trim().take(120).ifBlank { "Файл" }
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, ref.mime.ifBlank { "application/octet-stream" })
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Пилот")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val resolver = ctx.contentResolver
+        val target = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("Не удалось создать файл в Загрузках")
+        try {
+            copyTo(ctx, ref, target)
+            resolver.update(target, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            return name
+        } catch (error: Throwable) {
+            resolver.delete(target, null, null)
+            throw error
+        }
+    }
+
     fun save(ctx: Context, name0: String, mime: String, bytes: ByteArray): FileRef {
         val ext = when (mime) { XLSX -> ".xlsx"; PDF -> ".pdf"; else -> ".docx" }
         val name = name0.trim().ifBlank { "Документ" }.replace(Regex("[\\\\/:*?\"<>|]"), " ").removeSuffix(ext).take(80) + ext
