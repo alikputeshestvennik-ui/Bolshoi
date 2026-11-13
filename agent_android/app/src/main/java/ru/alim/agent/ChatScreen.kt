@@ -660,6 +660,7 @@ fun Composer(
     onStopCodex: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
+    val codexDictation = Friends.isCodex(f.id)
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     var text by androidx.compose.runtime.saveable.rememberSaveable(f.id) { mutableStateOf("") }
@@ -672,7 +673,7 @@ fun Composer(
     val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         hint = if (ok) "Теперь зажми микрофон и говори" else "Нужен доступ к микрофону"
     }
-    val rec = VoiceMsg.recording
+    val rec = !codexDictation && VoiceMsg.recording
 
     fun finishVoice(cancel: Boolean) {
         locked = false; dragX = 0f; dragY = 0f
@@ -705,7 +706,7 @@ fun Composer(
 
     Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
         // поле — растёт вместе с текстом (до 6 строк)
-        Row(Modifier.fillMaxWidth().padding(end = 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
+        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(end = if (codexDictation) 108.dp else 54.dp).heightIn(min = 48.dp).clip(shp(24.dp)).background(Card).border(1.dp, Line, shp(24.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (rec) {
@@ -723,6 +724,15 @@ fun Composer(
                 Icon(painterClip(), "Прикрепить файл", tint = Muted, modifier = Modifier.size(36.dp).clickable { attach() }.padding(6.dp))
             }
         }
+        if (codexDictation) {
+            Box(Modifier.align(Alignment.BottomEnd)) {
+                androidx.compose.runtime.key(f.id) {
+                    CodexVoiceInput { transcript ->
+                        text = if (text.isBlank()) transcript else text.trimEnd() + " " + transcript
+                    }
+                }
+            }
+        }
         // кнопка: отправить / остановить Codex / микрофон
         val canSend = text.isNotBlank() || Attach.pending.isNotEmpty()
         val showStop = codexRunning && !canSend && !rec
@@ -736,10 +746,11 @@ fun Composer(
                 Text("︿", style = body(14, color = Muted))
             }
         }
-        Box(Modifier.align(Alignment.BottomEnd).size(48.dp).scale(sc).clip(circ).background(Teal)
+        Box(Modifier.align(Alignment.BottomEnd).offset(x = if (codexDictation) (-54).dp else 0.dp).size(48.dp).scale(sc).clip(circ).background(Teal)
             .then(
                 if (showStop) Modifier.clickable(onClickLabel = "Остановить Codex") { onStopCodex() }
                 else if (canSend && !rec) Modifier.clickable(onClickLabel = "Отправить") { chat.send(text); text = "" }
+                else if (codexDictation) Modifier
                 else if (locked) Modifier.clickable(onClickLabel = "Отправить голосовое") { finishVoice(false) }
                 else Modifier.pointerInput(Unit) {
                     val cancelPx = with(density) { 110.dp.toPx() }
@@ -773,6 +784,7 @@ fun Composer(
             ), contentAlignment = Alignment.Center) {
             if (showStop) Icon(androidx.compose.ui.graphics.vector.rememberVectorPainter(icStopButton), "Остановить Codex", tint = OnAccent, modifier = Modifier.size(21.dp))
             else if ((canSend && !rec) || locked) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+            else if (codexDictation) Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = Muted, modifier = Modifier.size(21.dp))
             else MicIcon(OnAccent, 22.dp)
         }
     }

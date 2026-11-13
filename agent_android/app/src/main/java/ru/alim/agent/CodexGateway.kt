@@ -32,6 +32,10 @@ object CodexGateway {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     }
+    /** ASR always uses DeepSeek credentials, regardless of the selected chat provider. */
+    fun deepSeekAsrKey(ctx: Context): String = store(ctx).getString("provider_deepseek", "").orEmpty()
+        .trim().ifBlank { BuildConfig.DEEPSEEK_API.trim() }
+
     fun customUrl(ctx: Context): String = store(ctx).getString("custom_url", "").orEmpty()
     fun saveCustom(ctx: Context, address: String, token: String, model: String) {
         val parsed = address.trim().toHttpUrlOrNull() ?: error("Укажите HTTPS-адрес провайдера")
