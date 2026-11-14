@@ -553,7 +553,6 @@ def find_tile_for_distance(cumulative, distance):
 
 def build_roads(region_osm):
     """Project OSM highways to metric segments, grouped by class for the 2D map."""
-    major = []
     groups = []
     group_index = {}
     seen_ways = set()
@@ -571,15 +570,13 @@ def build_roads(region_osm):
             continue
         segs = [[round(a, 1), round(b, 1), round(c, 1), round(d, 1)]
                 for (a, b), (c, d) in zip(points, points[1:])]
-        if cls in MAJOR_ROAD_CLASSES:
-            major.extend(segs)
         group = group_index.get(cls)
         if group is None:
             group = {"kind": cls, "segments": []}
             group_index[cls] = group
             groups.append(group)
         group["segments"].extend(segs)
-    return major, groups
+    return groups
 
 
 def heading_at(route, i):
@@ -661,7 +658,7 @@ def build_region(route, region_osm, chunks, water, existing=None):
     places.sort(key=lambda p: (p["route_m"], p["name"]))
 
     # Regional road overlay grouped by class; the highlighted route is drawn by the app.
-    roads, road_groups = build_roads(region_osm)
+    road_groups = build_roads(region_osm)
 
     tiles = []
     if chunks:
@@ -741,7 +738,7 @@ def build_region(route, region_osm, chunks, water, existing=None):
         "route": route_map,
         "coast": coast,
         "landuse": landuse,
-        "roads": roads,
+        "roads": [],
         "road_groups": road_groups,
         "branches": branches,
         "water": water_lines,
