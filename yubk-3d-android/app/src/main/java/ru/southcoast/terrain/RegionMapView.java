@@ -48,12 +48,18 @@ final class RegionMapView extends View {
     void resetView() { zoom = 1; panX = panY = 0; invalidate(); }
 
     float baseScale() {
+        if (compact) {
+            float w = Math.max(1, getWidth() - 4 * density);
+            float h = Math.max(1, getHeight() - 4 * density);
+            return Math.max(.0001f, Math.min(w, h) / 1000f);
+        }
         float w = Math.max(1, getWidth() - (compact ? 4 : 20) * density);
         float h = Math.max(1, getHeight() - (compact ? 4 : 20) * density);
         return Math.max(.0001f, Math.min(w / (region.worldRight - region.worldLeft), h / (region.worldBottom - region.worldTop)));
     }
 
     void clampPan() {
+        if (compact) { panX = panY = 0; return; }
         float s = baseScale() * zoom;
         float mx = Math.max(0, (region.worldRight - region.worldLeft) * s / 2 - getWidth() / 2f + (compact ? 2 : 10) * density);
         float my = Math.max(0, (region.worldBottom - region.worldTop) * s / 2 - getHeight() / 2f + (compact ? 2 : 10) * density);
@@ -63,7 +69,8 @@ final class RegionMapView extends View {
 
     void transform() {
         scale = baseScale() * zoom;
-        float cx = (region.worldLeft + region.worldRight) / 2, cz = (region.worldTop + region.worldBottom) / 2;
+        float cx = compact ? x : (region.worldLeft + region.worldRight) / 2;
+        float cz = compact ? z : (region.worldTop + region.worldBottom) / 2;
         left = getWidth() / 2f + panX - cx * scale;
         top = getHeight() / 2f + panY - cz * scale;
     }
@@ -100,6 +107,7 @@ final class RegionMapView extends View {
 
         drawWater(c);
         drawRoads(c);
+        drawBranches(c);
         drawPlaces(c);
         drawStreetLabels(c);
         drawWaterLabels(c);
@@ -173,14 +181,36 @@ final class RegionMapView extends View {
         if (r == null || r.length < 4) return;
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setColor(Color.argb(78, 226, 218, 194));
-        paint.setStrokeWidth((compact ? 0.6f : 1.1f) * density);
+        paint.setColor(Color.argb(compact ? 48 : 105, 30, 38, 36));
+        paint.setStrokeWidth((compact ? 1.7f : 3.2f) * density);
         path.reset();
         for (int i = 0; i + 3 < r.length; i += 4) {
             path.moveTo(px(r[i]), py(r[i + 1]));
             path.lineTo(px(r[i + 2]), py(r[i + 3]));
         }
         c.drawPath(path, paint);
+        paint.setColor(Color.argb(compact ? 120 : 175, 226, 218, 194));
+        paint.setStrokeWidth((compact ? 0.55f : 1.05f) * density);
+        c.drawPath(path, paint);
+    }
+
+    void drawBranches(Canvas c) {
+        if (region.branches == null || region.branches.isEmpty()) return;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        for (float[] branch : region.branches) {
+            if (branch.length < 4) continue;
+            path.reset();
+            path.moveTo(px(branch[0]), py(branch[1]));
+            for (int i = 2; i + 1 < branch.length; i += 2) path.lineTo(px(branch[i]), py(branch[i + 1]));
+            paint.setColor(Color.argb(compact ? 70 : 170, 34, 48, 46));
+            paint.setStrokeWidth((compact ? 2.6f : 4.6f) * density);
+            c.drawPath(path, paint);
+            paint.setColor(Color.rgb(255, 214, 120));
+            paint.setStrokeWidth((compact ? 1.05f : 1.9f) * density);
+            c.drawPath(path, paint);
+        }
     }
 
     void drawPlaces(Canvas c) {

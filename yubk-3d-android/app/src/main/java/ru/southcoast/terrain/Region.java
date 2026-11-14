@@ -92,6 +92,7 @@ final class Region {
     final float worldLeft, worldTop, worldRight, worldBottom;
     final float[] route;
     final float[] roads;
+    final List<float[]> branches = new ArrayList<>();
     final Place[] places;
     final Street[] streets;
     final Water[] water;
@@ -158,6 +159,19 @@ final class Region {
             int waterCount = waterJson == null ? 0 : waterJson.length();
             water = new Water[waterCount];
             for (int i = 0; i < waterCount; i++) water[i] = new Water(waterJson.getJSONObject(i));
+            JSONArray branchJson = j.optJSONArray("branches");
+            if (branchJson != null) {
+                for (int i = 0; i < branchJson.length(); i++) {
+                    JSONArray pts = branchJson.getJSONObject(i).getJSONArray("points");
+                    float[] branch = new float[pts.length() * 2];
+                    for (int k = 0; k < pts.length(); k++) {
+                        JSONArray p = pts.getJSONArray(k);
+                        branch[k * 2] = (float) p.getDouble(0);
+                        branch[k * 2 + 1] = (float) p.getDouble(1);
+                    }
+                    if (branch.length >= 4) branches.add(branch);
+                }
+            }
             assignStreetCities();
             try (InputStream image = assets.open(j.getString("map"))) {
                 map = BitmapFactory.decodeStream(image);

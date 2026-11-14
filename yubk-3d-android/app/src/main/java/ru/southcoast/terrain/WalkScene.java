@@ -20,6 +20,8 @@ final class WalkScene {
     final String tileId,name;
     final float originLat,originLon;
     float x,z,heading,pitch=0,forward=0,moveSpeed=5;
+    private float[] roadSegments;
+    private boolean snapToRoads;
     long lastFrame;
     WalkScene(AssetManager assets) throws IOException {
         this(assets,"walk");
@@ -66,9 +68,33 @@ final class WalkScene {
             }
             mesh.position(0);
         }
+        try (InputStream in = assets.open("walk".equals(prefix) ? "navigation.json" : prefix + ".navigation.json"); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192]; int size;
+            while ((size = in.read(buffer)) != -1) out.write(buffer, 0, size);
+            JSONArray roads = new JSONObject(out.toString("UTF-8")).getJSONArray("roads");
+            roadSegments = new float[roads.length() * 4];
+            for (int i = 0; i < roads.length(); i++)
+                for (int k = 0; k < 4; k++) roadSegments[i * 4 + k] = (float) roads.getJSONArray(i).getDouble(k);
+        } catch (JSONException e) { throw new IOException("Invalid tile navigation data", e); }
         reset();
     }
     void reset(){x=spawn[0];z=spawn[1];heading=spawn[2];pitch=0;forward=0;lastFrame=0;}
+    void setRoadSnap(boolean enabled) { snapToRoads = enabled; }
+    private void snap(float[] p) {
+        if (!snapToRoads || roadSegments == null) return;
+        float best = 42f * 42f, bx = p[0], bz = p[1];
+        for (int i = 0; i + 3 < roadSegments.length; i += 4) {
+            float ax = roadSegments[i], az = roadSegments[i + 1];
+            float cx = roadSegments[i + 2], cz = roadSegments[i + 3];
+            float vx = cx - ax, vz = cz - az, len = vx * vx + vz * vz;
+            if (len < 1) continue;
+            float t = Math.max(0, Math.min(1, ((p[0] - ax) * vx + (p[1] - az) * vz) / len));
+            float qx = ax + t * vx, qz = az + t * vz;
+            float dx = p[0] - qx, dz = p[1] - qz, d = dx * dx + dz * dz;
+            if (d < best) { best = d; bx = qx; bz = qz; }
+        }
+        if (best < 42f * 42f) { p[0] = bx; p[1] = bz; }
+    }
     float globalX(){return x+(originLon-Region.REGION_ORIGIN_LON)*Region.REGION_SX;}
     float globalZ(){return z+(Region.REGION_ORIGIN_LAT-originLat)*Region.REGION_SZ;}
     boolean nearEdge(){return Math.abs(x)>halfX-45||Math.abs(z)>halfZ-45;}
@@ -101,6 +127,7 @@ final class WalkScene {
         int steps=Math.max(1,(int)Math.ceil(moveSpeed*dt/.2f));
         if(forward!=0)for(int i=0;i<steps;i++){
             float nx=x+(float)Math.sin(rad)*forward*moveSpeed*dt/steps,nz=z-(float)Math.cos(rad)*forward*moveSpeed*dt/steps;
+            float[] snapped = {nx, nz}; snap(snapped); nx = snapped[0]; nz = snapped[1];
             if(blocked(nx,nz))break;x=nx;z=nz;
         }
         gl.glClearColor(.62f,.77f,.86f,1);gl.glClear(GL10.GL_COLOR_BUFFER_BIT|GL10.GL_DEPTH_BUFFER_BIT);

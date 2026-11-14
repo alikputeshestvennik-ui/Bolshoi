@@ -40,6 +40,7 @@ ROAD_STEP_MAIN = 2.0
 ROAD_STEP_OTHER = 3.5
 CORRIDOR_M = 520.0
 MAX_WINDOWS_PER_TILE = 10000
+WATER_LEVEL = 0.8
 
 # WGS84 metres per degree at the latitude of the South Coast.
 _phi = math.radians(44.55)
@@ -136,6 +137,19 @@ def catmull_rom(points, step: float):
     return out
 
 
+def densify(points, step):
+    """Subdivide OSM segments while preserving their surveyed geometry."""
+    if not points:
+        return []
+    out = [points[0]]
+    for a, b in zip(points, points[1:]):
+        count = max(1, math.ceil(dist(a, b) / step))
+        out.extend((a[0] + (b[0] - a[0]) * i / count,
+                    a[1] + (b[1] - a[1]) * i / count)
+                   for i in range(1, count + 1))
+    return out
+
+
 def smooth(values, radius=3):
     if len(values) < 3:
         return list(values)
@@ -199,6 +213,29 @@ def clip_runs(points, bounds):
     if current and len(current) > 1:
         runs.append(current)
     return runs
+
+
+def clip_convex_polygon(poly, bounds):
+    """Clip a convex polygon to a tile; callers triangulate concave areas first."""
+    xmin, zmin, xmax, zmax = bounds
+    out = list(poly)
+    for axis, edge, greater in ((0, xmin, True), (0, xmax, False),
+                                (1, zmin, True), (1, zmax, False)):
+        source, out = out, []
+        if not source:
+            break
+        previous = source[-1]
+        prev_inside = previous[axis] >= edge if greater else previous[axis] <= edge
+        for current in source:
+            inside = current[axis] >= edge if greater else current[axis] <= edge
+            if inside != prev_inside:
+                t = (edge - previous[axis]) / (current[axis] - previous[axis])
+                out.append((previous[0] + t * (current[0] - previous[0]),
+                            previous[1] + t * (current[1] - previous[1])))
+            if inside:
+                out.append(current)
+            previous, prev_inside = current, inside
+    return out
 
 
 def polygon_area(poly):
@@ -294,6 +331,12 @@ def road_width(tags):
     if lanes:
         return clamp(lanes * 3.35, 4.0, 24.0)
     return {
+        "motorway": 10.0,
+        "motorway_link": 5.0,
+        "trunk_link": 5.0,
+        "primary_link": 5.0,
+        "secondary_link": 4.5,
+        "tertiary_link": 4.5,
         "trunk": 8.0,
         "primary": 7.5,
         "secondary": 6.5,
@@ -317,10 +360,10 @@ def building_height(tags):
         except ValueError:
             pass
     try:
-        levels = float(str(tags.get("building:levels", "3")).replace(",", "."))
+        levels = float(str(tags.get("building:levels", "2")).replace(",", "."))
         return clamp(levels * 3.0, 2.5, 90.0)
     except ValueError:
-        return 9.0
+        return 6.0
 
 
 FACADES = {
@@ -426,9 +469,9 @@ class RoadIndex:
 
 
 def terrain_color(x, z, raw, slope):
-    if raw < 0:
-        depth = clamp(-raw / 80.0, 0.0, 1.0)
-        return mix3((0.20, 0.46, 0.53), (0.035, 0.13, 0.24), depth)
+    if raw < WATER_LEVEL:
+        depth = clamp((WATER_LEVEL - raw) / 3.0, 0.0, 1.0)
+        return mix3((0.22, 0.47, 0.55), (0.04, 0.14, 0.26), depth)
     if raw < 3.0:
         base = mix3((0.59, 0.53, 0.39), (0.48, 0.51, 0.33), clamp(raw / 3.0, 0, 1))
     elif raw < 80:
@@ -461,22 +504,26 @@ def load_region_osm():
 def load_water():
     path = ROOT / "data/water_osm.json.gz"
     if not path.exists():
-        return []
-    return json.loads(gzip.decompress(path.read_bytes())).get("elements", [])
+        raise SystemExit(f"missing {path}; refusing to rebuild without water data")
+    elements = json.loads(gzip.decompress(path.read_bytes())).get("elements", [])
+    if not elements:
+        raise SystemExit(f"empty water data: {path}")
+    return elements
 
 
 def load_chunks(route):
     meta_path = CACHE / "route_osm/chunks.json"
     if not meta_path.exists():
-        return []
+        raise SystemExit(f"missing {meta_path}; restore the complete OSM chunk cache before rebuilding")
     chunks = json.loads(meta_path.read_text())
+    if not chunks:
+        raise SystemExit(f"empty route chunk list: {meta_path}")
     out = []
     for item in chunks:
         n, start, end, south, west, north, east = item
         path = CACHE / f"route_osm/chunk_{n:02d}.json"
         if not path.exists():
-            print(f"WARN: missing route chunk {n:02d}", file=sys.stderr)
-            continue
+            raise SystemExit(f"missing route chunk {path}; refusing to overwrite existing assets")
         out.append((n, start, end, (south, west, north, east), path))
     return out
 
@@ -547,6 +594,7 @@ def build_region(route, region_osm, chunks, water):
         ("Севастополь", 44.6054, 33.5221, "city"),
         ("Балаклава", 44.5121, 33.5990, "town"),
         ("Байдарские ворота", 44.4061, 33.7841, "sight"),
+        ("Байдарская долина", 44.4520, 33.7850, "sight"),
         ("Форосская церковь", 44.4050, 33.7922, "sight"),
         ("Ласточкино гнездо", 44.4305, 34.1287, "sight"),
         ("Воронцовский дворец", 44.4194, 34.0557, "sight"),
@@ -629,6 +677,21 @@ def build_region(route, region_osm, chunks, water):
             "points": [[round(x, 1), round(z, 1)] for x, z in dense],
         })
 
+    branches = []
+    for element in region_osm.get("elements", []):
+        tags = element.get("tags", {})
+        if element.get("type") != "way" or tags.get("highway") != "secondary" or not element.get("geometry"):
+            continue
+        if "67К-6" not in (tags.get("ref") or ""):
+            continue
+        points = [xz(p["lat"], p["lon"]) for p in element["geometry"]]
+        if len(points) < 2:
+            continue
+        branches.append({
+            "name": "Байдарская долина",
+            "points": [[round(x, 1), round(z, 1)] for x, z in points],
+        })
+
     region = {
         "name": "ЮБК · Севастополь — Алушта",
         "bounds": list(REGION_BOUNDS),
@@ -639,6 +702,7 @@ def build_region(route, region_osm, chunks, water):
         "route": route_map,
         "coast": coast,
         "roads": roads,
+        "branches": branches,
         "water": water_lines,
         "places": places,
         "tiles": tiles,
@@ -685,8 +749,8 @@ def build_region_map(region_osm, water):
             nx, ny, nz = -dx, 1.0, -dz
             norm = math.sqrt(nx * nx + ny * ny + nz * nz)
             shade = 0.70 + 0.30 * max(0.0, (nx * -0.5 + ny * 0.76 + nz * 0.41) / norm)
-            if h < 0:
-                depth = clamp(-h / 220.0, 0, 1)
+            if h < WATER_LEVEL:
+                depth = clamp((WATER_LEVEL - h) / 3.0, 0, 1)
                 color = mix3((0.23, 0.48, 0.56), (0.035, 0.12, 0.24), depth)
             elif h < 5:
                 color = mix3((0.63, 0.58, 0.43), (0.51, 0.53, 0.35), clamp(h / 5, 0, 1))
@@ -732,7 +796,7 @@ def build_region_map(region_osm, water):
         pts = [water_px(p) for p in el.get("geometry", [])]
         if len(pts) < 2:
             continue
-        if tags.get("natural") == "water":
+        if tags.get("natural") == "water" or tags.get("water") in ("lake", "pond", "reservoir", "basin", "river", "canal", "wastewater"):
             if len(pts) > 2:
                 draw.polygon(pts, fill=(62, 130, 169, 220))
         elif tags.get("waterway") in ("river", "stream", "canal", "drain", "drystream"):
@@ -856,22 +920,27 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             continue
         ww = tags.get("waterway")
         closed = len(pts) > 3 and dist(pts[0], pts[-1]) < 0.8
-        if tags.get("natural") == "water" or (ww and closed):
-            if not any(xmin - 20 <= x0 <= xmax + 20 and zmin - 20 <= z0 <= zmax + 20 for x0, z0 in pts):
+        if tags.get("natural") == "water" or tags.get("water") in ("lake", "pond", "reservoir", "basin", "river", "canal", "wastewater") or (ww and closed):
+            if (max(p[0] for p in pts) < xmin or min(p[0] for p in pts) > xmax or
+                    max(p[1] for p in pts) < zmin or min(p[1] for p in pts) > zmax):
                 continue
             poly = simplify_polygon([(x0, z0) for x0, z0 in pts], 1.0)
             if len(poly) < 3:
                 continue
             level = min(ground_at(x0, z0) for x0, z0 in poly) + 0.08
             for tri in triangulate(poly):
-                mesh.tri((tri[0][0], level, tri[0][1]), (tri[1][0], level, tri[1][1]), (tri[2][0], level, tri[2][1]), water_color)
+                clipped = clip_convex_polygon(tri, tile_bounds)
+                for i in range(1, len(clipped) - 1):
+                    a, b, c = clipped[0], clipped[i], clipped[i + 1]
+                    if polygon_area([a, b, c]) > 1e-6:
+                        mesh.tri((a[0], level, a[1]), (b[0], level, b[1]), (c[0], level, c[1]), water_color)
             continue
         if ww not in water_width:
             continue
         for run in clip_runs(pts, tile_bounds):
             if line_length(run) < 2.0:
                 continue
-            dense = catmull_rom(run, 6.0)
+            dense = densify(run, 6.0)
             if len(dense) < 2:
                 continue
             half = water_width[ww] / 2
@@ -879,8 +948,9 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                 length = math.hypot(b[0] - a[0], b[1] - a[1])
                 if length < 0.1:
                     continue
-                level = min(ground_at(a[0], a[1]), ground_at(b[0], b[1])) + 0.08
-                strip2(mesh, a, b, half, 0.0, level, level, water_color)
+                ya = ground_at(a[0], a[1]) + 0.12
+                yb = ground_at(b[0], b[1]) + 0.12
+                strip2(mesh, a, b, half, 0.0, ya, yb, water_color)
 
     # OSM traffic ways: clip to the tile, then draw layered road ribbons.
     roads_all = []
@@ -899,33 +969,29 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             if xmin - 30 <= cx <= xmax + 30 and zmin - 30 <= cz <= zmax + 30:
                 buildings.append((element["id"], points, tags))
             continue
-        if tags.get("highway") and tags.get("highway") not in ("construction", "proposed"):
+        if tags.get("highway") and tags.get("highway") not in ("construction", "proposed", "abandoned", "razed", "platform") and tags.get("area") != "yes":
             # Keep a compact local copy for the walk minimap and collision/POI logic.
             for run in clip_runs(points, tile_bounds):
                 if line_length(run) > 1.5:
                     roads_all.append((element["id"], run, tags))
                     road_index.add(run)
 
-    roads_all = [item for item in roads_all if any(near_route(p) for p in item[1])]
-    buildings = [item for item in buildings if near_route((sum(p[0] for p in item[1]) / len(item[1]), sum(p[1] for p in item[1]) / len(item[1])), CORRIDOR_M + 80)]
+    # The tile bounds, not proximity to the main route, define scene coverage.
 
     # Main route is the highest-detail ribbon; other ways are rendered as context.
     main_names = {"Южнобережное шоссе"}
     main_refs = ("35А-002", "35К-002", "67К-1", "М-18", "А-291")
-    drawn_way_ids = set()
     route_distance = 0.0
     route_marker_next = 500.0
     for way_id, run, tags in sorted(roads_all, key=lambda v: (v[2].get("highway") not in ("trunk", "primary"), v[0])):
-        if way_id in drawn_way_ids:
-            continue
-        drawn_way_ids.add(way_id)
         name = tags.get("name:ru") or tags.get("name") or ""
         ref = tags.get("ref") or ""
         on_route = min(route_index.distance(p) for p in run) < 9.0
         is_main = name in main_names or any(x in ref for x in main_refs) or on_route
         cls = tags.get("highway", "residential")
         step = ROAD_STEP_MAIN if is_main else ROAD_STEP_OTHER
-        dense = catmull_rom(run, step)
+        # Interpolate along surveyed OSM segments without overshooting junctions.
+        dense = densify(run, step)
         if len(dense) < 2:
             continue
         heights = [ground_at(x, z) for x, z in dense]
@@ -944,10 +1010,24 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             asphalt = (0.43, 0.44, 0.45) if is_main else (0.36, 0.37, 0.37)
             shoulder = (0.60, 0.56, 0.47) if is_main else (0.51, 0.48, 0.40)
         sidewalk = tags.get("sidewalk") in ("both", "left", "right", "yes") or (is_main and cls in ("trunk", "primary", "secondary", "tertiary"))
+        bridge = tags.get("bridge") in ("yes", "viaduct", "aqueduct", "boardwalk")
+        tunnel = tags.get("tunnel") in ("yes", "building_passage") or tags.get("covered") == "yes"
+        layer = 0
+        try:
+            layer = int(float(tags.get("layer", "0")))
+        except ValueError:
+            layer = 0
         for a, b, ya, yb in zip(dense, dense[1:], heights, heights[1:]):
             length = math.hypot(b[0] - a[0], b[1] - a[1])
             if length < 0.05:
                 continue
+            ground_ya, ground_yb = ya, yb
+            if bridge:
+                ya = ground_ya + 5.0
+                yb = ground_yb + 5.0
+            elif layer > 0 and not tunnel:
+                ya = ground_ya + 3.0
+                yb = ground_yb + 3.0
             # A thin shoulder prevents roads from looking pasted over the DEM.
             tone = 0.018 * math.sin(a[0] * 0.31 + a[1] * 0.17) + 0.009 * math.sin(a[0] * 0.071 - a[1] * 0.23)
             segment_asphalt = tuple(clamp(v + tone, 0.0, 1.0) for v in asphalt)
@@ -1022,61 +1102,34 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                         # Stone retaining wall above the uphill shoulder.
                         wall_top = base + 1.15
                         mesh.quad((ex, base - 0.25, ez), (ex + (b[0] - a[0]), base - 0.25, ez + (b[1] - a[1])), (ex + (b[0] - a[0]), wall_top, ez + (b[1] - a[1])), (ex, wall_top, ez), (0.55, 0.51, 0.43))
+            if bridge or (layer > 0 and not tunnel):
+                nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+                edge = half + 0.62
+                for side in (-1, 1):
+                    ax_ = a[0] + nx * edge * side
+                    az_ = a[1] + nz * edge * side
+                    bx_ = b[0] + nx * edge * side
+                    bz_ = b[1] + nz * edge * side
+                    mesh.quad((ax_, ground_ya, az_), (bx_, ground_yb, bz_), (bx_, yb + 0.28, bz_), (ax_, ya + 0.28, az_), (0.52, 0.51, 0.47))
+                if bridge and int(abs(a[0] * 0.37 + a[1] * 0.41)) % 23 == 0:
+                    mx = (a[0] + b[0]) / 2
+                    mz = (a[1] + b[1]) / 2
+                    my = (ground_ya + ground_yb) / 2
+                    ty = (ya + yb) / 2
+                    for px_, pz_ in ((0.0, 0.0), (nx * (half - 1.0), nz * (half - 1.0)), (-nx * (half - 1.0), -nz * (half - 1.0))):
+                        mesh.quad((mx + px_ - 0.35, my, mz + pz_ - 0.35), (mx + px_ + 0.35, my, mz + pz_ - 0.35), (mx + px_ + 0.35, ty, mz + pz_ + 0.35), (mx + px_ - 0.35, ty, mz + pz_ + 0.35), (0.44, 0.43, 0.40))
+            if tunnel:
+                nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+                edge = half + 0.42
+                for side in (-1, 1):
+                    ax_ = a[0] + nx * edge * side
+                    az_ = a[1] + nz * edge * side
+                    bx_ = b[0] + nx * edge * side
+                    bz_ = b[1] + nz * edge * side
+                    mesh.quad((ax_, ground_ya + 0.2, az_), (bx_, ground_yb + 0.2, bz_), (bx_, ground_yb + 4.1, bz_), (ax_, ground_ya + 4.1, az_), (0.30, 0.29, 0.27))
+                strip2(mesh, a, b, half + 0.5, 4.1, ground_ya, ground_yb, (0.26, 0.25, 0.23))
 
-    # Procedural infill: low coastal houses and roadside farms where OSM has gaps.
-    rng_build = random.Random(9140 + n)
-    existing = [(sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly), poly)
-                for _, poly, _ in buildings if len(poly) >= 3]
-    next_house_at = 95.0 + rng_build.random() * 80.0
-    proc_id = 0
-    proc_centers = []
-    distance_along = 0.0
-    for ra, rb in zip(route_local, route_local[1:]):
-        seg_len = math.hypot(rb[0] - ra[0], rb[1] - ra[1])
-        while seg_len > 1e-6 and distance_along + seg_len >= next_house_at and proc_id < 46:
-            t = max(0.0, min(1.0, (next_house_at - distance_along) / seg_len))
-            next_house_at += 105.0 + rng_build.random() * 135.0
-            if rng_build.random() < 0.32:
-                continue
-            base_x = ra[0] + (rb[0] - ra[0]) * t
-            base_z = ra[1] + (rb[1] - ra[1]) * t
-            side = 1.0 if rng_build.random() < 0.5 else -1.0
-            nx, nz = -(rb[1] - ra[1]) / seg_len, (rb[0] - ra[0]) / seg_len
-            off = rng_build.uniform(30.0, 82.0)
-            hx = base_x + nx * side * off
-            hz = base_z + nz * side * off
-            if not (xmin + 7 < hx < xmax - 7 and zmin + 7 < hz < zmax - 7):
-                continue
-            ground_y = ground_at(hx, hz)
-            if ground_y < 2.0 or ground_y > 300.0 or road_index.distance((hx, hz)) < 15.0:
-                continue
-            if any(math.hypot(hx - ex, hz - ez) < 20.0 for ex, ez, _ in existing):
-                continue
-            if any(math.hypot(hx - px2, hz - pz2) < 22.0 for px2, pz2 in proc_centers):
-                continue
-            angle = math.atan2(rb[0] - ra[0], -(rb[1] - ra[1])) + rng_build.uniform(-0.32, 0.32)
-            width = rng_build.uniform(7.5, 15.0)
-            depth = rng_build.uniform(6.0, 11.5)
-            cos_a, sin_a = math.cos(angle), math.sin(angle)
-            corners = []
-            inside_existing = False
-            for ux, uz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-                cx = hx + (cos_a * width * 0.5 * ux - sin_a * depth * 0.5 * uz)
-                cz = hz + (sin_a * width * 0.5 * ux + cos_a * depth * 0.5 * uz)
-                corners.append((cx, cz))
-                if abs(cx) > (w - 1) * dx / 2 - 3 or abs(cz) > (h - 1) * dz / 2 - 3 or ground_at(cx, cz) < 1.0:
-                    inside_existing = True
-                    break
-                if any(point_in_poly(cx, cz, epoly) for _, _, epoly in existing):
-                    inside_existing = True
-                    break
-            if inside_existing:
-                continue
-            levels = 1 + (rng_build.random() < 0.22) + (rng_build.random() < 0.10)
-            buildings.append((-9000000 - proc_id, corners, {"building": "house", "building:levels": str(levels)}))
-            proc_centers.append((hx, hz))
-            proc_id += 1
-        distance_along += seg_len
+    # Do not invent buildings where OSM has no footprints.
 
     # Buildings: simplified footprints with a plinth, cornice, roofs and local windows.
     def near_road(p):
@@ -1104,6 +1157,9 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             kind = "commercial"
         elif any(k in kind for k in ("industrial", "warehouse", "factory")):
             kind = "industrial"
+        if kind in ("house", "garage", "garages", "shed") and height > 11.0:
+            height = 11.0
+            top = base + height
         palette = FACADES.get(kind, FACADES["residential"])
         hsel = stable_hash(way_id)
         facade = palette[hsel % len(palette)]
@@ -1328,11 +1384,18 @@ def main():
     parser.add_argument("--map-only", action="store_true", help="only rebuild region.json and region_map.png")
     parser.add_argument("--tile", type=int, action="append", help="build only selected chunk number(s)")
     args = parser.parse_args()
+    if args.tile:
+        raise SystemExit("partial tile rebuilds would overwrite the regional street index; rebuild all tiles")
     ROUTE_DIR.mkdir(parents=True, exist_ok=True)
     route = load_route()
     region_osm = load_region_osm()
     water = load_water()
     chunks = load_chunks(route)
+    if not args.map_only:
+        # Validate all required elevation files before replacing any assets.
+        for lon in sorted({lon for _, _, _, (_, west, _, east), _ in chunks
+                           for lon in range(math.floor(west), math.floor(east) + 1)}):
+            dem_tile(lon)
     region, rxz, cumulative, headings = build_region(route, region_osm, chunks, water)
     build_region_map(region_osm, water)
     print(f"region: {region['length_m']/1000:.1f} km, {len(region['tiles'])} tiles, {len(region['places'])} places")

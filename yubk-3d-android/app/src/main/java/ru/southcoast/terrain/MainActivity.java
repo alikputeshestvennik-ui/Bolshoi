@@ -27,6 +27,7 @@ public class MainActivity extends Activity {
     private AlertDialog teleportDialog;
     private volatile boolean switchingTile;
     private int speedIndex = 2;
+    private volatile boolean snapToRoads;
     private static final float[] SPEEDS = {5f, 40f / 3.6f, 70f / 3.6f};
     private static final String[] SPEED_LABELS = {"5 м/с", "40 км/ч", "70 км/ч"};
 
@@ -61,6 +62,23 @@ public class MainActivity extends Activity {
         speedIndex = (speedIndex + 1) % SPEEDS.length;
         applySpeed();
         Toast.makeText(this, "Скорость: " + speedText(), Toast.LENGTH_SHORT).show();
+    }
+
+    private void showSettings() {
+        CheckBox box = new CheckBox(this);
+        box.setText("Привязывать поездку к дорогам");
+        box.setChecked(snapToRoads);
+        box.setPadding(dp(18), dp(10), dp(18), dp(10));
+        new AlertDialog.Builder(this).setTitle("Настройки поездки").setView(box)
+                .setPositiveButton("Сохранить", (d, which) -> {
+                    snapToRoads = box.isChecked();
+                    getPreferences(MODE_PRIVATE).edit().putBoolean("snap_to_roads", snapToRoads).apply();
+                    if (terrain != null) {
+                        boolean enabled = snapToRoads;
+                        terrain.queueEvent(() -> { if (terrain.scene != null) terrain.scene.setRoadSnap(enabled); });
+                    }
+                    Toast.makeText(this, snapToRoads ? "Движение по дорогам включено" : "Свободное движение включено", Toast.LENGTH_SHORT).show();
+                }).setNegativeButton("Отмена", null).show();
     }
 
     private void confirmTeleport(float x, float z) {
@@ -122,6 +140,7 @@ public class MainActivity extends Activity {
                 scene.pitch = 0;
                 scene.forward = 0;
                 scene.moveSpeed = SPEEDS[speedIndex];
+                scene.setRoadSnap(snapToRoads);
                 terrain.setScene(scene);
                 currentTile = tile;
                 runOnUiThread(() -> {
@@ -226,17 +245,20 @@ public class MainActivity extends Activity {
             places.setOnClickListener(v -> showPlaces());
             HudButton streets = new HudButton(this, HudButton.STREETS, "Улицы");
             streets.setOnClickListener(v -> showStreets());
+            HudButton settings = new HudButton(this, HudButton.SETTINGS, "Настройки");
+            settings.setOnClickListener(v -> showSettings());
             HudButton start = new HudButton(this, HudButton.PLAY, "Продолжить");
             start.setAccent(true);
             start.setOnClickListener(v -> {
                 if (!hasWalked) Toast.makeText(this, "Сначала выберите участок на карте", Toast.LENGTH_SHORT).show();
                 else { mapScreen.setVisibility(View.GONE); walkScreen.setVisibility(View.VISIBLE); terrain.requestRender(); }
             });
-            mapControls.addView(route, new LinearLayout.LayoutParams(dp(88), dp(58)));
-            mapControls.addView(places, new LinearLayout.LayoutParams(dp(76), dp(58)));
-            mapControls.addView(streets, new LinearLayout.LayoutParams(dp(76), dp(58)));
-            mapControls.addView(start, new LinearLayout.LayoutParams(dp(88), dp(58)));
-            FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            mapControls.addView(route, new LinearLayout.LayoutParams(0, dp(58), 1));
+            mapControls.addView(places, new LinearLayout.LayoutParams(0, dp(58), 1));
+            mapControls.addView(streets, new LinearLayout.LayoutParams(0, dp(58), 1));
+            mapControls.addView(settings, new LinearLayout.LayoutParams(0, dp(58), 1));
+            mapControls.addView(start, new LinearLayout.LayoutParams(0, dp(58), 1));
+            FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
             controlParams.setMargins(0, 0, 0, dp(10));
             mapScreen.addView(mapControls, controlParams);
 
@@ -276,11 +298,11 @@ public class MainActivity extends Activity {
             speedButton.setOnClickListener(v -> cycleSpeed());
             HudButton mapButton = new HudButton(this, HudButton.MAP, "Карта");
             mapButton.setOnClickListener(v -> showMap());
-            walkControls.addView(back, new LinearLayout.LayoutParams(dp(76), dp(58)));
-            walkControls.addView(forward, new LinearLayout.LayoutParams(dp(88), dp(58)));
+            walkControls.addView(back, new LinearLayout.LayoutParams(0, dp(58), 1));
+            walkControls.addView(forward, new LinearLayout.LayoutParams(0, dp(58), 1));
             walkControls.addView(speedButton, new LinearLayout.LayoutParams(dp(92), dp(58)));
             walkControls.addView(mapButton, new LinearLayout.LayoutParams(dp(78), dp(58)));
-            FrameLayout.LayoutParams walkControlParams = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            FrameLayout.LayoutParams walkControlParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
             walkControlParams.setMargins(0, 0, 0, dp(10));
             walkScreen.addView(walkControls, walkControlParams);
 
@@ -303,6 +325,7 @@ public class MainActivity extends Activity {
             root.addView(mapScreen, new FrameLayout.LayoutParams(-1, -1));
             root.addView(loading, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
             walkScreen.setVisibility(View.GONE);
+            snapToRoads = getPreferences(MODE_PRIVATE).getBoolean("snap_to_roads", false);
             setContentView(root);
             root.requestApplyInsets();
         } catch (IOException e) {

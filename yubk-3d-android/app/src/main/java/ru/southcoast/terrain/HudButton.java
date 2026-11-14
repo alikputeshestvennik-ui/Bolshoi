@@ -7,7 +7,7 @@ import android.view.View;
 
 /** Compact canvas-drawn control used instead of rows of default Android buttons. */
 final class HudButton extends View {
-    static final int MAP = 1, PLACES = 2, ROUTE = 3, SPEED = 4, WALK = 5, DRIVE = 6, FORWARD = 7, BACK = 8, PLAY = 9, STREETS = 10;
+    static final int MAP = 1, PLACES = 2, ROUTE = 3, SPEED = 4, WALK = 5, DRIVE = 6, FORWARD = 7, BACK = 8, PLAY = 9, STREETS = 10, SETTINGS = 11;
 
     final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     final Path path = new Path();
