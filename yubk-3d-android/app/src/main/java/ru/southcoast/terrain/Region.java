@@ -87,11 +87,46 @@ final class Region {
         }
     }
 
+    static final class Landuse {
+        final String kind;
+        final float[] points;
+        Landuse(JSONObject j) throws JSONException {
+            kind = j.getString("kind");
+            JSONArray pts = j.getJSONArray("points");
+            points = new float[pts.length() * 2];
+            for (int i = 0; i < pts.length(); i++) {
+                JSONArray p = pts.getJSONArray(i);
+                points[i * 2] = (float) p.getDouble(0);
+                points[i * 2 + 1] = (float) p.getDouble(1);
+            }
+        }
+    }
+
+    static final class RoadGroup {
+        final String kind;
+        final float[] segs;
+        RoadGroup(JSONObject j) throws JSONException {
+            kind = j.optString("kind", "road");
+            JSONArray segsJson = j.getJSONArray("segments");
+            segs = new float[segsJson.length() * 4];
+            for (int i = 0; i < segsJson.length(); i++) {
+                JSONArray s = segsJson.getJSONArray(i);
+                segs[i * 4] = (float) s.getDouble(0);
+                segs[i * 4 + 1] = (float) s.getDouble(1);
+                segs[i * 4 + 2] = (float) s.getDouble(2);
+                segs[i * 4 + 3] = (float) s.getDouble(3);
+            }
+        }
+    }
+
     final String name;
     final float originLat, originLon, sx, sz;
     final float worldLeft, worldTop, worldRight, worldBottom;
     final float[] route;
     final float[] roads;
+    final RoadGroup[] roadGroups;
+    final Landuse[] landuse;
+    final float[][] coast;
     final List<float[]> branches = new ArrayList<>();
     final Place[] places;
     final Street[] streets;
@@ -151,6 +186,9 @@ final class Region {
                     }
                 }
             }
+            JSONArray roadGroupJson = j.optJSONArray("road_groups");
+            roadGroups = new RoadGroup[roadGroupJson == null ? 0 : roadGroupJson.length()];
+            for (int i = 0; i < roadGroups.length; i++) roadGroups[i] = new RoadGroup(roadGroupJson.getJSONObject(i));
             JSONArray streetJson = j.optJSONArray("streets");
             int streetCount = streetJson == null ? 0 : streetJson.length();
             streets = new Street[streetCount];
@@ -159,6 +197,21 @@ final class Region {
             int waterCount = waterJson == null ? 0 : waterJson.length();
             water = new Water[waterCount];
             for (int i = 0; i < waterCount; i++) water[i] = new Water(waterJson.getJSONObject(i));
+            JSONArray landuseJson = j.optJSONArray("landuse");
+            landuse = new Landuse[landuseJson == null ? 0 : landuseJson.length()];
+            for (int i = 0; i < landuse.length; i++) landuse[i] = new Landuse(landuseJson.getJSONObject(i));
+            JSONArray coastJson = j.optJSONArray("coast");
+            coast = new float[coastJson == null ? 0 : coastJson.length()][];
+            for (int i = 0; i < coast.length; i++) {
+                JSONArray line = coastJson.getJSONArray(i);
+                float[] pts = new float[line.length() * 2];
+                for (int k = 0; k < line.length(); k++) {
+                    JSONArray p = line.getJSONArray(k);
+                    pts[k * 2] = (float) p.getDouble(0);
+                    pts[k * 2 + 1] = (float) p.getDouble(1);
+                }
+                coast[i] = pts;
+            }
             JSONArray branchJson = j.optJSONArray("branches");
             if (branchJson != null) {
                 for (int i = 0; i < branchJson.length(); i++) {
@@ -211,6 +264,14 @@ final class Region {
     Tile tileById(String id) {
         for (Tile tile : tiles) if (tile.id.equals(id)) return tile;
         return null;
+    }
+
+    float[] globalForStreet(Street street) {
+        Tile tile = tileById(street.tileId);
+        if (tile == null) return new float[]{street.lx, street.lz};
+        float gx = street.lx + (tile.originLon - originLon) * sx;
+        float gz = street.lz + (originLat - tile.originLat) * sz;
+        return new float[]{gx, gz};
     }
 
     Place placeAt(float x, float z, float maxMeters) {

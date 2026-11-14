@@ -41,6 +41,12 @@ ROAD_STEP_OTHER = 3.5
 CORRIDOR_M = 520.0
 MAX_WINDOWS_PER_TILE = 10000
 WATER_LEVEL = 0.8
+MAJOR_ROAD_CLASSES = ("trunk", "primary", "secondary", "tertiary")
+REGION_ROAD_CLASSES = (
+    "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link",
+    "tertiary", "tertiary_link", "unclassified", "residential", "living_street",
+    "service", "pedestrian", "footway", "path", "cycleway", "steps", "track", "road",
+)
 
 # WGS84 metres per degree at the latitude of the South Coast.
 _phi = math.radians(44.55)
@@ -545,6 +551,37 @@ def find_tile_for_distance(cumulative, distance):
     return len(cumulative) - 1
 
 
+def build_roads(region_osm):
+    """Project OSM highways to metric segments, grouped by class for the 2D map."""
+    major = []
+    groups = []
+    group_index = {}
+    seen_ways = set()
+    allowed = set(REGION_ROAD_CLASSES)
+    for element in region_osm.get("elements", []):
+        tags = element.get("tags", {})
+        cls = tags.get("highway")
+        if element.get("type") != "way" or cls not in allowed or not element.get("geometry"):
+            continue
+        if element["id"] in seen_ways:
+            continue
+        seen_ways.add(element["id"])
+        points = [xz(p["lat"], p["lon"]) for p in element["geometry"]]
+        if len(points) < 2:
+            continue
+        segs = [[round(a, 1), round(b, 1), round(c, 1), round(d, 1)]
+                for (a, b), (c, d) in zip(points, points[1:])]
+        if cls in MAJOR_ROAD_CLASSES:
+            major.extend(segs)
+        group = group_index.get(cls)
+        if group is None:
+            group = {"kind": cls, "segments": []}
+            group_index[cls] = group
+            groups.append(group)
+        group["segments"].extend(segs)
+    return major, groups
+
+
 def heading_at(route, i):
     a = route[max(0, i - 1)]
     b = route[min(len(route) - 1, i + 1)]
@@ -560,7 +597,7 @@ def place_name_for_tile(chunks, places):
     return None
 
 
-def build_region(route, region_osm, chunks, water):
+def build_region(route, region_osm, chunks, water, existing=None):
     rxz = [xz(lat, lon) for lat, lon in route]
     cumulative = [0.0]
     for a, b in zip(rxz, rxz[1:]):
@@ -574,6 +611,18 @@ def build_region(route, region_osm, chunks, water):
         if element.get("type") == "way" and tags.get("natural") == "coastline" and element.get("geometry"):
             coast.append([list(xz(p["lat"], p["lon"])) for p in element["geometry"]])
 
+    # Built-up area polygons make settlements readable as distinct districts at every zoom.
+    landuse_kinds = ("residential", "commercial", "industrial", "retail")
+    landuse = []
+    for element in region_osm.get("elements", []):
+        tags = element.get("tags", {})
+        if element.get("type") != "way" or tags.get("landuse") not in landuse_kinds or not element.get("geometry"):
+            continue
+        points = [xz(p["lat"], p["lon"]) for p in element["geometry"]]
+        if len(points) < 3:
+            continue
+        landuse.append({"kind": tags["landuse"], "points": [[round(x, 1), round(z, 1)] for x, z in points]})
+
     places = []
     seen = set()
     for element in region_osm.get("elements", []):
@@ -586,8 +635,6 @@ def build_region(route, region_osm, chunks, water):
         seen.add(name)
         gx, gz = xz(element["lat"], element["lon"])
         nearest = min(range(len(rxz)), key=lambda i: (rxz[i][0] - gx) ** 2 + (rxz[i][1] - gz) ** 2)
-        if math.hypot(rxz[nearest][0] - gx, rxz[nearest][1] - gz) > 6500:
-            continue
         places.append({"name": name, "x": gx, "z": gz, "kind": tags["place"], "route_m": cumulative[nearest]})
 
     sights = [
@@ -604,46 +651,38 @@ def build_region(route, region_osm, chunks, water):
         ("Артек", 44.5440, 34.2970, "sight"),
         ("Алушта", 44.6771, 34.4095, "town"),
     ]
-    existing = {p["name"] for p in places}
+    existing_names = {p["name"] for p in places}
     for name, lat, lon, kind in sights:
-        if name in existing:
+        if name in existing_names:
             continue
         gx, gz = xz(lat, lon)
         nearest = min(range(len(rxz)), key=lambda i: (rxz[i][0] - gx) ** 2 + (rxz[i][1] - gz) ** 2)
         places.append({"name": name, "x": gx, "z": gz, "kind": kind, "route_m": cumulative[nearest]})
     places.sort(key=lambda p: (p["route_m"], p["name"]))
 
-    # Regional major-road overlay. The highlighted route is drawn by the app.
-    roads = []
-    seen_ways = set()
-    for element in region_osm.get("elements", []):
-        tags = element.get("tags", {})
-        if element.get("type") != "way" or tags.get("highway") not in ("trunk", "primary", "secondary", "tertiary"):
-            continue
-        if element["id"] in seen_ways or not element.get("geometry"):
-            continue
-        seen_ways.add(element["id"])
-        points = [xz(p["lat"], p["lon"]) for p in element["geometry"]]
-        if len(points) > 1:
-            roads.append([[round(a, 1), round(b, 1), round(c, 1), round(d, 1)] for (a, b), (c, d) in zip(points, points[1:])])
+    # Regional road overlay grouped by class; the highlighted route is drawn by the app.
+    roads, road_groups = build_roads(region_osm)
 
     tiles = []
-    for n, start, end, (south, west, north, east), path in chunks:
-        gx0, gz0 = xz(north, west)
-        gx1, gz1 = xz(south, east)
-        mid_lat, mid_lon = (south + north) / 2, (west + east) / 2
-        mid_distance = (start + end) * 500.0
-        idx = find_tile_for_distance(cumulative, mid_distance)
-        # Name a section after the nearest settlement/landmark, if one is close.
-        near = min(places, key=lambda p: abs(p["route_m"] - mid_distance), default=None)
-        label = f"ЮБК · {start:.0f}–{end:.0f} км"
-        if near and abs(near["route_m"] - mid_distance) < 12000:
-            label = f"{near['name']} · {start:.0f}–{end:.0f} км"
-        tiles.append({
-            "id": f"tile_{n:02d}", "name": label, "start_m": start * 1000.0, "end_m": end * 1000.0,
-            "bbox": [west, south, east, north], "x0": gx0, "z0": gz0, "x1": gx1, "z1": gz1,
-            "origin": [mid_lat, mid_lon],
-        })
+    if chunks:
+        for n, start, end, (south, west, north, east), path in chunks:
+            gx0, gz0 = xz(north, west)
+            gx1, gz1 = xz(south, east)
+            mid_lat, mid_lon = (south + north) / 2, (west + east) / 2
+            mid_distance = (start + end) * 500.0
+            idx = find_tile_for_distance(cumulative, mid_distance)
+            # Name a section after the nearest settlement/landmark, if one is close.
+            near = min(places, key=lambda p: abs(p["route_m"] - mid_distance), default=None)
+            label = f"ЮБК · {start:.0f}–{end:.0f} км"
+            if near and abs(near["route_m"] - mid_distance) < 12000:
+                label = f"{near['name']} · {start:.0f}–{end:.0f} км"
+            tiles.append({
+                "id": f"tile_{n:02d}", "name": label, "start_m": start * 1000.0, "end_m": end * 1000.0,
+                "bbox": [west, south, east, north], "x0": gx0, "z0": gz0, "x1": gx1, "z1": gz1,
+                "origin": [mid_lat, mid_lon],
+            })
+    elif existing:
+        tiles = existing.get("tiles", [])
 
     # A compact route polyline for drawing and nearest-point search.
     route_map = []
@@ -693,7 +732,7 @@ def build_region(route, region_osm, chunks, water):
         })
 
     region = {
-        "name": "ЮБК · Севастополь — Алушта",
+        "name": (existing or {}).get("name", "ЮБК · Севастополь — Алушта"),
         "bounds": list(REGION_BOUNDS),
         "origin": [ORIGIN_LAT, ORIGIN_LON],
         "sx": SX,
@@ -701,14 +740,18 @@ def build_region(route, region_osm, chunks, water):
         "length_m": total,
         "route": route_map,
         "coast": coast,
+        "landuse": landuse,
         "roads": roads,
+        "road_groups": road_groups,
         "branches": branches,
         "water": water_lines,
         "places": places,
         "tiles": tiles,
-        "map": "route/region_map.png",
-        "source": "© OpenStreetMap contributors, ODbL 1.0; Mapzen/Tilezen Skadi (SRTM)", 
+        "map": (existing or {}).get("map", "route/region_map.png"),
+        "source": (existing or {}).get("source", "© OpenStreetMap contributors, ODbL 1.0; Mapzen/Tilezen Skadi (SRTM)"),
     }
+    if existing:
+        region["streets"] = existing.get("streets", [])
     ROUTE_DIR.mkdir(parents=True, exist_ok=True)
     (ROUTE_DIR / "region.json").write_text(json.dumps(region, ensure_ascii=False, separators=(",", ":")))
     headings = [heading_at(rxz, i) for i in range(len(rxz))]
@@ -724,17 +767,11 @@ def write_png(path, width, height, rgb: bytes):
 
 
 def build_region_map(region_osm, water):
-    """Render a hill-shaded regional backdrop and road context as a PNG."""
-    try:
-        from PIL import Image, ImageDraw
-    except ImportError:
-        print("PIL is required for region_map.png", file=sys.stderr)
-        return
+    """Render a hill-shaded regional backdrop; roads and labels stay vector on Android."""
     bounds = REGION_BOUNDS
     west, south, east, north = bounds
     W, H = 1200, 576
-    image = Image.new("RGB", (W, H))
-    pixels = image.load()
+    rgb = bytearray(W * H * 3)
     step_x = (east - west) / (W - 1)
     step_z = (north - south) / (H - 1)
     for row in range(H):
@@ -760,7 +797,17 @@ def build_region_map(region_osm, water):
                 color = mix3((0.36, 0.40, 0.24), (0.48, 0.45, 0.32), clamp((h - 90) / 310, 0, 1))
             else:
                 color = mix3((0.48, 0.46, 0.39), (0.58, 0.57, 0.52), clamp((h - 400) / 800, 0, 1))
-            pixels[col, row] = tuple(int(clamp(v * shade, 0, 1) * 255) for v in color)
+            at = (row * W + col) * 3
+            rgb[at] = int(clamp(color[0] * shade, 0, 1) * 255)
+            rgb[at + 1] = int(clamp(color[1] * shade, 0, 1) * 255)
+            rgb[at + 2] = int(clamp(color[2] * shade, 0, 1) * 255)
+    write_png(ROUTE_DIR / "region_map.png", W, H, bytes(rgb))
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print("PIL unavailable: region_map.png is terrain-only; roads/labels stay vector on Android", file=sys.stderr)
+        return
+    image = Image.open(ROUTE_DIR / "region_map.png").convert("RGB")
     draw = ImageDraw.Draw(image, "RGBA")
     # Urban and rural settlement tint from OSM landuse.
     for element in region_osm.get("elements", []):
@@ -774,21 +821,7 @@ def build_region_map(region_osm, water):
             pts.append((px, py))
         if len(pts) > 2:
             draw.polygon(pts, fill=(120, 120, 110, 52 if tags.get("landuse") == "residential" else 70))
-    # Major roads; the highlighted route is drawn by Android on top.
-    road_colors = {"trunk": (216, 193, 142, 220), "primary": (207, 188, 145, 200), "secondary": (195, 188, 160, 180), "tertiary": (187, 184, 165, 150), "residential": (168, 168, 154, 130), "living_street": (168, 168, 154, 130), "pedestrian": (172, 166, 148, 130), "unclassified": (178, 176, 158, 130), "service": (160, 162, 150, 110)}
-    widths = {"trunk": 4, "primary": 3, "secondary": 2, "tertiary": 1, "residential": 1, "living_street": 1, "pedestrian": 1, "unclassified": 1, "service": 1}
-    for element in region_osm.get("elements", []):
-        tags = element.get("tags", {})
-        cls = tags.get("highway")
-        if element.get("type") != "way" or cls not in road_colors or not element.get("geometry"):
-            continue
-        pts = []
-        for p in element["geometry"]:
-            px = (p["lon"] - west) / (east - west) * (W - 1)
-            py = (north - p["lat"]) / (north - south) * (H - 1)
-            pts.append((px, py))
-        if len(pts) > 1:
-            draw.line(pts, fill=road_colors[cls], width=widths[cls], joint="curve")
+    # Roads are drawn vectorially by the Android map so they stay crisp at every zoom.
     # Water: rivers, streams, canals, drains and ponds/lakes.
     water_px = lambda p: ((p["lon"] - west) / (east - west) * (W - 1), (north - p["lat"]) / (north - south) * (H - 1))
     for el in water:
@@ -983,6 +1016,7 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
     main_refs = ("35А-002", "35К-002", "67К-1", "М-18", "А-291")
     route_distance = 0.0
     route_marker_next = 500.0
+    route_light_next = 65.0
     for way_id, run, tags in sorted(roads_all, key=lambda v: (v[2].get("highway") not in ("trunk", "primary"), v[0])):
         name = tags.get("name:ru") or tags.get("name") or ""
         ref = tags.get("ref") or ""
@@ -1006,6 +1040,9 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         elif surface in ("unpaved", "gravel", "ground", "dirt", "compacted"):
             asphalt = (0.49, 0.42, 0.30)
             shoulder = (0.43, 0.38, 0.28)
+        elif cls in ("primary", "secondary", "tertiary"):
+            asphalt = (0.40, 0.42, 0.43)
+            shoulder = (0.58, 0.55, 0.47)
         else:
             asphalt = (0.43, 0.44, 0.45) if is_main else (0.36, 0.37, 0.37)
             shoulder = (0.60, 0.56, 0.47) if is_main else (0.51, 0.48, 0.40)
@@ -1033,6 +1070,17 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             segment_asphalt = tuple(clamp(v + tone, 0.0, 1.0) for v in asphalt)
             strip2(mesh, a, b, half + 0.55, 0.055, ya, yb, shoulder)
             strip2(mesh, a, b, half, 0.11, ya, yb, segment_asphalt)
+            # Vertical curbs anchor roads into the terrain instead of floating over it.
+            if "footway" not in cls and "path" not in cls and "steps" not in cls and "cycleway" not in cls and "track" not in cls and not tunnel:
+                nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+                curb = (0.32, 0.31, 0.29) if not is_main else (0.40, 0.39, 0.36)
+                for edge, top_off in ((half + 0.55, 0.055), (half, 0.11)):
+                    for side in (-1, 1):
+                        ax_ = a[0] + nx * edge * side
+                        az_ = a[1] + nz * edge * side
+                        bx_ = b[0] + nx * edge * side
+                        bz_ = b[1] + nz * edge * side
+                        mesh.quad((ax_, ground_ya - 0.06, az_), (bx_, ground_yb - 0.06, bz_), (bx_, yb + top_off, bz_), (ax_, ya + top_off, az_), curb)
             if sidewalk and is_main:
                 for side in (-1, 1):
                     nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
@@ -1040,7 +1088,8 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                     pa = (a[0] + nx * off * side, a[1] + nz * off * side)
                     pb = (b[0] + nx * off * side, b[1] + nz * off * side)
                     strip2(mesh, pa, pb, 0.65, 0.17, ya, yb, (0.66, 0.63, 0.55))
-            if is_main and ("footway" not in cls and "path" not in cls):
+            markings = ("footway" not in cls and "path" not in cls and "pedestrian" not in cls and "service" not in cls and "steps" not in cls and widths >= 4.5)
+            if markings:
                 # Continuous edge lines and a dashed centre line.
                 for side in (-1, 1):
                     nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
@@ -1055,6 +1104,21 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                     strip2(mesh, a, b, 0.085, 0.14, ya, yb, (0.98, 0.96, 0.83))
             if is_main:
                 route_distance += length
+                while route_distance >= route_light_next:
+                    route_light_next += 65.0
+                    nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+                    tx, tz = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+                    frac = 1.0 - (route_distance - (route_light_next - 65.0)) / length
+                    frac = max(0.0, min(1.0, frac))
+                    lx = a[0] + (b[0] - a[0]) * frac
+                    lz = a[1] + (b[1] - a[1]) * frac
+                    ly = ground_at(lx, lz)
+                    off = half + 2.4
+                    px = lx + nx * off
+                    pz = lz + nz * off
+                    top_y = ly + 4.4
+                    mesh.quad((px - tx * 0.07, ly, pz - tz * 0.07), (px + tx * 0.07, ly, pz + tz * 0.07), (px + tx * 0.07, top_y, pz + tz * 0.07), (px - tx * 0.07, top_y, pz - tz * 0.07), (0.42, 0.43, 0.44))
+                    mesh.quad((px - nx * 0.42, top_y - 0.24, pz - nz * 0.42), (px + nx * 0.42, top_y - 0.24, pz + nz * 0.42), (px + nx * 0.42, top_y + 0.06, pz + nz * 0.42), (px - nx * 0.42, top_y + 0.06, pz - nz * 0.42), (0.94, 0.88, 0.58))
                 while route_distance >= route_marker_next:
                     route_marker_next += 500.0
                     nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
@@ -1382,6 +1446,7 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--map-only", action="store_true", help="only rebuild region.json and region_map.png")
+    parser.add_argument("--region-only", action="store_true", help="rebuild region.json and region_map.png from data/ without the tile cache")
     parser.add_argument("--tile", type=int, action="append", help="build only selected chunk number(s)")
     args = parser.parse_args()
     if args.tile:
@@ -1390,6 +1455,16 @@ def main():
     route = load_route()
     region_osm = load_region_osm()
     water = load_water()
+    if args.region_only:
+        existing = {}
+        path = ROUTE_DIR / "region.json"
+        if path.exists():
+            existing = json.loads(path.read_text())
+        region, rxz, cumulative, headings = build_region(route, region_osm, None, water, existing)
+        build_region_map(region_osm, water)
+        print(f"region: {region['length_m']/1000:.1f} km, {len(region['tiles'])} tiles, {len(region['places'])} places, "
+              f"{sum(len(g['segments']) for g in region.get('road_groups', []))} road segments")
+        return
     chunks = load_chunks(route)
     if not args.map_only:
         # Validate all required elevation files before replacing any assets.

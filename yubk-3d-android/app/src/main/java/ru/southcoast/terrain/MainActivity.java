@@ -391,6 +391,14 @@ public class MainActivity extends Activity {
             super(MainActivity.this);
             setEGLConfigChooser((egl, display) -> {
                 for (int depth : new int[]{24, 16}) {
+                    for (int samples : new int[]{4, 2}) {
+                        int[] spec = {EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8,
+                                EGL10.EGL_DEPTH_SIZE, depth, EGL10.EGL_SAMPLE_BUFFERS, 1, EGL10.EGL_SAMPLES, samples,
+                                EGL10.EGL_RENDERABLE_TYPE, 1, EGL10.EGL_NONE};
+                        EGLConfig[] configs = new EGLConfig[1];
+                        int[] n = new int[1];
+                        if (egl.eglChooseConfig(display, spec, configs, 1, n) && n[0] > 0) return configs[0];
+                    }
                     int[] spec = {EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8, EGL10.EGL_DEPTH_SIZE, depth, EGL10.EGL_RENDERABLE_TYPE, 1, EGL10.EGL_NONE};
                     EGLConfig[] configs = new EGLConfig[1];
                     int[] n = new int[1];
@@ -415,7 +423,12 @@ public class MainActivity extends Activity {
             return true;
         }
 
-        public void onSurfaceCreated(GL10 gl, EGLConfig c) { gl.glEnable(GL10.GL_DEPTH_TEST); }
+        public void onSurfaceCreated(GL10 gl, EGLConfig c) {
+            gl.glEnable(GL10.GL_DEPTH_TEST);
+            gl.glShadeModel(GL10.GL_SMOOTH);
+            gl.glHint(GL10.GL_PERSPECTIVE_CORRECTION_HINT, GL10.GL_NICEST);
+            gl.glEnable(GL10.GL_DITHER);
+        }
         public void onSurfaceChanged(GL10 gl, int w, int h) { gl.glViewport(0, 0, w, h); aspect = (float) w / Math.max(1, h); }
         public void onDrawFrame(GL10 gl) {
             WalkScene s = scene;

@@ -82,11 +82,16 @@ final class RegionMapView extends View {
         super.onDraw(c);
         transform();
         c.drawColor(Color.rgb(10, 24, 29));
-        if (region.map != null) {
+        if (region.map != null && (compact || zoom <= 40f)) {
             dstRect.set(px(region.worldLeft), py(region.worldTop), px(region.worldRight), py(region.worldBottom));
             paint.setFilterBitmap(true);
             c.drawBitmap(region.map, null, dstRect, paint);
+        } else {
+            // Deep street-level zoom: a clean flat base keeps the vector overlay crisp.
+            c.drawColor(Color.rgb(31, 48, 51));
         }
+        drawLanduse(c);
+        drawCoast(c);
 
         // The whole Sevastopol-Alushta highway stays visible as the visual spine of the screen.
         float[] r = region.route;
@@ -124,6 +129,58 @@ final class RegionMapView extends View {
         }
         drawMarker(c);
         if (!compact) drawScale(c);
+    }
+
+    void drawLanduse(Canvas c) {
+        if (region.landuse == null || region.landuse.length == 0 || compact) return;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setAntiAlias(true);
+        for (Region.Landuse area : region.landuse) {
+            if (area.points.length < 6) continue;
+            path.reset();
+            path.moveTo(px(area.points[0]), py(area.points[1]));
+            for (int i = 2; i + 1 < area.points.length; i += 2) path.lineTo(px(area.points[i]), py(area.points[i + 1]));
+            path.close();
+            paint.setColor(landuseFillColor(area.kind));
+            c.drawPath(path, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(0.6f * density);
+            paint.setColor(landuseStrokeColor(area.kind));
+            c.drawPath(path, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private int landuseFillColor(String kind) {
+        switch (kind) {
+            case "commercial": case "retail": return Color.argb(72, 220, 206, 174);
+            case "industrial": return Color.argb(82, 188, 180, 158);
+            default: return Color.argb(58, 214, 204, 180);
+        }
+    }
+
+    private int landuseStrokeColor(String kind) {
+        switch (kind) {
+            case "commercial": case "retail": return Color.argb(95, 232, 216, 184);
+            case "industrial": return Color.argb(95, 198, 190, 168);
+            default: return Color.argb(82, 224, 216, 190);
+        }
+    }
+
+    void drawCoast(Canvas c) {
+        if (region.coast == null || region.coast.length == 0) return;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setColor(Color.argb(compact ? 150 : 200, 228, 232, 210));
+        paint.setStrokeWidth((compact ? 0.7f : 1.3f) * density);
+        for (float[] line : region.coast) {
+            if (line.length < 4) continue;
+            path.reset();
+            path.moveTo(px(line[0]), py(line[1]));
+            for (int i = 2; i + 1 < line.length; i += 2) path.lineTo(px(line[i]), py(line[i + 1]));
+            c.drawPath(path, paint);
+        }
     }
 
     void drawWater(Canvas c) {
@@ -177,6 +234,10 @@ final class RegionMapView extends View {
     }
 
     void drawRoads(Canvas c) {
+        if (region.roadGroups != null && region.roadGroups.length > 0) {
+            drawRoadGroups(c);
+            return;
+        }
         float[] r = region.roads;
         if (r == null || r.length < 4) return;
         paint.setStyle(Paint.Style.STROKE);
@@ -192,6 +253,106 @@ final class RegionMapView extends View {
         paint.setColor(Color.argb(compact ? 120 : 175, 226, 218, 194));
         paint.setStrokeWidth((compact ? 0.55f : 1.05f) * density);
         c.drawPath(path, paint);
+    }
+
+    private static final String[] ROAD_ORDER = {
+        "track", "path", "steps", "cycleway", "footway", "pedestrian", "service",
+        "living_street", "residential", "unclassified", "road",
+        "tertiary", "tertiary_link", "secondary", "secondary_link",
+        "primary", "primary_link", "trunk", "trunk_link"
+    };
+
+    private Region.RoadGroup groupOf(String kind) {
+        if (region.roadGroups == null) return null;
+        for (Region.RoadGroup g : region.roadGroups) if (g.kind.equals(kind)) return g;
+        return null;
+    }
+
+    private boolean roadVisible(String kind, float zoom) {
+        switch (kind) {
+            case "trunk": case "trunk_link": case "primary": case "primary_link":
+            case "secondary": case "secondary_link": case "tertiary": case "tertiary_link":
+                return zoom >= 1.0f;
+            case "unclassified": case "residential": case "living_street": case "road":
+                return zoom >= 2.2f;
+            case "service": case "pedestrian":
+                return zoom >= 3.2f;
+            default:
+                return zoom >= 5.0f;
+        }
+    }
+
+    private float roadWidthMeters(String kind) {
+        switch (kind) {
+            case "trunk": case "trunk_link": return 10f;
+            case "primary": case "primary_link": return 8f;
+            case "secondary": case "secondary_link": return 6.5f;
+            case "tertiary": case "tertiary_link": return 5.5f;
+            case "residential": case "unclassified": case "road": case "living_street":
+                return 4.6f;
+            case "service": case "pedestrian": return 3.4f;
+            case "footway": case "cycleway": return 2.1f;
+            case "path": return 1.6f;
+            case "steps": return 1.2f;
+            default: return 3f;
+        }
+    }
+
+    private float roadMinPx(String kind) {
+        switch (kind) {
+            case "trunk": case "primary": case "secondary": case "tertiary":
+            case "trunk_link": case "primary_link": case "secondary_link": case "tertiary_link":
+                return 1.1f * density;
+            case "footway": case "path": case "steps": case "cycleway":
+                return 0.55f * density;
+            default:
+                return 0.7f * density;
+        }
+    }
+
+    private int roadFillColor(String kind, boolean compact) {
+        if (compact) return Color.argb(150, 224, 216, 194);
+        switch (kind) {
+            case "trunk": case "trunk_link": return Color.rgb(235, 224, 190);
+            case "primary": case "primary_link": return Color.rgb(223, 211, 182);
+            case "secondary": case "secondary_link": return Color.rgb(210, 200, 175);
+            case "tertiary": case "tertiary_link": return Color.rgb(198, 192, 170);
+            case "residential": case "unclassified": case "road": case "living_street":
+                return Color.rgb(184, 182, 164);
+            case "service": case "pedestrian": return Color.rgb(166, 168, 156);
+            default: return Color.rgb(138, 146, 140);
+        }
+    }
+
+    void drawRoadGroups(Canvas c) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        float viewW = getWidth(), viewH = getHeight();
+        float margin = 40 * density;
+        for (String kind : ROAD_ORDER) {
+            Region.RoadGroup group = groupOf(kind);
+            if (group == null || !roadVisible(kind, zoom)) continue;
+            float width = Math.max(roadWidthMeters(kind) * scale, roadMinPx(kind));
+            path.reset();
+            float[] s = group.segs;
+            boolean any = false;
+            for (int i = 0; i + 3 < s.length; i += 4) {
+                float x0 = px(s[i]), y0 = py(s[i + 1]), x1 = px(s[i + 2]), y1 = py(s[i + 3]);
+                if ((x0 < -margin && x1 < -margin) || (x0 > viewW + margin && x1 > viewW + margin)) continue;
+                if ((y0 < -margin && y1 < -margin) || (y0 > viewH + margin && y1 > viewH + margin)) continue;
+                path.moveTo(x0, y0);
+                path.lineTo(x1, y1);
+                any = true;
+            }
+            if (!any) continue;
+            paint.setColor(Color.argb(compact ? 70 : 135, 20, 30, 32));
+            paint.setStrokeWidth(width + (compact ? 0.7f : 1.8f) * density);
+            c.drawPath(path, paint);
+            paint.setColor(roadFillColor(kind, compact));
+            paint.setStrokeWidth(width);
+            c.drawPath(path, paint);
+        }
     }
 
     void drawBranches(Canvas c) {
@@ -218,10 +379,10 @@ final class RegionMapView extends View {
         paint.setTypeface(boldTypeface);
         for (Region.Place p : region.places) {
             if (compact && !p.major()) continue;
-            if (!compact && zoom < 1.8f && !p.major()) continue;
+            if (!compact && !placeVisible(p)) continue;
             float sx = px(p.x), sy = py(p.z);
             if (sx < -20 || sx > getWidth() + 20 || sy < -20 || sy > getHeight() + 20) continue;
-            int size = compact ? 7 : p.major() ? 13 : 11;
+            int size = compact ? 7 : placeSize(p);
             paint.setTextSize(size * density);
             float width = paint.measureText(p.name);
             float tx = sx + 6 * density, ty = sy - 5 * density;
@@ -235,29 +396,60 @@ final class RegionMapView extends View {
             if (overlap) continue;
             occupiedCount++;
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(p.major() ? Color.rgb(255, 238, 185) : Color.rgb(235, 239, 221));
+            paint.setColor(placeFillColor(p));
             if (compact) paint.setColor(Color.argb(210, 245, 241, 218));
-            c.drawCircle(sx, sy, (p.major() ? 2.8f : 2f) * density, paint);
+            c.drawCircle(sx, sy, placeDot(p) * density, paint);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(2.2f * density);
             paint.setColor(Color.argb(190, 12, 27, 30));
             c.drawText(p.name, tx, ty, paint);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(compact ? Color.rgb(240, 238, 216) : p.major() ? Color.rgb(255, 247, 217) : Color.rgb(235, 239, 221));
+            paint.setColor(compact ? Color.rgb(240, 238, 216) : placeTextColor(p));
             c.drawText(p.name, tx, ty, paint);
         }
         placeLabelCount = occupiedCount;
         paint.setTypeface(Typeface.DEFAULT);
     }
 
+    private boolean placeVisible(Region.Place p) {
+        if (p.major()) return true;
+        if ("village".equals(p.kind)) return zoom >= 2.0f;
+        return zoom >= 3.0f;
+    }
+
+    private int placeSize(Region.Place p) {
+        if ("city".equals(p.kind)) return 13;
+        if ("town".equals(p.kind) || "sight".equals(p.kind)) return 12;
+        if ("village".equals(p.kind)) return 10;
+        return 9;
+    }
+
+    private float placeDot(Region.Place p) {
+        if ("city".equals(p.kind)) return 3.0f;
+        if ("town".equals(p.kind) || "sight".equals(p.kind)) return 2.7f;
+        if ("village".equals(p.kind)) return 2.3f;
+        return 1.9f;
+    }
+
+    private int placeFillColor(Region.Place p) {
+        if ("city".equals(p.kind) || "town".equals(p.kind) || "sight".equals(p.kind)) return Color.rgb(255, 238, 185);
+        return Color.rgb(214, 222, 205);
+    }
+
+    private int placeTextColor(Region.Place p) {
+        if (p.major()) return Color.rgb(255, 247, 217);
+        return Color.rgb(224, 230, 214);
+    }
+
     void drawStreetLabels(Canvas c) {
         visibleStreets.clear();
         streetRects.clear();
-        if (compact || zoom < 2.8f || region.streets == null || region.streets.length == 0) return;
+        if (compact || zoom < 2.0f || region.streets == null || region.streets.length == 0) return;
         paint.setTypeface(boldTypeface);
-        paint.setTextSize((zoom >= 5.5f ? 10.5f : 9.3f) * density);
+        paint.setTextSize((zoom >= 5.5f ? 10.5f : zoom >= 3.5f ? 9.8f : 9.0f) * density);
         for (Region.Street street : region.streets) {
-            float sx = px(street.lx), sy = py(street.lz);
+            float[] g = region.globalForStreet(street);
+            float sx = px(g[0]), sy = py(g[1]);
             if (sx < -20 || sx > getWidth() + 20 || sy < -20 || sy > getHeight() + 20) continue;
             float width = paint.measureText(street.name);
             float tx = sx + 6 * density, ty = sy - 5 * density;
@@ -288,7 +480,8 @@ final class RegionMapView extends View {
         for (int i = 0; i < visibleStreets.size(); i++) {
             if (streetRects.get(i).contains(screenX, screenY)) return visibleStreets.get(i);
             Region.Street street = visibleStreets.get(i);
-            float sx = px(street.lx), sy = py(street.lz);
+            float[] g = region.globalForStreet(street);
+            float sx = px(g[0]), sy = py(g[1]);
             if (Math.hypot(screenX - sx, screenY - sy) <= 13 * density) return street;
         }
         return null;
@@ -339,7 +532,7 @@ final class RegionMapView extends View {
             float span = (float) Math.hypot(e.getX(1) - e.getX(0), e.getY(1) - e.getY(0));
             float fx = (e.getX(0) + e.getX(1)) / 2, fy = (e.getY(0) + e.getY(1)) / 2;
             if (action == MotionEvent.ACTION_MOVE && previousSpan > 0 && span > 0) {
-                float next = Math.max(1, Math.min(18, zoom * span / previousSpan)), ratio = next / zoom;
+                float next = Math.max(1, Math.min(200, zoom * span / previousSpan)), ratio = next / zoom;
                 panX = fx - getWidth() / 2f - (previousFocusX - getWidth() / 2f - panX) * ratio;
                 panY = fy - getHeight() / 2f - (previousFocusY - getHeight() / 2f - panY) * ratio;
                 zoom = next; clampPan(); invalidate();
