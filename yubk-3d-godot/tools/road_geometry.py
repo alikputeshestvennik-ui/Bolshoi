@@ -263,11 +263,26 @@ def pavement_plane(points):
     return gx, gz, a[1] - gx * a[0] - gz * a[2] - 0.06
 
 
-def grade_footprint(poly, planes, plane, walls, wall_planes=None):
+def grade_footprint(poly, planes, plane, walls, wall_planes=None, existing_plane=None, beds=None):
     """Keep the roadbed, and seal its boundary against the unchanged hillside."""
+    # Once graded, terrain only needs another cut if the next road is lower.
+    # Repartitioning it for every overlapping shoulder/junction otherwise
+    # creates a large number of invisible triangles in dense city centers.
+    difference = None
+    if existing_plane is not None:
+        difference = tuple(a - b for a, b in zip(existing_plane, plane))
+        nx, nz, c = difference
+        if max(nx * p[0] + nz * p[2] + c for p in poly) <= EPS:
+            return [poly]
     outside, inside = split_footprint(poly, planes)
     if not inside:
         return outside
+    if difference is not None:
+        inside, higher = split_polygon(inside, difference)
+        if len(inside) < 3:
+            return [poly]
+        if len(higher) >= 3:
+            outside.append(higher)
     gx, gz, base = plane
     bed = [(p[0], gx * p[0] + gz * p[2] + base, *p[2:]) for p in inside]
     if wall_planes is None:
@@ -284,6 +299,9 @@ def grade_footprint(poly, planes, plane, walls, wall_planes=None):
                 # rejects those, so emit them explicitly with a stone tint.
                 for p in (a, b, bb, a, bb, aa):
                     walls.extend((*p[:3], 0.38, 0.36, 0.31))
+    if beds is not None:
+        beds.append(bed)
+        return outside
     return outside + [bed]
 
 
@@ -375,16 +393,22 @@ def repair_geometry(vertices, meta, roads):
         candidates = set()
         for cell in cells(box):
             candidates.update(index.get(cell, ()))
-        pieces = [triangle]
+        pieces = [(triangle, None)]
         for cut_id in sorted(candidates):
             cut_box, planes, plane, side_planes = cutters[cut_id]
             if overlaps(box, cut_box):
-                pieces = [part for piece in pieces for part in grade_footprint(piece, planes, plane, walls, side_planes)]
+                next_pieces = []
+                for piece, existing_plane in pieces:
+                    beds = []
+                    outside = grade_footprint(piece, planes, plane, walls, side_planes, existing_plane, beds)
+                    next_pieces.extend((part, existing_plane) for part in outside)
+                    next_pieces.extend((part, plane) for part in beds)
+                pieces = next_pieces
                 if not pieces:
                     break
-        if pieces != [triangle]:
+        if pieces != [(triangle, None)]:
             graded += 1
-        for piece in pieces:
+        for piece, _ in pieces:
             append_polygon(terrain, piece)
     walls = exposed_walls(walls, cutters, index)
     terrain.extend(walls)

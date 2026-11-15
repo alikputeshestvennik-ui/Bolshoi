@@ -163,6 +163,27 @@ class RoadGeometryTest(unittest.TestCase):
         cutters = [(box, edge_planes(bridge), pavement_plane(bridge), [])]
         self.assertEqual(exposed_walls(wall, cutters, index), wall)
 
+    def test_overlapping_roads_keep_the_lower_bed_without_resplitting_it(self):
+        poly = [(-4, 10, -4, .4, .5, .2), (4, 10, -4, .4, .5, .2),
+                (4, 10, 4, .4, .5, .2), (-4, 10, 4, .4, .5, .2)]
+        footprint = [(-2, 0, -8), (2, 0, -8), (2, 0, 8), (-2, 0, 8)]
+        walls, beds = array('f'), []
+        self.assertEqual(grade_footprint(poly, edge_planes(footprint), (0, 0, 11), walls,
+                                       existing_plane=(0, 0, 10), beds=beds), [poly])
+        self.assertFalse(beds)
+        # A crossing grade must lower only the half where its plane is lower.
+        outside = grade_footprint(poly, edge_planes(footprint), (.25, 0, 10), walls,
+                                  existing_plane=(0, 0, 10), beds=beds)
+        self.assertEqual(len(beds), 1)
+        for p in beds[0]:
+            self.assertLessEqual(p[0], 1e-6)
+            self.assertAlmostEqual(p[1], 10 + p[0] * .25)
+        from road_geometry import append_polygon
+        out = array('f')
+        for piece in outside + beds:
+            append_polygon(out, piece)
+        self.assertAlmostEqual(area(out), 64)
+
 
 if __name__ == "__main__":
     unittest.main()
