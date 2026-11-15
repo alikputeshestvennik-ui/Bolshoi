@@ -103,6 +103,33 @@ static func tile_world(tile_id: String) -> Dictionary:
 		out["roads"] = nav.get("roads", [])
 	else:
 		out["roads"] = []
+	# Actual joined pavement quads, generated alongside the repaired mesh.
+	var surface_path := ROUTE_DIR + tile_id + ".roads.bin.gz"
+	out["surfaces"] = PackedFloat32Array()
+	out["surface_index"] = {}
+	if FileAccess.file_exists(surface_path):
+		var packed := FileAccess.get_file_as_bytes(surface_path)
+		var bytes := packed.decompress_dynamic(128 << 20, FileAccess.COMPRESSION_GZIP)
+		var surfaces := bytes.to_float32_array()
+		if surfaces.size() % 12 == 0:
+			out["surfaces"] = surfaces
+			for offset in range(0, surfaces.size(), 12):
+				var x0 := INF
+				var z0 := INF
+				var x1 := -INF
+				var z1 := -INF
+				for corner in range(4):
+					var i := offset + corner * 3
+					x0 = minf(x0, surfaces[i])
+					z0 = minf(z0, surfaces[i + 2])
+					x1 = maxf(x1, surfaces[i])
+					z1 = maxf(z1, surfaces[i + 2])
+				for x in range(int(floor(x0 / 64.0)), int(floor(x1 / 64.0)) + 1):
+					for z in range(int(floor(z0 / 64.0)), int(floor(z1 / 64.0)) + 1):
+						var key := Vector2i(x, z)
+						if not out["surface_index"].has(key):
+							out["surface_index"][key] = []
+						out["surface_index"][key].append(offset)
 	# Spatial lookups keep collision and road snapping cheap on mobile.
 	out["road_index"] = {}
 	for road in out["roads"]:
@@ -167,6 +194,41 @@ static func ground_height(tile: Dictionary, x: float, z: float) -> float:
 	if u + v <= 1.0:
 		return a + (b - a) * u + (cc - a) * v
 	return d + (cc - d) * (1.0 - u) + (b - d) * (1.0 - v)
+
+
+static func pavement_height(tile: Dictionary, x: float, z: float, reference_y: float = NAN) -> float:
+	var ground := ground_height(tile, x, z)
+	var surfaces: PackedFloat32Array = tile.get("surfaces", PackedFloat32Array())
+	var offsets: Array = tile.get("surface_index", {}).get(Vector2i(int(floor(x / 64.0)), int(floor(z / 64.0))), [])
+	var heights: Array[float] = []
+	for offset in offsets:
+		for triangle in [[0, 3, 6], [0, 6, 9]]:
+			var ia: int = offset + triangle[0]
+			var ib: int = offset + triangle[1]
+			var ic: int = offset + triangle[2]
+			var denominator := (surfaces[ib + 2] - surfaces[ic + 2]) * (surfaces[ia] - surfaces[ic]) + (surfaces[ic] - surfaces[ib]) * (surfaces[ia + 2] - surfaces[ic + 2])
+			if absf(denominator) < 0.00001:
+				continue
+			var u := ((surfaces[ib + 2] - surfaces[ic + 2]) * (x - surfaces[ic]) + (surfaces[ic] - surfaces[ib]) * (z - surfaces[ic + 2])) / denominator
+			var v := ((surfaces[ic + 2] - surfaces[ia + 2]) * (x - surfaces[ic]) + (surfaces[ia] - surfaces[ic]) * (z - surfaces[ic + 2])) / denominator
+			if u >= -0.0001 and v >= -0.0001 and u + v <= 1.0001:
+				heights.append(u * surfaces[ia + 1] + v * surfaces[ib + 1] + (1.0 - u - v) * surfaces[ic + 1])
+				break
+	if heights.is_empty():
+		return ground
+	if is_nan(reference_y):
+		return heights.max()
+	# At overpasses, stay on the same level; within a road layer use the top
+	# asphalt surface rather than its slightly lower shoulder.
+	var nearest := heights[0]
+	for height in heights:
+		if absf(height - reference_y) < absf(nearest - reference_y):
+			nearest = height
+	var top := nearest
+	for height in heights:
+		if absf(height - nearest) < 0.6:
+			top = maxf(top, height)
+	return top
 
 
 static func point_in_polygon(px: float, pz: float, poly: Array) -> bool:

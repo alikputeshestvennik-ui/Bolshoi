@@ -63,6 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s yubk-3d-godot/tests -p 'test_*.py' -v
           python3 yubk-3d-godot/tools/sync_assets.py
 
       - name: Create debug keystore

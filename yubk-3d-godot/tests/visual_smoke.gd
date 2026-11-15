@@ -79,12 +79,19 @@ func _run() -> void:
 	app._load_tile(candidate["tile_id"], candidate["local_x"], candidate["local_z"], candidate["heading"])
 	check(app.current_mesh != null, "Tile did not load")
 	check(app.current_mesh.material_override.cull_mode == BaseMaterial3D.CULL_DISABLED, "Mixed-winding legacy geometry must be two-sided")
+	check(not app.current_tile["surfaces"].is_empty(), "Actual pavement height data missing")
+	var pavement := TileLoader.pavement_height(app.current_tile, app.pos.x, app.pos.y)
+	check(absf(app.camera.position.y - pavement - 1.9) < 0.01, "Camera must stand on the pavement")
+	check(app.instruments.visible, "Driving instruments missing")
 	await capture("walk-gaspra")
 	var initial: Vector2 = app.pos
 	app.forward_input = 1.0
 	app._process(0.1)
 	app.forward_input = 0.0
 	check(app.pos.distance_to(initial) > 0.05, "Road movement is blocked at spawn")
+	check(app.travel_speed > 0.0 and app.travel_speed <= 70.01, "Speedometer must show actual travel speed")
+	app._process(0.1)
+	check(app.instruments.speed_kmh == 0.0, "Idle speedometer must show zero")
 	app._show_map()
 	check(app.forward_input == 0.0 and app.turn_input == 0.0, "Movement must stop when opening the map")
 	check(map.has_player, "Map must show current position")
@@ -94,6 +101,15 @@ func _run() -> void:
 	var spawn: Array = TileLoader.load_tile_meta("tile_00")["spawn"]
 	app._load_tile("tile_00", spawn[0], spawn[1], spawn[2])
 	await capture("walk-sevastopol")
+	# Raised roads must not teleport the camera between overpass levels.
+	var test_tile := {"w": 2, "h": 2, "dx": 20.0, "dz": 20.0,
+		"half_x": 10.0, "half_z": 10.0, "heights": [[0, 0], [0, 0]],
+		"surface_index": {Vector2i.ZERO: [0, 12]},
+		"surfaces": PackedFloat32Array([-4, 1, -4, 4, 1, -4, 4, 1, 4, -4, 1, 4,
+			-4, 6, -4, 4, 6, -4, 4, 6, 4, -4, 6, 4])}
+	check(absf(TileLoader.pavement_height(test_tile, 0, 0, 1.0) - 1.0) < 0.001, "Stay below an overpass")
+	check(absf(TileLoader.pavement_height(test_tile, 0, 0, 6.0) - 6.0) < 0.001, "Stay on a bridge")
+	check(absf(TileLoader.pavement_height(test_tile, 9, 9) - 0.0) < 0.001, "Use terrain outside pavement")
 	app._show_map()
 	map.reset_view()
 	root.size = Vector2i(1280, 720)

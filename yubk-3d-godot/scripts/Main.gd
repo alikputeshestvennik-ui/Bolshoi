@@ -37,6 +37,9 @@ var turn_input := 0.0
 var speed_index := 2
 var snap_enabled := true
 var pending_candidate: Dictionary = {}
+var eye_height := NAN
+var instruments: DriveInstruments
+var travel_speed := 0.0
 
 
 func _ready() -> void:
@@ -139,6 +142,9 @@ func _build_ui() -> void:
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hud)
+	instruments = DriveInstruments.new()
+	instruments.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.add_child(instruments)
 	loading_label = _label("Загрузка участка…", 24, true)
 	_place(loading_label, Control.PRESET_CENTER, Rect2(-220, -40, 440, 80))
 	loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -433,6 +439,8 @@ func _load_tile(tile_id: String, lx: float, lz: float, heading: float) -> void:
 	pos = Vector2(lx, lz)
 	heading_deg = heading
 	pitch_deg = -4.0
+	eye_height = NAN
+	travel_speed = 0.0
 	_update_camera()
 	_update_status()
 
@@ -449,6 +457,7 @@ func _process(frame_delta: float) -> void:
 	if mode != "walk" or current_tile.is_empty():
 		return
 	var speed: float = SPEEDS[speed_index]
+	var previous_pos := pos
 	if forward_input != 0.0:
 		var steps := maxi(1, int(ceil(speed * delta / 0.2)))
 		var step_dt := delta / steps
@@ -465,15 +474,22 @@ func _process(frame_delta: float) -> void:
 			pos = Vector2(nx, nz)
 	if turn_input != 0.0:
 		heading_deg += turn_input * 78.0 * delta
-	_update_camera()
+	travel_speed = minf(speed * 3.6, pos.distance_to(previous_pos) / maxf(delta, 0.001) * 3.6)
+	_update_camera(delta)
 	status_time += delta
-	if status_time >= 0.2:
+	if status_time >= 0.1:
 		status_time = 0.0
 		_update_status()
 
 
-func _update_camera() -> void:
-	var eye := TileLoader.ground_height(current_tile, pos.x, pos.y) + 1.9
+func _update_camera(delta: float = 0.0) -> void:
+	var reference := eye_height - 1.9 if not is_nan(eye_height) else NAN
+	var target := TileLoader.pavement_height(current_tile, pos.x, pos.y, reference) + 1.9
+	if is_nan(eye_height) or delta <= 0.0 or absf(target - eye_height) > 3.0:
+		eye_height = target
+	else:
+		eye_height = lerpf(eye_height, target, 1.0 - exp(-14.0 * delta))
+	var eye := eye_height
 	camera.position = Vector3(pos.x, eye, pos.y)
 	var yaw := deg_to_rad(heading_deg)
 	var pitch := deg_to_rad(pitch_deg)
@@ -489,6 +505,7 @@ func _update_status() -> void:
 	var place := _nearest_place(route_m, 8000.0)
 	var place_name: String = str(place.get("name", "ЮБК")) if not place.is_empty() else "ЮБК"
 	status_label.text = "%s\n%s · %.1f км" % [tile_name, str(place_name), route_m / 1000.0]
+	instruments.update_state(current_tile, pos, heading_deg, travel_speed, route_m, SPEED_LABELS[speed_index])
 
 
 func _route_m_from_local() -> float:
