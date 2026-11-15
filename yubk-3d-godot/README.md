@@ -8,6 +8,14 @@ the DEM triangles and adds missing real footprints from `data/yalta.osm.gz`.
 The Yalta extract covers only 44.487–44.497 N, 34.145–34.165 E; it is not full
 city coverage. Existing decorative facades are not measured building imagery.
 
+Ground-level pavement now grades the underlying DEM triangles rather than
+deleting them. Retaining faces seal the cut/fill along the outer road edges;
+faces inside another road are clipped away so they cannot block junctions.
+Acute bends receive bevel patches, and junction patches keep the asphalt and
+lower shoulder separate. Raised spans preserve the terrain below them. Legacy
+meshes lack OSM bridge/tunnel tags, so grade separation still uses their baked
+height; this is not a reconstruction of a complete interchange or tunnel.
+
 The phone decodes one spatial mesh job at a time on a worker thread. Each job
 contains at most 18,000 vertices; resident and in-flight geometry together are
 limited to 480,000 vertices and 96 resident meshes. Obsolete jobs are discarded
@@ -18,6 +26,10 @@ The 2D map uses packed spatial road batches at three zoom levels. It suspends
 3D rendering and simulation; idle map mode enables Godot's low CPU usage mode.
 Rendering is capped at 30 FPS. These limits reduce workload but do not establish
 thermal behaviour or crash resistance on a specific phone.
+
+The driving HUD uses smaller information panels. Its minimap caches the road
+neighborhood until the vehicle moves 24 m or changes tile, while speed, heading
+and the nearest street still update normally. Horizon fog matches the sky color.
 
 ## Verification and APK
 

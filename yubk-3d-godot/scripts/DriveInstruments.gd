@@ -10,6 +10,8 @@ var speed_mode := ""
 var street_name := ""
 var local_roads: Array = []
 var panel := StyleBoxFlat.new()
+var _roads_tile := ""
+var _roads_origin := Vector2(INF, INF)
 
 
 func _ready() -> void:
@@ -27,10 +29,29 @@ func update_state(tile: Dictionary, point: Vector2, yaw: float, speed: float, me
 	altitude = TileLoader.pavement_height(tile, point.x, point.y)
 	route_km = metres / 1000.0
 	speed_mode = speed_label
-	local_roads.clear()
-	var seen := {}
+	# The spatial neighborhood changes much less often than the speed/compass.
+	# In particular, standing still must not allocate/deduplicate 63 cells at 10 Hz.
+	var tile_id := str(tile.get("id", ""))
+	if tile_id != _roads_tile or point.distance_squared_to(_roads_origin) >= 24.0 * 24.0:
+		_refresh_roads(tile, point)
+		_roads_tile = tile_id
+		_roads_origin = point
 	var nearest := INF
 	street_name = "Местная дорога"
+	for road in local_roads:
+		var distance := Geometry2D.get_closest_point_to_segment(point, road["a"], road["b"]).distance_squared_to(point)
+		road["distance"] = distance
+		if distance < nearest:
+			nearest = distance
+			street_name = road["name"]
+	if street_name.is_empty() or street_name.begins_with("Безымянная"):
+		street_name = "Местная дорога"
+	queue_redraw()
+
+
+func _refresh_roads(tile: Dictionary, point: Vector2) -> void:
+	local_roads.clear()
+	var seen := {}
 	for x in range(-4, 5):
 		for z in range(-3, 4):
 			for segment in TileLoader.nearby(tile, "road", point.x + x * 64.0, point.y + z * 64.0):
@@ -40,15 +61,8 @@ func update_state(tile: Dictionary, point: Vector2, yaw: float, speed: float, me
 				seen[key] = true
 				var a := Vector2(segment[0], segment[1])
 				var b := Vector2(segment[2], segment[3])
-				var distance := Geometry2D.get_closest_point_to_segment(point, a, b).distance_squared_to(point)
 				var name := str(segment[4]) if segment.size() > 4 else ""
-				local_roads.append({"a": a, "b": b, "name": name, "distance": distance})
-				if distance < nearest:
-					nearest = distance
-					street_name = name
-	if street_name.is_empty() or street_name.begins_with("Безымянная"):
-		street_name = "Местная дорога"
-	queue_redraw()
+				local_roads.append({"a": a, "b": b, "name": name, "distance": INF})
 
 
 func _text(point: Vector2, text: String, font_size: int, color := Color("e6efe9")) -> void:
@@ -74,11 +88,11 @@ func _clip_line(a: Vector2, b: Vector2, box: Rect2) -> PackedVector2Array:
 
 
 func _draw() -> void:
-	var mini := Rect2(20, 106, 224, 184)
+	var mini := Rect2(20, 88, 188, 144)
 	draw_style_box(panel, mini)
-	_text(mini.position + Vector2(14, 25), "ОКРЕСТНОСТИ", 12, Color("a9c0c3"))
-	_text(mini.position + Vector2(195, 25), "С ↑", 12, Color("ffc36b"))
-	var box := Rect2(mini.position + Vector2(12, 37), Vector2(200, 111))
+	_text(mini.position + Vector2(12, 21), "ОКРЕСТНОСТИ", 11, Color("a9c0c3"))
+	_text(mini.position + Vector2(158, 21), "С ↑", 11, Color("ffc36b"))
+	var box := Rect2(mini.position + Vector2(12, 30), Vector2(164, 83))
 	var center := box.get_center()
 	draw_rect(box, Color("102832"))
 	for road in local_roads:
@@ -93,26 +107,26 @@ func _draw() -> void:
 	draw_circle(center, 10.0, Color("10202b"))
 	draw_colored_polygon(PackedVector2Array([center + direction * 10.0, center - direction * 6.0 + side * 6.0, center - direction * 3.0, center - direction * 6.0 - side * 6.0]), Color("66dcf1"))
 	var street := street_name
-	while ThemeDB.fallback_font.get_string_size(street, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x > 192.0:
+	while ThemeDB.fallback_font.get_string_size(street, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x > 164.0:
 		street = street.left(street.length() - 2) + "…"
-	_text(mini.position + Vector2(14, 171), street, 12)
+	_text(mini.position + Vector2(12, 133), street, 12)
 
 	# A short compass tape remains legible between the status and action cards.
-	var compass := Rect2(size.x / 2.0 - 125, 18, 250, 56)
+	var compass := Rect2(size.x / 2.0 - 110, 18, 220, 48)
 	draw_style_box(panel, compass)
 	var bearings := ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"]
 	var bearing: String = bearings[int(floor((heading + 22.5) / 45.0)) % 8]
-	_text(compass.position + Vector2(18, 35), "%s  %03d°" % [bearing, int(heading)], 20)
-	_text(compass.position + Vector2(160, 33), "%.0f м" % altitude, 15, Color("a9c0c3"))
+	_text(compass.position + Vector2(14, 31), "%s  %03d°" % [bearing, int(heading)], 18)
+	_text(compass.position + Vector2(148, 30), "%.0f м" % altitude, 14, Color("a9c0c3"))
 
-	var gauge := Rect2(size.x / 2.0 - 132, size.y - 159, 264, 96)
+	var gauge := Rect2(size.x / 2.0 - 120, size.y - 135, 240, 72)
 	draw_style_box(panel, gauge)
-	_text(gauge.position + Vector2(18, 43), "%02d" % int(round(speed_kmh)), 36)
-	_text(gauge.position + Vector2(80, 40), "км/ч", 15, Color("a9c0c3"))
-	_text(gauge.position + Vector2(164, 28), "МАРШРУТ", 11, Color("a9c0c3"))
-	_text(gauge.position + Vector2(164, 51), "%.1f км" % route_km, 18, Color("ffc36b"))
-	_text(gauge.position + Vector2(18, 70), "Режим: " + speed_mode, 12, Color("a9c0c3"))
-	var bar := Rect2(gauge.position + Vector2(18, 80), Vector2(228, 3))
+	_text(gauge.position + Vector2(14, 35), "%02d" % int(round(speed_kmh)), 28)
+	_text(gauge.position + Vector2(67, 33), "км/ч", 13, Color("a9c0c3"))
+	_text(gauge.position + Vector2(148, 22), "МАРШРУТ", 10, Color("a9c0c3"))
+	_text(gauge.position + Vector2(148, 43), "%.1f км" % route_km, 16, Color("ffc36b"))
+	_text(gauge.position + Vector2(14, 53), "Режим: " + speed_mode, 11, Color("a9c0c3"))
+	var bar := Rect2(gauge.position + Vector2(14, 61), Vector2(212, 3))
 	draw_rect(bar, Color("294751"))
 	bar.size.x *= clampf(speed_kmh / 70.0, 0.0, 1.0)
 	draw_rect(bar, Color("65d5ee"))

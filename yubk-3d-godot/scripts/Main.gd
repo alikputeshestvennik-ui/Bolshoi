@@ -101,8 +101,9 @@ func _build_world() -> void:
 	environment.ambient_light_color = Color(0.9, 0.93, 0.95)
 	environment.ambient_light_energy = 1.1
 	environment.fog_enabled = true
-	environment.fog_light_color = Color(0.62, 0.77, 0.86)
-	environment.fog_density = 0.00022
+	# Match the sky horizon; the previous thin, blue fog exposed the tile edge.
+	environment.fog_light_color = sky_material.sky_horizon_color
+	environment.fog_density = 0.0011
 	env = WorldEnvironment.new()
 	env.environment = environment
 	add_child(env)
@@ -175,9 +176,9 @@ func _build_ui() -> void:
 	loading_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hud.add_child(loading_label)
 	var status_panel := PanelContainer.new()
-	_place(status_panel, Control.PRESET_TOP_LEFT, Rect2(20, 18, 410, 74))
+	_place(status_panel, Control.PRESET_TOP_LEFT, Rect2(20, 18, 310, 58))
 	hud.add_child(status_panel)
-	status_label = _label("", 16, true)
+	status_label = _label("", 14, true)
 	status_panel.add_child(status_label)
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 10)
