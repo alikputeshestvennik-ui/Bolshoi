@@ -152,7 +152,63 @@ def edge_planes(points):
     sign = 1 if area > 0 else -1
     return [(sign * (a[2] - b[2]), sign * (b[0] - a[0]),
              sign * (b[2] * a[0] - b[0] * a[2]))
-            for a, b in zip(points, points[1:] + points[:1])]
+            for a, b in zip(points, points[1:] + points[:1])
+            if math.hypot(a[0] - b[0], a[2] - b[2]) > EPS]
+
+
+def junction_patches(ribbons, vertices):
+    """Close multi-arm junctions without joining different overpass levels."""
+    ends = defaultdict(list)
+    for ribbon in ribbons:
+        for end in (0, 1):
+            p = ribbon.center(end)
+            ends[round(p[0], 2), round(p[2], 2)].append((ribbon, end))
+    patches, junctions = [], 0
+    for entries in ends.values():
+        levels = []
+        for ribbon, end in sorted(entries, key=lambda e: e[0].center(e[1])[1]):
+            height = ribbon.center(end)[1]
+            if not levels or height - levels[-1][0][0].center(levels[-1][0][1])[1] > 0.4:
+                levels.append([])
+            levels[-1].append((ribbon, end))
+        for level in levels:
+            arms = {}
+            for ribbon, end in level:
+                a, b = ribbon.center(end), ribbon.center(1 - end)
+                angle = round(math.atan2(b[2] - a[2], b[0] - a[0]), 2)
+                if angle not in arms or ribbon.width < arms[angle][0].width:
+                    arms[angle] = (ribbon, end)
+            if len(arms) < 3:
+                continue
+            points, colors = [], []
+            for ribbon, end in arms.values():
+                low, high = (0, 3) if end == 0 else (1, 2)
+                points.extend((tuple(ribbon.points[low]), tuple(ribbon.points[high])))
+                colors.append(vertices[ribbon.offset + 3:ribbon.offset + 6])
+            ordered = sorted(set((p[0], p[2]) for p in points))
+
+            def cross(o, a, b):
+                return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+            chains = []
+            for sequence in (ordered, ordered[::-1]):
+                chain = []
+                for p in sequence:
+                    while len(chain) >= 2 and cross(chain[-2], chain[-1], p) <= 0:
+                        chain.pop()
+                    chain.append(p)
+                chains.extend(chain[:-1])
+            if len(chains) < 3:
+                continue
+            y = max(p[1] for p in points) + 0.01
+            center = (sum(p[0] for p in chains) / len(chains), y,
+                      sum(p[1] for p in chains) / len(chains))
+            color = tuple(sum(c[i] for c in colors) / len(colors) for i in range(3))
+            for a, b in zip(chains, chains[1:] + chains[:1]):
+                pa, pb = (a[0], y, a[1]), (b[0], y, b[1])
+                patches.append((Ribbon(-1, [center, pa, pb, pb], 1.0, -1), color))
+            junctions += 1
+    return patches, junctions
 
 
 def split_polygon(poly, plane):
@@ -206,6 +262,12 @@ def repair_geometry(vertices, meta, roads):
             offset = ribbon.offset + k * 6
             vertices[offset:offset + 3] = array("f", ribbon.points[corner])
 
+    patches, junctions = junction_patches(ribbons, vertices)
+    for ribbon, color in patches:
+        for corner in (0, 1, 2):
+            vertices.extend((*ribbon.points[corner], *color))
+        ribbons.append(ribbon)
+
     # Carve only ground-level roads that actually intersect the DEM. Bridges
     # keep the terrain below them. Concentric shoulder/asphalt quads share one
     # outer footprint, reducing the work and avoiding cracks between layers.
@@ -257,4 +319,5 @@ def repair_geometry(vertices, meta, roads):
     for ribbon in ribbons:
         for p in ribbon.points:
             surfaces.extend(p)
-    return terrain, surfaces, {"ribbons": len(ribbons), "joins": joined, "carved_triangles": carved}
+    return terrain, surfaces, {"ribbons": len(ribbons), "joins": joined,
+                               "junctions": junctions, "carved_triangles": carved}

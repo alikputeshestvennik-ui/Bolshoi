@@ -70,6 +70,23 @@ class RoadGeometryTest(unittest.TestCase):
         self.assertEqual(len(surfaces), 0)
         self.assertEqual(result, data)
 
+    def test_three_arm_junction_has_pavement_without_connecting_bridge(self):
+        data, meta = self.scene()
+        for a, b in [((-8, 0), (0, 0)), ((0, 0), (8, 0)), ((0, 0), (0, 8))]:
+            road(data, a, b)
+        road(data, (0, 0), (0, -8), y=16)
+        result, surfaces, stats = repair_geometry(data, meta, [[-8, 0, 0, 0], [0, 0, 8, 0],
+                                                               [0, 0, 0, 8], [0, 0, 0, -8]])
+        self.assertEqual(stats["junctions"], 1)
+        # Every extra triangle belongs to the ground junction, never the bridge.
+        patches = surfaces[4 * 12:]
+        self.assertGreater(len(patches), 0)
+        for i in range(0, len(patches), 3):
+            self.assertAlmostEqual(patches[i + 1], 10.01, places=4)
+            self.assertLessEqual(abs(patches[i]), 2.01)
+            self.assertLessEqual(abs(patches[i + 2]), 2.01)
+        self.assertTrue(all(math.isfinite(v) for v in result))
+
     def test_polygon_cut_conserves_area_and_interpolates(self):
         poly = [(-10, 0, -10, 0, 0, 0), (10, 20, -10, 1, 0, 0),
                 (10, 20, 10, 1, 0, 0), (-10, 0, 10, 0, 0, 0)]

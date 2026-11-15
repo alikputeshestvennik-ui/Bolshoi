@@ -132,8 +132,8 @@ func _run() -> void:
 	# Cover restored real buildings in central Yalta.
 	var yalta: Dictionary = TileLoader.load_tile_meta("tile_13")
 	check(int(yalta.get("recovered_osm_buildings", 0)) > 1000, "Yalta building recovery missing")
-	var lx := (34.155 - float(yalta["origin"][1])) * app.SX
-	var lz := (float(yalta["origin"][0]) - 44.492) * app.SZ
+	var lx: float = (34.155 - float(yalta["origin"][1])) * app.SX
+	var lz: float = (float(yalta["origin"][0]) - 44.492) * app.SZ
 	app._load_tile("tile_13", lx, lz, 180)
 	await wait_for_stream()
 	var ground := TileLoader.ground_height(app.current_tile, lx, lz)

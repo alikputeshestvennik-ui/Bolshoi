@@ -59,6 +59,13 @@ jobs:
              "$HOME/.local/share/godot/export_templates/4.4.1.stable/" 2>/dev/null || true
           ls -la "$HOME/.local/share/godot/export_templates/4.4.1.stable"
 
+      - name: Check scripts before preparing geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import 2>&1 | tee /tmp/godot-scripts.log
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/godot-scripts.log; then exit 1; fi
+
       - name: Prepare route assets
         shell: bash
         run: |

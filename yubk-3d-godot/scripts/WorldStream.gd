@@ -32,6 +32,8 @@ func setup(tile_id: String) -> bool:
 	if int(manifest.get("version", 0)) != 1:
 		return false
 	chunks = manifest.get("chunks", [])
+	if chunks.is_empty():
+		return false
 	for chunk in chunks:
 		if int(chunk.get("vertices", 0)) <= 0 or int(chunk["vertices"]) > MAX_JOB_VERTICES:
 			return false
