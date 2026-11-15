@@ -40,9 +40,14 @@ var pending_candidate: Dictionary = {}
 var eye_height := NAN
 var instruments: DriveInstruments
 var travel_speed := 0.0
+var world_stream: WorldStream
+var _suspended := false
 
 
 func _ready() -> void:
+	Engine.max_fps = 30
+	OS.low_processor_usage_mode = true
+	OS.low_processor_usage_mode_sleep_usec = 33333
 	randomize()
 	region = TileLoader.load_region()
 	_build_world()
@@ -53,6 +58,8 @@ func _ready() -> void:
 	hud.visible = false
 	teleport_panel.visible = false
 	loading_label.visible = false
+	get_viewport().disable_3d = true
+	set_process(false)
 
 	if region.is_empty():
 		status_label.text = "Ошибка загрузки region.json"
@@ -60,6 +67,23 @@ func _ready() -> void:
 		map.visible = false
 		loading_label.visible = true
 		loading_label.text = "Нет данных региона"
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		_suspended = true
+		get_viewport().disable_3d = true
+		forward_input = 0.0
+		turn_input = 0.0
+		set_process(false)
+		if world_stream != null:
+			world_stream.set_process(false)
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		_suspended = false
+		get_viewport().disable_3d = mode != "walk"
+		set_process(mode == "walk")
+		if world_stream != null:
+			world_stream.set_process(mode == "walk")
 
 
 func _build_world() -> void:
@@ -86,7 +110,7 @@ func _build_world() -> void:
 	camera = Camera3D.new()
 	camera.fov = 65.0
 	camera.near = 0.15
-	camera.far = 4000.0
+	camera.far = 2400.0
 	add_child(camera)
 
 	tile_root = Node3D.new()
@@ -385,7 +409,12 @@ func _nearest_place(route_m: float, max_m: float) -> Dictionary:
 
 
 func _show_map() -> void:
+	OS.low_processor_usage_mode = true
 	mode = "map"
+	get_viewport().disable_3d = true
+	set_process(false)
+	if world_stream != null:
+		world_stream.set_process(false)
 	forward_input = 0.0
 	turn_input = 0.0
 	tile_root.visible = false
@@ -403,7 +432,12 @@ func _show_map() -> void:
 
 
 func _show_walk() -> void:
+	OS.low_processor_usage_mode = false
 	mode = "walk"
+	get_viewport().disable_3d = false
+	set_process(not _suspended)
+	if world_stream != null:
+		world_stream.set_process(not _suspended)
 	forward_input = 0.0
 	turn_input = 0.0
 	map_chrome.visible = false
@@ -436,7 +470,18 @@ func _load_tile(tile_id: String, lx: float, lz: float, heading: float) -> void:
 	mi.material_override = TileLoader.tile_material()
 	tile_root.add_child(mi)
 	current_mesh = mi
+	world_stream = WorldStream.new()
+	if not world_stream.setup(tile_id):
+		world_stream.free()
+		world_stream = null
+		_unload_tile()
+		status_label.text = "Ошибка данных участка " + tile_id
+		return
+	tile_root.add_child(world_stream)
+	current_mesh.material_override = world_stream.far_material()
+	world_stream.set_process(mode == "walk" and not _suspended)
 	pos = Vector2(lx, lz)
+	world_stream.update_focus(pos, true)
 	heading_deg = heading
 	pitch_deg = -4.0
 	eye_height = NAN
@@ -446,8 +491,12 @@ func _load_tile(tile_id: String, lx: float, lz: float, heading: float) -> void:
 
 
 func _unload_tile() -> void:
+	if world_stream != null:
+		world_stream.stop()
+		world_stream.free()
+		world_stream = null
 	if current_mesh != null:
-		current_mesh.queue_free()
+		current_mesh.free()
 		current_mesh = null
 	current_tile = {}
 
@@ -456,6 +505,8 @@ func _process(frame_delta: float) -> void:
 	var delta := minf(frame_delta, 0.1)
 	if mode != "walk" or current_tile.is_empty():
 		return
+	if world_stream != null:
+		world_stream.update_focus(pos)
 	var speed: float = SPEEDS[speed_index]
 	var previous_pos := pos
 	if forward_input != 0.0:

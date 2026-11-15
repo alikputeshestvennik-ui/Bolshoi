@@ -21,27 +21,27 @@ static func load_json(path: String) -> Dictionary:
 
 
 static func load_region() -> Dictionary:
-	return load_json(ROUTE_DIR + "region.json")
+	return load_json(ROUTE_DIR + "region.mobile.json")
 
 
 static func load_tile_meta(tile_id: String) -> Dictionary:
 	return load_json(ROUTE_DIR + tile_id + ".json")
 
 
-static func load_tile_mesh(tile_id: String) -> ArrayMesh:
-	var raw := FileAccess.get_file_as_bytes(ROUTE_DIR + tile_id + ".mesh.bin.gz")
+static func load_vertex_arrays(path: String, max_vertices: int, expected_vertices: int = -1) -> Array:
+	var raw := FileAccess.get_file_as_bytes(path)
 	if raw.is_empty():
-		push_error("Missing mesh blob for " + tile_id)
-		return null
-	var buf := raw.decompress_dynamic(1 << 30, FileAccess.COMPRESSION_GZIP)
-	if buf.is_empty():
-		push_error("Failed to decompress " + tile_id)
-		return null
+		push_error("Missing mesh blob: " + path)
+		return []
+	var buf := raw.decompress_dynamic(max_vertices * 24, FileAccess.COMPRESSION_GZIP)
+	if buf.is_empty() or buf.size() % 72 != 0:
+		push_error("Invalid mesh blob: " + path)
+		return []
 	var floats := buf.to_float32_array()
-	var vert_count := floats.size() / 6
-	if vert_count <= 0:
-		push_error("Empty mesh " + tile_id)
-		return null
+	var vert_count := int(floats.size() / 6)
+	if vert_count > max_vertices or (expected_vertices >= 0 and vert_count != expected_vertices):
+		push_error("Mesh exceeds its declared budget: " + path)
+		return []
 
 	var positions := PackedVector3Array()
 	var colors := PackedColorArray()
@@ -57,10 +57,48 @@ static func load_tile_mesh(tile_id: String) -> ArrayMesh:
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = positions
 	arrays[Mesh.ARRAY_COLOR] = colors
+	return arrays
+
+
+static func mesh_from_arrays(arrays: Array) -> ArrayMesh:
+	if arrays.is_empty():
+		return null
 
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+static func load_tile_mesh(tile_id: String) -> ArrayMesh:
+	# Only the inexpensive distant terrain is loaded synchronously. Detailed
+	# geometry goes through WorldStream's single background decoder.
+	return mesh_from_arrays(load_vertex_arrays(ROUTE_DIR + tile_id + ".far.bin.gz", 100000))
+
+
+static func load_map_batches(manifest: Dictionary) -> Array:
+	var expected := int(manifest.get("float_count", 0))
+	if expected <= 0 or expected > 16000000:
+		push_error("Invalid mobile map size")
+		return []
+	var raw := FileAccess.get_file_as_bytes(ROUTE_DIR + "region.lines.bin.gz")
+	var bytes := raw.decompress_dynamic(expected * 4, FileAccess.COMPRESSION_GZIP)
+	if bytes.size() != expected * 4:
+		push_error("Invalid mobile map data")
+		return []
+	var floats := bytes.to_float32_array()
+	var result: Array = []
+	for batch in manifest.get("batches", []):
+		var start := int(batch["start"])
+		var count := int(batch["count"])
+		if start < 0 or count <= 0 or count % 4 != 0 or start + count > floats.size():
+			push_error("Invalid map batch bounds")
+			return []
+		var points := PackedVector2Array()
+		points.resize(int(count / 2))
+		for i in range(points.size()):
+			points[i] = Vector2(floats[start + i * 2], floats[start + i * 2 + 1])
+		result.append({"kind": batch["kind"], "bounds": batch["bounds"], "points": points, "lod_min": batch.get("lod_min", 1), "lod_max": batch.get("lod_max", 65)})
+	return result
 
 
 static func tile_material() -> StandardMaterial3D:

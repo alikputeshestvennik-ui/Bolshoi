@@ -3,3 +3,4 @@ assets/route/*
 !assets/route/.gitkeep
 build/
 .godot/
+__pycache__/

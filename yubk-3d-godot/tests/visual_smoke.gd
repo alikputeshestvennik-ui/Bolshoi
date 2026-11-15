@@ -23,6 +23,17 @@ func capture(name: String) -> Image:
 	return image
 
 
+func wait_for_stream() -> void:
+	var start := Time.get_ticks_msec()
+	while app.world_stream != null and not app.world_stream.is_settled():
+		await process_frame
+		check(app.world_stream.resident_vertices <= WorldStream.MAX_VERTICES, "Streaming vertex budget exceeded")
+		check(app.world_stream.resident.size() <= WorldStream.MAX_CHUNKS, "Streaming chunk budget exceeded")
+		if Time.get_ticks_msec() - start > 20000:
+			check(false, "Streaming did not settle within 20 seconds")
+			break
+
+
 func _run() -> void:
 	root.size = Vector2i(1600, 720)
 	app = load("res://scenes/Main.tscn").instantiate()
@@ -34,7 +45,21 @@ func _run() -> void:
 	var point := Vector2(12000, 8000)
 	check(map.screen_to_world(map.world_to_screen(point)).distance_to(point) < 0.1, "Map coordinate roundtrip")
 	check(map._poly_points([[point.x, point.y]])[0].distance_to(map.world_to_screen(point)) < 0.1, "Vector overlays must use screen coordinates")
+	var map_started := Time.get_ticks_msec()
+	while map._map_thread != null and Time.get_ticks_msec() - map_started < 20000:
+		await process_frame
+	check(not map.road_layers.is_empty(), "Packed map roads missing")
 	var image := await capture("map-overview")
+	check(map.drawn_road_points < 150000, "Overview geometry must stay bounded")
+	check(root.disable_3d and not app.is_processing(), "Map must suspend the 3D simulation")
+	# Repeated pinch/pan used to rebuild all road arrays and exhaust mobile memory.
+	for i in range(90):
+		map.zoom_at(1.2 if i % 2 == 0 else 1.0 / 1.2, Vector2(800, 360))
+		map.pan += Vector2(10 if i % 2 == 0 else -10, 0)
+		map.clamp_pan()
+		map.queue_redraw()
+		await process_frame
+	map.reset_view()
 	var pixel := image.get_pixel(800, 360)
 	check(minf(pixel.r, minf(pixel.g, pixel.b)) < 0.85, "Map background is white")
 	check(app._candidate_at(40000.0, 22000.0).is_empty(), "Off-route taps must not select kilometre zero")
@@ -78,11 +103,13 @@ func _run() -> void:
 	app._show_walk()
 	app._load_tile(candidate["tile_id"], candidate["local_x"], candidate["local_z"], candidate["heading"])
 	check(app.current_mesh != null, "Tile did not load")
-	check(app.current_mesh.material_override.cull_mode == BaseMaterial3D.CULL_DISABLED, "Mixed-winding legacy geometry must be two-sided")
+	check(app.world_stream.material.cull_mode == BaseMaterial3D.CULL_DISABLED, "Mixed-winding legacy geometry must be two-sided")
 	check(not app.current_tile["surfaces"].is_empty(), "Actual pavement height data missing")
 	var pavement := TileLoader.pavement_height(app.current_tile, app.pos.x, app.pos.y)
 	check(absf(app.camera.position.y - pavement - 1.9) < 0.01, "Camera must stand on the pavement")
 	check(app.instruments.visible, "Driving instruments missing")
+	await wait_for_stream()
+	check(not app.world_stream.resident.is_empty(), "Near detail never loaded")
 	await capture("walk-gaspra")
 	var initial: Vector2 = app.pos
 	app.forward_input = 1.0
@@ -100,7 +127,29 @@ func _run() -> void:
 	# Check a different terrain/building tile and compact landscape layout.
 	var spawn: Array = TileLoader.load_tile_meta("tile_00")["spawn"]
 	app._load_tile("tile_00", spawn[0], spawn[1], spawn[2])
+	await wait_for_stream()
 	await capture("walk-sevastopol")
+	# Cover restored real buildings in central Yalta.
+	var yalta: Dictionary = TileLoader.load_tile_meta("tile_13")
+	check(int(yalta.get("recovered_osm_buildings", 0)) > 1000, "Yalta building recovery missing")
+	var lx := (34.155 - float(yalta["origin"][1])) * app.SX
+	var lz := (float(yalta["origin"][0]) - 44.492) * app.SZ
+	app._load_tile("tile_13", lx, lz, 180)
+	await wait_for_stream()
+	var ground := TileLoader.ground_height(app.current_tile, lx, lz)
+	app.set_process(false)
+	app.camera.position = Vector3(lx, ground + 280, lz + 230)
+	app.camera.look_at(Vector3(lx, ground, lz), Vector3.UP)
+	await capture("walk-yalta-buildings")
+	app._update_camera()
+	app.set_process(true)
+	# Teleports and rapid changes may leave only one decode in flight.
+	for i in range(30):
+		app.world_stream.update_focus(Vector2(lx + (i % 3) * 450, lz), true)
+		await process_frame
+		check(app.world_stream.resident_vertices <= WorldStream.MAX_VERTICES, "Rapid movement exceeded memory budget")
+	app.world_stream.update_focus(app.pos, true)
+	await wait_for_stream()
 	# Raised roads must not teleport the camera between overpass levels.
 	var test_tile := {"w": 2, "h": 2, "dx": 20.0, "dz": 20.0,
 		"half_x": 10.0, "half_z": 10.0, "heights": [[0, 0], [0, 0]],

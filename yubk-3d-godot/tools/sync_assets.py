@@ -19,6 +19,8 @@ from array import array
 from pathlib import Path
 
 from road_geometry import repair_geometry
+from mobile_assets import bake_map, bake_tile
+from scene_data import rebuild_water, recover_buildings
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "yubk-3d-android" / "app" / "src" / "main" / "assets" / "route"
@@ -45,8 +47,15 @@ def convert_tile(tile_id: str) -> int:
     del raw, compressed
     meta = json.loads((SRC / f"{tile_id}.json").read_text())
     navigation = json.loads((SRC / f"{tile_id}.navigation.json").read_text())
+    vertices, water_stats = rebuild_water(vertices, meta)
+    print(f"{tile_id}: water {water_stats}", flush=True)
     vertices, surfaces, stats = repair_geometry(vertices, meta, navigation["roads"])
     print(f"{tile_id}: repaired {stats}", flush=True)
+    recovered = recover_buildings(vertices, meta)
+    (DST / f"{tile_id}.json").write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")))
+    print(f"{tile_id}: recovered {recovered} OSM buildings", flush=True)
+    chunks = bake_tile(DST, tile_id, vertices, meta)
+    print(f"{tile_id}: {chunks} bounded mobile chunks", flush=True)
     if sys.byteorder != "little":
         vertices.byteswap()
         surfaces.byteswap()
@@ -65,6 +74,7 @@ def main() -> int:
         src = SRC / name
         if src.exists():
             shutil.copyfile(src, DST / name)
+    bake_map(DST)
 
     for pattern in ["tile_*.json", "tile_*.navigation.json"]:
         for src in sorted(SRC.glob(pattern)):

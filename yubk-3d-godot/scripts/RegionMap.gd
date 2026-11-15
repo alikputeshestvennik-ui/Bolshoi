@@ -24,8 +24,8 @@ var tile_by_id := {}
 # before the renderer consumes its RID, leaving a white map on Android.
 var backdrop: Texture2D
 var road_layers: Array = []
-var landuse_polys: Array[PackedVector2Array] = []
-var coast_lines: Array[PackedVector2Array] = []
+var landuse_polys: Array = []
+var coast_lines: Array = []
 var water_lines: Array = []
 var branch_lines: Array[PackedVector2Array] = []
 var route_points := PackedVector2Array()
@@ -34,6 +34,9 @@ var _touches := {}
 var _moved := 0.0
 var _gesture := false
 var _mouse_drag := false
+var _map_thread: Thread
+var _view_bounds := Rect2()
+var drawn_road_points := 0
 
 
 func setup(data: Dictionary) -> void:
@@ -49,34 +52,67 @@ func setup(data: Dictionary) -> void:
 		world_bottom = (ORIGIN_LAT - float(bounds[1])) * SZ
 	for t in region.get("tiles", []):
 		tile_by_id[str(t["id"])] = t
-	# Convert JSON once, then transform every vector layer with the same matrix.
+	# The lightweight manifest has no nested JSON road endpoints. Decode packed
+	# spatial batches off the UI thread while the baked map is already visible.
 	road_layers.clear()
-	for group in region.get("road_groups", []):
-		var points := PackedVector2Array()
-		for seg in group.get("segments", []):
-			points.append(Vector2(float(seg[0]), float(seg[1])))
-			points.append(Vector2(float(seg[2]), float(seg[3])))
-		var layer := _road_style(str(group.get("kind", "")))
-		layer["points"] = points
-		road_layers.append(layer)
-	road_layers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["rank"] < b["rank"])
+	_map_thread = Thread.new()
+	var error := _map_thread.start(TileLoader.load_map_batches.bind(region.get("mobile_map", {})))
+	if error != OK:
+		_map_thread = null
+		push_error("Could not start map decoder")
+	set_process(_map_thread != null)
 	landuse_polys.clear()
 	for area in region.get("landuse", []):
 		var points := _world_points(area.get("points", []))
 		if points.size() >= 3 and not Geometry2D.triangulate_polygon(points).is_empty():
-			landuse_polys.append(points)
+			landuse_polys.append({"points": points, "bounds": _points_bounds(points)})
 	coast_lines.clear()
 	for line in region.get("coast", []):
-		coast_lines.append(_world_points(line))
+		var points := _world_points(line)
+		coast_lines.append({"points": points, "bounds": _points_bounds(points)})
 	water_lines.clear()
 	for water in region.get("water", []):
-		water_lines.append({"kind": water.get("kind", ""), "points": _world_points(water.get("points", []))})
+		var points := _world_points(water.get("points", []))
+		water_lines.append({"kind": water.get("kind", ""), "points": points, "bounds": _points_bounds(points)})
 	branch_lines.clear()
 	for branch in region.get("branches", []):
 		branch_lines.append(_world_points(branch.get("points", [])))
 	route_points = _world_points(region.get("route", []))
 	resized.connect(_on_resized)
 	queue_redraw()
+
+
+func _process(_delta: float) -> void:
+	if _map_thread == null or _map_thread.is_alive():
+		return
+	var batches: Array = _map_thread.wait_to_finish()
+	_map_thread = null
+	for batch in batches:
+		var layer := _road_style(str(batch["kind"]))
+		layer["points"] = batch["points"]
+		layer["lod_min"] = batch["lod_min"]
+		layer["lod_max"] = batch["lod_max"]
+		var b: Array = batch["bounds"]
+		layer["bounds"] = Rect2(Vector2(b[0], b[1]), Vector2(b[2] - b[0], b[3] - b[1])).grow(0.01)
+		road_layers.append(layer)
+	road_layers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["rank"] < b["rank"])
+	set_process(false)
+	queue_redraw()
+
+
+func _exit_tree() -> void:
+	if _map_thread != null:
+		_map_thread.wait_to_finish()
+		_map_thread = null
+
+
+func _points_bounds(points: PackedVector2Array) -> Rect2:
+	if points.is_empty():
+		return Rect2()
+	var bounds := Rect2(points[0], Vector2.ZERO)
+	for point in points:
+		bounds = bounds.expand(point)
+	return bounds.grow(0.01)
 
 
 func _on_resized() -> void:
@@ -191,6 +227,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color("0b1e30"))
 	if region.is_empty():
 		return
+	_view_bounds = Rect2(screen_to_world(Vector2.ZERO), size / screen_scale()).grow(8.0 / screen_scale())
 	if backdrop != null:
 		var a := world_to_screen(Vector2(world_left, world_top))
 		var b := world_to_screen(Vector2(world_right, world_bottom))
@@ -234,8 +271,12 @@ func _world_points(points) -> PackedVector2Array:
 
 
 func _draw_landuse() -> void:
-	for points in landuse_polys:
-		draw_colored_polygon(points, Color(0.76, 0.72, 0.58, 0.18))
+	# The backdrop already contains the regional land cover.
+	if zoom < 2.5:
+		return
+	for area in landuse_polys:
+		if _view_bounds.intersects(area["bounds"]):
+			draw_colored_polygon(area["points"], Color(0.76, 0.72, 0.58, 0.18))
 
 
 func _road_style(kind: String) -> Dictionary:
@@ -254,21 +295,23 @@ func _road_style(kind: String) -> Dictionary:
 
 func _draw_lines() -> void:
 	var inverse := 1.0 / screen_scale()
-	for points in coast_lines:
-		if points.size() >= 2:
-			draw_polyline(points, Color(0.69, 0.83, 0.79, 0.65), 1.1 * inverse, true)
+	for coast in coast_lines:
+		if coast["points"].size() >= 2 and _view_bounds.intersects(coast["bounds"]):
+			draw_polyline(coast["points"], Color(0.69, 0.83, 0.79, 0.65), 1.1 * inverse, false)
 	for water in water_lines:
-		if water["points"].size() >= 2:
+		if water["points"].size() >= 2 and _view_bounds.intersects(water["bounds"]):
 			var width := 1.4 if water["kind"] == "river" else 0.8
-			draw_polyline(water["points"], Color("61aeca"), width * inverse, true)
+			draw_polyline(water["points"], Color("61aeca"), width * inverse, false)
 	# Footpaths and service ways appear on zooming in, so the overview retains
 	# the highway hierarchy instead of becoming a web of 200,000 track segments.
+	drawn_road_points = 0
 	for layer in road_layers:
-		if zoom < layer["min_zoom"] or layer["points"].size() < 2:
+		if zoom < maxf(layer["min_zoom"], layer["lod_min"]) or zoom >= layer["lod_max"] or not _view_bounds.intersects(layer["bounds"]):
 			continue
+		drawn_road_points += layer["points"].size()
 		var width: float = layer["width"]
-		draw_multiline(layer["points"], Color("293d3c"), (width + 1.6) * inverse, true)
-		draw_multiline(layer["points"], layer["color"], width * inverse, true)
+		draw_multiline(layer["points"], Color("293d3c"), (width + 1.6) * inverse, false)
+		draw_multiline(layer["points"], layer["color"], width * inverse, false)
 	for points in branch_lines:
 		if points.size() >= 2:
 			draw_polyline(points, Color("cfb37d"), 2.0 * inverse, true)
