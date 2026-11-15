@@ -17,9 +17,11 @@ func check(value: bool, message: String) -> void:
 func capture(name: String) -> Image:
 	await process_frame
 	await process_frame
-	await RenderingServer.frame_post_draw
+	# Idle map mode intentionally stops requesting frames. Capture explicitly.
+	RenderingServer.force_draw(false)
 	var image := root.get_texture().get_image()
 	image.save_png("res://build/" + name + ".png")
+	print("CAPTURE ", name)
 	return image
 
 
