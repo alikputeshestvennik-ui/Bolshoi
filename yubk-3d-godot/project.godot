@@ -29,3 +29,7 @@ environment/defaults/default_clear_color=Color(0.62, 0.77, 0.86, 1)
 [physics]
 
 common/enable_pause_aware_picking=true
+
+[debug]
+
+gdscript/warnings/inference_on_variant=0

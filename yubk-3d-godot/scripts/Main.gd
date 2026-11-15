@@ -49,6 +49,7 @@ func _ready() -> void:
 
 	if region.is_empty():
 		status_label.text = "Ошибка загрузки region.json"
+		hud.visible = true
 		map.visible = false
 		loading_label.visible = true
 		loading_label.text = "Нет данных региона"
@@ -239,7 +240,7 @@ func _candidate_text(c: Dictionary) -> String:
 	var place := _nearest_place(c.get("route_m", 0.0), 7000.0)
 	var name := str(c.get("tile_name", "ЮБК"))
 	var km := float(c.get("route_m", 0.0)) / 1000.0
-	var place_name := place.get("name", "Южнобережное шоссе") if not place.is_empty() else "Южнобережное шоссе"
+	var place_name: String = str(place.get("name", "Южнобережное шоссе")) if not place.is_empty() else "Южнобережное шоссе"
 	return "%s · %.1f км от Севастополя\n%s" % [name, km, str(place_name)]
 
 
@@ -360,14 +361,14 @@ func _unload_tile() -> void:
 func _process(delta: float) -> void:
 	if mode != "walk" or current_tile.is_empty():
 		return
-	var speed := SPEEDS[speed_index]
+	var speed: float = SPEEDS[speed_index]
 	if forward_input != 0.0:
 		var steps := maxi(1, int(ceil(speed * delta / 0.2)))
 		var step_dt := delta / steps
 		var rad := deg_to_rad(heading_deg)
 		for i in range(steps):
-			var nx := pos.x + sin(rad) * forward_input * speed * step_dt
-			var nz := pos.y - cos(rad) * forward_input * speed * step_dt
+			var nx: float = pos.x + sin(rad) * forward_input * speed * step_dt
+			var nz: float = pos.y - cos(rad) * forward_input * speed * step_dt
 			if snap_enabled:
 				var snapped := _snap_to_roads(Vector2(nx, nz))
 				nx = snapped.x
@@ -395,7 +396,7 @@ func _update_status() -> void:
 		return
 	var tile_name := str(current_tile.get("name", "ЮБК"))
 	var place := _nearest_place(_route_m_from_local(), 8000.0)
-	var place_name := place.get("name", "ЮБК") if not place.is_empty() else "ЮБК"
+	var place_name: String = str(place.get("name", "ЮБК")) if not place.is_empty() else "ЮБК"
 	status_label.text = "%s\n%s · %.1f км" % [tile_name, str(place_name), _route_m_from_local() / 1000.0]
 
 

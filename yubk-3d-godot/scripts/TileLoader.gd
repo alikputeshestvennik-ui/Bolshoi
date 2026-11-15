@@ -170,10 +170,10 @@ static func blocked(tile: Dictionary, px: float, pz: float) -> bool:
 	for poly in tile.get("buildings", []):
 		if point_in_polygon(px, pz, poly):
 			return true
-		var n := poly.size()
+		var n: int = int(poly.size())
 		if n < 3:
 			continue
-		var j := n - 1
+		var j: int = n - 1
 		for i in range(n):
 			var a = poly[i]
 			var b = poly[j]

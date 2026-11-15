@@ -93,7 +93,7 @@ func _gui_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		if _touches.has(event.index):
 			var prev: Vector2 = _touches[event.index]
-			var delta := event.position - prev
+			var delta: Vector2 = event.position - prev
 			_moved += delta.length()
 			if _touches.size() >= 2:
 				var idx2: int = -1
@@ -105,7 +105,7 @@ func _gui_input(event: InputEvent) -> void:
 					var a: Vector2 = _touches[event.index]
 					var b: Vector2 = _touches[idx2]
 					var old_dist := maxf(1.0, a.distance_to(b))
-					var new_pos := event.position
+					var new_pos: Vector2 = event.position
 					var new_dist := maxf(1.0, new_pos.distance_to(b))
 					var factor := new_dist / old_dist
 					var focus := screen_to_world((a + b) / 2.0)
