@@ -24,6 +24,11 @@ var tile_by_id := {}
 # before the renderer consumes its RID, leaving a white map on Android.
 var backdrop: Texture2D
 var road_layers: Array = []
+var landuse_polys: Array[PackedVector2Array] = []
+var coast_lines: Array[PackedVector2Array] = []
+var water_lines: Array = []
+var branch_lines: Array[PackedVector2Array] = []
+var route_points := PackedVector2Array()
 var label_rects: Array[Rect2] = []
 var _touches := {}
 var _moved := 0.0
@@ -52,6 +57,21 @@ func setup(data: Dictionary) -> void:
 			points.append(Vector2(float(seg[0]), float(seg[1])))
 			points.append(Vector2(float(seg[2]), float(seg[3])))
 		road_layers.append({"kind": str(group.get("kind", "")), "points": points})
+	landuse_polys.clear()
+	for area in region.get("landuse", []):
+		var points := _world_points(area.get("points", []))
+		if points.size() >= 3 and not Geometry2D.triangulate_polygon(points).is_empty():
+			landuse_polys.append(points)
+	coast_lines.clear()
+	for line in region.get("coast", []):
+		coast_lines.append(_world_points(line))
+	water_lines.clear()
+	for water in region.get("water", []):
+		water_lines.append({"kind": water.get("kind", ""), "points": _world_points(water.get("points", []))})
+	branch_lines.clear()
+	for branch in region.get("branches", []):
+		branch_lines.append(_world_points(branch.get("points", [])))
+	route_points = _world_points(region.get("route", []))
 	resized.connect(_on_resized)
 	queue_redraw()
 
@@ -125,7 +145,7 @@ func _gui_input(event: InputEvent) -> void:
 					continue
 				var other: Vector2 = _touches[key]
 				var old_mid := (prev + other) / 2.0
-				var new_mid := (event.position + other) / 2.0
+				var new_mid: Vector2 = (event.position + other) / 2.0
 				var focus := screen_to_world(old_mid)
 				zoom = clampf(zoom * event.position.distance_to(other) / maxf(1.0, prev.distance_to(other)), 1.0, 64.0)
 				pan = new_mid - size / 2.0 - (focus - world_center()) * screen_scale()
@@ -172,8 +192,12 @@ func _draw() -> void:
 		var a := world_to_screen(Vector2(world_left, world_top))
 		var b := world_to_screen(Vector2(world_right, world_bottom))
 		draw_texture_rect(backdrop, Rect2(a, b - a), false)
+	# One canvas transform for all cached world geometry. No per-frame traversal
+	# of 885,000 JSON road endpoints while pinching on a phone.
+	draw_set_transform(world_to_screen(Vector2.ZERO), 0.0, Vector2.ONE * screen_scale())
 	_draw_landuse()
 	_draw_lines()
+	draw_set_transform(Vector2.ZERO)
 	label_rects.clear()
 	_draw_places()
 	if zoom >= 5.0:
@@ -199,50 +223,42 @@ func _poly_points(points) -> PackedVector2Array:
 	return out
 
 
+func _world_points(points) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in points:
+		out.append(Vector2(float(p[0]), float(p[1])))
+	return out
+
+
 func _draw_landuse() -> void:
-	for lu in region.get("landuse", []):
-		var pts := _poly_points(lu.get("points", []))
-		if pts.size() < 3:
-			continue
-		# OSM polygons can self-intersect; never submit an invalid polygon.
-		var indices := Geometry2D.triangulate_polygon(pts)
-		if indices.is_empty():
-			continue
-		for i in range(0, indices.size(), 3):
-			draw_colored_polygon(PackedVector2Array([pts[indices[i]], pts[indices[i + 1]], pts[indices[i + 2]]]), Color(0.76, 0.72, 0.58, 0.18))
+	for points in landuse_polys:
+		draw_colored_polygon(points, Color(0.76, 0.72, 0.58, 0.18))
 
 
 func _draw_lines() -> void:
-	for line in region.get("coast", []):
-		var pts := _poly_points(line)
-		if pts.size() >= 2:
-			draw_polyline(pts, Color(0.69, 0.83, 0.79, 0.65), 1.1, true)
-	for water in region.get("water", []):
-		var pts := _poly_points(water.get("points", []))
-		if pts.size() >= 2:
-			draw_polyline(pts, Color("61aeca"), 1.4 if water.get("kind", "") == "river" else 0.8, true)
-	# Draw low priority roads first and keep widths in screen pixels.
+	var inverse := 1.0 / screen_scale()
+	for points in coast_lines:
+		if points.size() >= 2:
+			draw_polyline(points, Color(0.69, 0.83, 0.79, 0.65), 1.1 * inverse, true)
+	for water in water_lines:
+		if water["points"].size() >= 2:
+			var width := 1.4 if water["kind"] == "river" else 0.8
+			draw_polyline(water["points"], Color("61aeca"), width * inverse, true)
+	# Low priority roads first, with stroke widths kept in screen pixels.
 	for major in [false, true]:
 		for layer in road_layers:
 			var is_major: bool = layer["kind"] in ["trunk", "primary", "trunk_link", "primary_link"]
-			if is_major != major:
-				continue
-			var pts := PackedVector2Array()
-			for p in layer["points"]:
-				pts.append(world_to_screen(p))
-			if pts.size() < 2:
+			if is_major != major or layer["points"].size() < 2:
 				continue
 			var width := 3.0 if is_major else (2.0 if zoom >= 3.0 else 1.0)
-			draw_multiline(pts, Color("293d3c"), width + 2.0, true)
-			draw_multiline(pts, Color("e7d3a5") if is_major else Color("a6ad96"), width, true)
-	for branch in region.get("branches", []):
-		var pts := _poly_points(branch.get("points", []))
-		if pts.size() >= 2:
-			draw_polyline(pts, Color("cfb37d"), 2.0, true)
-	var route := _poly_points(region.get("route", []))
-	if route.size() >= 2:
-		draw_polyline(route, Color("162c37"), 7.0, true)
-		draw_polyline(route, Color("ffc36b"), 3.5, true)
+			draw_multiline(layer["points"], Color("293d3c"), (width + 2.0) * inverse, true)
+			draw_multiline(layer["points"], Color("e7d3a5") if is_major else Color("a6ad96"), width * inverse, true)
+	for points in branch_lines:
+		if points.size() >= 2:
+			draw_polyline(points, Color("cfb37d"), 2.0 * inverse, true)
+	if route_points.size() >= 2:
+		draw_polyline(route_points, Color("162c37"), 7.0 * inverse, true)
+		draw_polyline(route_points, Color("ffc36b"), 3.5 * inverse, true)
 
 
 func _draw_label(pos: Vector2, text: String, font_size: int, color: Color) -> void:
