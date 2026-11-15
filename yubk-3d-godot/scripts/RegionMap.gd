@@ -56,7 +56,10 @@ func setup(data: Dictionary) -> void:
 		for seg in group.get("segments", []):
 			points.append(Vector2(float(seg[0]), float(seg[1])))
 			points.append(Vector2(float(seg[2]), float(seg[3])))
-		road_layers.append({"kind": str(group.get("kind", "")), "points": points})
+		var layer := _road_style(str(group.get("kind", "")))
+		layer["points"] = points
+		road_layers.append(layer)
+	road_layers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["rank"] < b["rank"])
 	landuse_polys.clear()
 	for area in region.get("landuse", []):
 		var points := _world_points(area.get("points", []))
@@ -235,6 +238,20 @@ func _draw_landuse() -> void:
 		draw_colored_polygon(points, Color(0.76, 0.72, 0.58, 0.18))
 
 
+func _road_style(kind: String) -> Dictionary:
+	if kind in ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link"]:
+		return {"rank": 5, "min_zoom": 1.0, "width": 2.8, "color": Color("e7d3a5")}
+	if kind in ["secondary", "secondary_link"]:
+		return {"rank": 4, "min_zoom": 1.0, "width": 1.6, "color": Color("c0c3a2")}
+	if kind in ["tertiary", "tertiary_link"]:
+		return {"rank": 3, "min_zoom": 1.0, "width": 1.0, "color": Color("a6b3a0")}
+	if kind in ["residential", "living_street", "unclassified", "road"]:
+		return {"rank": 2, "min_zoom": 2.5, "width": 1.6, "color": Color("b0b6a3")}
+	if kind in ["service", "pedestrian"]:
+		return {"rank": 1, "min_zoom": 5.0, "width": 1.1, "color": Color("8da392")}
+	return {"rank": 0, "min_zoom": 8.0, "width": 0.8, "color": Color("688977")}
+
+
 func _draw_lines() -> void:
 	var inverse := 1.0 / screen_scale()
 	for points in coast_lines:
@@ -244,15 +261,14 @@ func _draw_lines() -> void:
 		if water["points"].size() >= 2:
 			var width := 1.4 if water["kind"] == "river" else 0.8
 			draw_polyline(water["points"], Color("61aeca"), width * inverse, true)
-	# Low priority roads first, with stroke widths kept in screen pixels.
-	for major in [false, true]:
-		for layer in road_layers:
-			var is_major: bool = layer["kind"] in ["trunk", "primary", "trunk_link", "primary_link"]
-			if is_major != major or layer["points"].size() < 2:
-				continue
-			var width := 3.0 if is_major else (2.0 if zoom >= 3.0 else 1.0)
-			draw_multiline(layer["points"], Color("293d3c"), (width + 2.0) * inverse, true)
-			draw_multiline(layer["points"], Color("e7d3a5") if is_major else Color("a6ad96"), width * inverse, true)
+	# Footpaths and service ways appear on zooming in, so the overview retains
+	# the highway hierarchy instead of becoming a web of 200,000 track segments.
+	for layer in road_layers:
+		if zoom < layer["min_zoom"] or layer["points"].size() < 2:
+			continue
+		var width: float = layer["width"]
+		draw_multiline(layer["points"], Color("293d3c"), (width + 1.6) * inverse, true)
+		draw_multiline(layer["points"], layer["color"], width * inverse, true)
 	for points in branch_lines:
 		if points.size() >= 2:
 			draw_polyline(points, Color("cfb37d"), 2.0 * inverse, true)
