@@ -36,8 +36,7 @@ ROUTE_DIR = ASSETS / "route"
 REGION_BOUNDS = (33.35, 44.35, 34.50, 44.75)
 ORIGIN_LAT, ORIGIN_LON = 44.55, 33.95
 GRID_STEP = 18.0
-ROAD_STEP_MAIN = 2.0
-ROAD_STEP_OTHER = 3.5
+ROAD_SMOOTH_MAIN = 6
 CORRIDOR_M = 520.0
 MAX_WINDOWS_PER_TILE = 10000
 WATER_LEVEL = 0.8
@@ -358,6 +357,17 @@ def road_width(tags):
     }.get(cls, 4.5)
 
 
+# Draw order: minor paths first, then larger roads, so driveways never cut
+# through the carriageway of the main route at junctions.
+HIGHWAY_RANK = {
+    "track": 0, "path": 0, "steps": 0, "cycleway": 1, "footway": 1,
+    "pedestrian": 2, "service": 3, "living_street": 4, "residential": 4,
+    "unclassified": 5, "road": 5, "tertiary": 6, "tertiary_link": 6,
+    "secondary": 7, "secondary_link": 7, "primary": 8, "primary_link": 8,
+    "trunk": 9, "trunk_link": 9,
+}
+
+
 def building_height(tags):
     raw = tags.get("height") or tags.get("building:height")
     if raw:
@@ -445,6 +455,22 @@ def strip2(mesh, a, b, half, offset, ya, yb, color):
         (a[0] + nx, ya + offset, a[1] + nz),
         color,
     )
+
+
+def road_skirt(mesh, a, b, inner_half, outer_half, ya, yb, ground_fn, color):
+    """Sloped shoulder that blends a raised carriageway into the terrain."""
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    if length < 1e-6:
+        return
+    nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+    ia = (a[0] + nx * inner_half, a[1] + nz * inner_half)
+    ib = (b[0] + nx * inner_half, b[1] + nz * inner_half)
+    oa = (a[0] + nx * outer_half, a[1] + nz * outer_half)
+    ob = (b[0] + nx * outer_half, b[1] + nz * outer_half)
+    gya = ground_fn(oa[0], oa[1])
+    gyb = ground_fn(ob[0], ob[1])
+    mesh.quad((ia[0], ya, ia[1]), (ib[0], yb, ib[1]),
+              (ob[0], gyb, ob[1]), (oa[0], gya, oa[1]), color)
 
 
 class RoadIndex:
@@ -1014,24 +1040,60 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
     route_distance = 0.0
     route_marker_next = 500.0
     route_light_next = 65.0
-    for way_id, run, tags in sorted(roads_all, key=lambda v: (v[2].get("highway") not in ("trunk", "primary"), v[0])):
+    for way_id, run, tags in sorted(roads_all, key=lambda v: (HIGHWAY_RANK.get(v[2].get("highway", "road"), 4), v[0])):
         name = tags.get("name:ru") or tags.get("name") or ""
         ref = tags.get("ref") or ""
-        on_route = min(route_index.distance(p) for p in run) < 9.0
-        is_main = name in main_names or any(x in ref for x in main_refs) or on_route
         cls = tags.get("highway", "residential")
-        step = ROAD_STEP_MAIN if is_main else ROAD_STEP_OTHER
+        arterial = cls in ("trunk", "trunk_link", "primary", "primary_link")
+        collector = cls in ("secondary", "secondary_link", "tertiary", "tertiary_link")
+        pathlike = cls in ("footway", "path", "steps", "cycleway", "track")
+        minor_paved = cls in ("residential", "unclassified", "living_street", "road", "pedestrian", "service")
+        near_corridor = min(route_index.distance(p) for p in run) < 450.0
+        # A way is on the main route only when most of its nodes follow the
+        # route; a simple crossing must not be promoted to highway detail.
+        near_points = sum(1 for p in run if route_index.distance(p) < 9.0)
+        on_route = near_points >= max(2, int(len(run) * 0.5))
+        is_main = name in main_names or any(x in ref for x in main_refs) or on_route
+        # Roads keep full detail near the main route and in towns; distant minor
+        # roads are simplified so every settlement still appears without blowing
+        # the per-tile vertex budget.
+        if is_main:
+            step = 2.0
+            smooth_r = ROAD_SMOOTH_MAIN
+            finish = "main"
+        elif arterial:
+            step = 2.6
+            smooth_r = 4
+            finish = "arterial"
+        elif collector:
+            step = 4.0
+            smooth_r = 3
+            finish = "collector"
+        elif minor_paved and near_corridor:
+            step = 4.0
+            smooth_r = 2
+            finish = "urban"
+        elif minor_paved:
+            step = 12.0
+            smooth_r = 1
+            finish = "simple"
+        elif near_corridor:
+            step = 10.0
+            smooth_r = 1
+            finish = "path"
+        else:
+            continue
         # Interpolate along surveyed OSM segments without overshooting junctions.
         dense = densify(run, step)
         if len(dense) < 2:
             continue
         heights = [ground_at(x, z) for x, z in dense]
-        heights = smooth(heights, 3 if is_main else 1)
+        heights = smooth(heights, smooth_r)
         widths = road_width(tags)
         half = widths / 2
         oneway = tags.get("oneway") in ("yes", "1", "true")
         surface = (tags.get("surface") or "").lower()
-        if "footway" in cls or "path" in cls:
+        if pathlike:
             asphalt = (0.58, 0.52, 0.41)
             shoulder = (0.48, 0.46, 0.36)
         elif surface in ("unpaved", "gravel", "ground", "dirt", "compacted"):
@@ -1043,7 +1105,7 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         else:
             asphalt = (0.43, 0.44, 0.45) if is_main else (0.36, 0.37, 0.37)
             shoulder = (0.60, 0.56, 0.47) if is_main else (0.51, 0.48, 0.40)
-        sidewalk = tags.get("sidewalk") in ("both", "left", "right", "yes") or (is_main and cls in ("trunk", "primary", "secondary", "tertiary"))
+        sidewalk = tags.get("sidewalk") in ("both", "left", "right", "yes") or cls in ("trunk", "primary", "secondary", "tertiary")
         bridge = tags.get("bridge") in ("yes", "viaduct", "aqueduct", "boardwalk")
         tunnel = tags.get("tunnel") in ("yes", "building_passage") or tags.get("covered") == "yes"
         layer = 0
@@ -1051,54 +1113,69 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
             layer = int(float(tags.get("layer", "0")))
         except ValueError:
             layer = 0
+        do_curbs = finish in ("main", "arterial") and not tunnel
+        do_markings = finish in ("main", "arterial") and widths >= 4.5 and cls not in ("pedestrian", "service", "living_street")
+        do_sidewalk = sidewalk and finish in ("main", "arterial")
+        do_skirt = finish in ("main", "arterial")
+        do_shoulder = finish in ("main", "arterial", "collector", "urban")
+        shoulder_off = 0.20
+        surface_off = 0.34
+        mark_off = 0.37
         for a, b, ya, yb in zip(dense, dense[1:], heights, heights[1:]):
             length = math.hypot(b[0] - a[0], b[1] - a[1])
             if length < 0.05:
                 continue
             ground_ya, ground_yb = ya, yb
+            elevated = bridge or (layer > 0 and not tunnel)
             if bridge:
                 ya = ground_ya + 5.0
                 yb = ground_yb + 5.0
             elif layer > 0 and not tunnel:
                 ya = ground_ya + 3.0
                 yb = ground_yb + 3.0
-            # A thin shoulder prevents roads from looking pasted over the DEM.
+            # A sloped verge ties the raised carriageway into the terrain and
+            # prevents the road from looking like a decal pasted on the DEM.
             tone = 0.018 * math.sin(a[0] * 0.31 + a[1] * 0.17) + 0.009 * math.sin(a[0] * 0.071 - a[1] * 0.23)
             segment_asphalt = tuple(clamp(v + tone, 0.0, 1.0) for v in asphalt)
-            strip2(mesh, a, b, half + 0.55, 0.055, ya, yb, shoulder)
-            strip2(mesh, a, b, half, 0.11, ya, yb, segment_asphalt)
+            if do_skirt and not elevated and not tunnel:
+                skirt_color = tuple(clamp(v * 0.80, 0.0, 1.0) for v in shoulder)
+                for side in (-1, 1):
+                    road_skirt(mesh, a, b, (half + 0.55) * side, (half + 2.3) * side,
+                               ground_ya + shoulder_off, ground_yb + shoulder_off, ground_at, skirt_color)
+            if do_shoulder:
+                strip2(mesh, a, b, half + 0.55, shoulder_off, ya, yb, shoulder)
+            strip2(mesh, a, b, half, surface_off, ya, yb, segment_asphalt)
             # Vertical curbs anchor roads into the terrain instead of floating over it.
-            if "footway" not in cls and "path" not in cls and "steps" not in cls and "cycleway" not in cls and "track" not in cls and not tunnel:
+            if do_curbs:
                 nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
                 curb = (0.32, 0.31, 0.29) if not is_main else (0.40, 0.39, 0.36)
-                for edge, top_off in ((half + 0.55, 0.055), (half, 0.11)):
+                for edge, top_off in ((half + 0.55, shoulder_off), (half, surface_off)):
                     for side in (-1, 1):
                         ax_ = a[0] + nx * edge * side
                         az_ = a[1] + nz * edge * side
                         bx_ = b[0] + nx * edge * side
                         bz_ = b[1] + nz * edge * side
                         mesh.quad((ax_, ground_ya - 0.06, az_), (bx_, ground_yb - 0.06, bz_), (bx_, yb + top_off, bz_), (ax_, ya + top_off, az_), curb)
-            if sidewalk and is_main:
+            if do_sidewalk:
                 for side in (-1, 1):
                     nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
                     off = half + 0.85
                     pa = (a[0] + nx * off * side, a[1] + nz * off * side)
                     pb = (b[0] + nx * off * side, b[1] + nz * off * side)
-                    strip2(mesh, pa, pb, 0.65, 0.17, ya, yb, (0.66, 0.63, 0.55))
-            markings = ("footway" not in cls and "path" not in cls and "pedestrian" not in cls and "service" not in cls and "steps" not in cls and widths >= 4.5)
-            if markings:
+                    strip2(mesh, pa, pb, 0.65, mark_off + 0.03, ya, yb, (0.66, 0.63, 0.55))
+            if do_markings:
                 # Continuous edge lines and a dashed centre line.
                 for side in (-1, 1):
                     nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
-                    off = half - 0.22
+                    off = half - 0.28
                     pa = (a[0] + nx * off * side, a[1] + nz * off * side)
                     pb = (b[0] + nx * off * side, b[1] + nz * off * side)
-                    strip2(mesh, pa, pb, 0.085, 0.135, ya, yb, (0.98, 0.96, 0.83))
+                    strip2(mesh, pa, pb, 0.09, mark_off, ya, yb, (0.97, 0.95, 0.86))
                 # Use the actual arc position from the run to make a stable dash pattern.
                 # The tiny modulo is enough for visual purpose and avoids per-tile seams.
                 phase = (abs(a[0] * 0.73 + a[1] * 0.37) % 9.0)
                 if phase < 4.0:
-                    strip2(mesh, a, b, 0.085, 0.14, ya, yb, (0.98, 0.96, 0.83))
+                    strip2(mesh, a, b, 0.09, mark_off, ya, yb, (0.97, 0.95, 0.86))
             if is_main:
                 route_distance += length
                 while route_distance >= route_light_next:
@@ -1197,11 +1274,28 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         return road_index.distance(p) < 18.0
 
     window_budget = MAX_WINDOWS_PER_TILE
+    target_base_vertices = 2_700_000
+
+    def building_priority(item):
+        way_id, poly_ll, tags = item
+        pts = [(p[0], p[1]) for p in poly_ll]
+        if len(pts) < 3:
+            return (1e9, 0.0)
+        cx = sum(p[0] for p in pts) / len(pts)
+        cz = sum(p[1] for p in pts) / len(pts)
+        return (route_index.distance((cx, cz)), -polygon_area(pts))
+
+    buildings = sorted(buildings, key=building_priority)
     for way_id, poly_ll, tags in buildings:
-        poly = simplify_polygon(poly_ll, 0.85)
-        if len(poly) < 3 or polygon_area(poly) < 7.0:
+        if len(mesh.base) // 24 > target_base_vertices:
+            break
+        cx0 = sum(p[0] for p in poly_ll) / max(1, len(poly_ll))
+        cz0 = sum(p[1] for p in poly_ll) / max(1, len(poly_ll))
+        near_main = route_index.distance((cx0, cz0)) < 280.0
+        poly = simplify_polygon(poly_ll, 0.85 if near_main else 2.0)
+        area = polygon_area(poly)
+        if len(poly) < 3 or area < 7.0:
             continue
-        low = min(ground_at(x, z) for x, z in poly) - 0.8
         base = max(ground_at(x, z) for x, z in poly)
         height = building_height(tags)
         top = base + height
@@ -1221,6 +1315,13 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         if kind in ("house", "garage", "garages", "shed") and height > 11.0:
             height = 11.0
             top = base + height
+        # Landmarks and street-front buildings get full facade detail; the rest
+        # become clean prisms so a whole settlement fits in the vertex budget.
+        landmark = kind in ("commercial", "hotel", "school", "public", "industrial")
+        medium = (not near_main) and (area > 650.0 or (landmark and area > 280.0))
+        full = near_main
+        if area < 25.0 and not near_main:
+            continue
         palette = FACADES.get(kind, FACADES["residential"])
         hsel = stable_hash(way_id)
         facade = palette[hsel % len(palette)]
@@ -1228,44 +1329,46 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         lower_color = tuple(v * 0.82 for v in facade)
         cx = sum(p[0] for p in poly) / len(poly)
         cz = sum(p[1] for p in poly) / len(poly)
-        near_main = near_route((cx, cz), 280.0)
         roof = triangulate(poly)
         if not roof:
             continue
-        # Walls are split at 3.1 m: darker plinth below, daylight facade above.
         band = min(top - 0.15, base + 3.1)
         for a, b in zip(poly, poly[1:] + poly[:1]):
             ya, yb = ground_at(a[0], a[1]), ground_at(b[0], b[1])
-            bottom_a, bottom_b = ya - 0.9, yb - 0.9
-            mesh.quad((a[0], bottom_a, a[1]), (b[0], bottom_b, b[1]), (b[0], band, b[1]), (a[0], band, a[1]), lower_color)
-            if top > band:
-                mesh.quad((a[0], band, a[1]), (b[0], band, b[1]), (b[0], top, b[1]), (a[0], top, a[1]), facade)
             wall_len = math.hypot(b[0] - a[0], b[1] - a[1])
-            if near_main and wall_len > 3.0:
-                nx, nz = (b[1] - a[1]) / wall_len, -(b[0] - a[0]) / wall_len
-                mx, mz = (a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5
-                if (mx - cx) * nx + (mz - cz) * nz < 0:
-                    nx, nz = -nx, -nz
-                floors = int(clamp((height - 3.0) // 3.0, 0, 18))
-                # Horizontal floor belts and a recessed entrance add readable depth.
-                for floor in range(1, floors + 1):
-                    y0 = base + 0.75 + floor * 3.0
-                    if y0 >= top - 0.45:
-                        break
-                    mesh.quad((a[0] + nx * 0.035, y0 - 0.035, a[1] + nz * 0.035),
-                              (b[0] + nx * 0.035, y0 - 0.035, b[1] + nz * 0.035),
-                              (b[0] + nx * 0.035, y0 + 0.035, b[1] + nz * 0.035),
-                              (a[0] + nx * 0.035, y0 + 0.035, a[1] + nz * 0.035),
-                              tuple(v * 0.77 for v in facade))
-                if wall_len > 4.5:
-                    t0, t1 = 0.44, 0.56
-                    x0 = a[0] + (b[0] - a[0]) * t0 + nx * 0.07
-                    z0 = a[1] + (b[1] - a[1]) * t0 + nz * 0.07
-                    x1 = a[0] + (b[0] - a[0]) * t1 + nx * 0.07
-                    z1 = a[1] + (b[1] - a[1]) * t1 + nz * 0.07
-                    mesh.quad((x0, base - 0.5, z0), (x1, base - 0.5, z1), (x1, base + 2.25, z1), (x0, base + 2.25, z0), (0.20, 0.19, 0.17))
-            # Window rows. Near-road buildings receive individual panes; distant ones stay clean.
-            if near_main and window_budget > 0 and wall_len > 3.0 and height > 5.5:
+            if full:
+                # Walls are split at 3.1 m: darker plinth below, daylight facade above.
+                bottom_a, bottom_b = ya - 0.9, yb - 0.9
+                mesh.quad((a[0], bottom_a, a[1]), (b[0], bottom_b, b[1]), (b[0], band, b[1]), (a[0], band, a[1]), lower_color)
+                if top > band:
+                    mesh.quad((a[0], band, a[1]), (b[0], band, b[1]), (b[0], top, b[1]), (a[0], top, a[1]), facade)
+                if wall_len > 3.0:
+                    nx, nz = (b[1] - a[1]) / wall_len, -(b[0] - a[0]) / wall_len
+                    mx, mz = (a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5
+                    if (mx - cx) * nx + (mz - cz) * nz < 0:
+                        nx, nz = -nx, -nz
+                    floors = int(clamp((height - 3.0) // 3.0, 0, 18))
+                    # Horizontal floor belts and a recessed entrance add readable depth.
+                    for floor in range(1, floors + 1):
+                        y0 = base + 0.75 + floor * 3.0
+                        if y0 >= top - 0.45:
+                            break
+                        mesh.quad((a[0] + nx * 0.035, y0 - 0.035, a[1] + nz * 0.035),
+                                  (b[0] + nx * 0.035, y0 - 0.035, b[1] + nz * 0.035),
+                                  (b[0] + nx * 0.035, y0 + 0.035, b[1] + nz * 0.035),
+                                  (a[0] + nx * 0.035, y0 + 0.035, a[1] + nz * 0.035),
+                                  tuple(v * 0.77 for v in facade))
+                    if wall_len > 4.5:
+                        t0, t1 = 0.44, 0.56
+                        x0 = a[0] + (b[0] - a[0]) * t0 + nx * 0.07
+                        z0 = a[1] + (b[1] - a[1]) * t0 + nz * 0.07
+                        x1 = a[0] + (b[0] - a[0]) * t1 + nx * 0.07
+                        z1 = a[1] + (b[1] - a[1]) * t1 + nz * 0.07
+                        mesh.quad((x0, base - 0.5, z0), (x1, base - 0.5, z1), (x1, base + 2.25, z1), (x0, base + 2.25, z0), (0.20, 0.19, 0.17))
+            else:
+                mesh.quad((a[0], ya - 0.55, a[1]), (b[0], yb - 0.55, b[1]), (b[0], top, b[1]), (a[0], top, a[1]), lower_color)
+            # Window rows. Street-front buildings receive individual panes.
+            if full and window_budget > 0 and wall_len > 3.0 and height > 5.5:
                 floors = int(clamp((height - 3.0) // 3.0, 0, 18))
                 cols = int(clamp((wall_len - 1.0) // 3.2, 0, 14))
                 if floors and cols:
@@ -1290,8 +1393,8 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
                             mesh.quad((wx + nx * 0.085, y0 - 0.09, wz + nz * 0.085), (x2 + nx * 0.085, y0 - 0.09, z2 + nz * 0.085),
                                       (x2 + nx * 0.085, y0, z2 + nz * 0.085), (wx + nx * 0.085, y0, wz + nz * 0.085), (0.91, 0.86, 0.73), target)
                             window_budget -= 1
-        # Roof cap or a low hipped roof for small houses.
-        if kind == "house" and height <= 16 and polygon_area(poly) < 900:
+        # Roof cap or a low hipped roof for small houses; simple flat roofs elsewhere.
+        if full and kind == "house" and height <= 16 and area < 900:
             cx = sum(p[0] for p in poly) / len(poly)
             cz = sum(p[1] for p in poly) / len(poly)
             apex = (cx, top + min(3.0, max(1.1, height * 0.32)), cz)
@@ -1300,9 +1403,10 @@ def build_tile(item, rxz, cumulative, headings, ways, water):
         else:
             for a, b, c in roof:
                 mesh.tri((a[0], top, a[1]), (b[0], top, b[1]), (c[0], top, c[1]), roof_color)
-            # Slim cornice around the roof edge.
-            for a, b in zip(poly, poly[1:] + poly[:1]):
-                mesh.quad((a[0], top - 0.22, a[1]), (b[0], top - 0.22, b[1]), (b[0], top + 0.04, b[1]), (a[0], top + 0.04, a[1]), tuple(v * 0.9 for v in facade))
+            if full or medium:
+                # Slim cornice around the roof edge.
+                for a, b in zip(poly, poly[1:] + poly[:1]):
+                    mesh.quad((a[0], top - 0.22, a[1]), (b[0], top - 0.22, b[1]), (b[0], top + 0.04, b[1]), (a[0], top + 0.04, a[1]), tuple(v * 0.9 for v in facade))
 
     # Vegetation: cypress-like uprights and broad coastal crowns along the route.
     rng = random.Random(7300 + n)

@@ -133,22 +133,51 @@ final class RegionMapView extends View {
 
     void drawLanduse(Canvas c) {
         if (region.landuse == null || region.landuse.length == 0 || compact) return;
-        paint.setStyle(Paint.Style.FILL);
         paint.setAntiAlias(true);
+        float margin = 24 * density;
         for (Region.Landuse area : region.landuse) {
             if (area.points.length < 6) continue;
+            float minX = px(area.points[0]), minY = py(area.points[1]);
+            float maxX = minX, maxY = minY;
             path.reset();
-            path.moveTo(px(area.points[0]), py(area.points[1]));
-            for (int i = 2; i + 1 < area.points.length; i += 2) path.lineTo(px(area.points[i]), py(area.points[i + 1]));
+            path.moveTo(minX, minY);
+            for (int i = 2; i + 1 < area.points.length; i += 2) {
+                float sx = px(area.points[i]), sy = py(area.points[i + 1]);
+                path.lineTo(sx, sy);
+                if (sx < minX) minX = sx;
+                if (sx > maxX) maxX = sx;
+                if (sy < minY) minY = sy;
+                if (sy > maxY) maxY = sy;
+            }
             path.close();
+            if (maxX < -margin || minX > getWidth() + margin || maxY < -margin || minY > getHeight() + margin) continue;
+            paint.setStyle(Paint.Style.FILL);
             paint.setColor(landuseFillColor(area.kind));
             c.drawPath(path, paint);
+            if (zoom >= 5f) drawUrbanTexture(c, path, area.kind);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(0.6f * density);
             paint.setColor(landuseStrokeColor(area.kind));
             c.drawPath(path, paint);
             paint.setStyle(Paint.Style.FILL);
         }
+    }
+
+    private void drawUrbanTexture(Canvas c, Path area, String kind) {
+        if (!"residential".equals(kind) && !"commercial".equals(kind) && !"retail".equals(kind)) return;
+        float block = 12f * scale;
+        if (block < 8f * density) return;
+        c.save();
+        c.clipPath(area);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(0.55f * density);
+        paint.setColor(Color.argb(26, 255, 255, 255));
+        float originX = px(0), originY = py(0);
+        for (float x = (float) Math.floor(-originX / block) * block + originX; x < getWidth(); x += block)
+            c.drawLine(x, 0, x, getHeight(), paint);
+        for (float y = (float) Math.floor(-originY / block) * block + originY; y < getHeight(); y += block)
+            c.drawLine(0, y, getWidth(), y, paint);
+        c.restore();
     }
 
     private int landuseFillColor(String kind) {
@@ -313,14 +342,43 @@ final class RegionMapView extends View {
     private int roadFillColor(String kind, boolean compact) {
         if (compact) return Color.argb(150, 224, 216, 194);
         switch (kind) {
-            case "trunk": case "trunk_link": return Color.rgb(235, 224, 190);
-            case "primary": case "primary_link": return Color.rgb(223, 211, 182);
-            case "secondary": case "secondary_link": return Color.rgb(210, 200, 175);
-            case "tertiary": case "tertiary_link": return Color.rgb(198, 192, 170);
+            case "trunk": case "trunk_link": return Color.rgb(252, 232, 178);
+            case "primary": case "primary_link": return Color.rgb(244, 222, 174);
+            case "secondary": case "secondary_link": return Color.rgb(236, 217, 176);
+            case "tertiary": case "tertiary_link": return Color.rgb(228, 211, 176);
             case "residential": case "unclassified": case "road": case "living_street":
-                return Color.rgb(184, 182, 164);
-            case "service": case "pedestrian": return Color.rgb(166, 168, 156);
-            default: return Color.rgb(138, 146, 140);
+                return Color.rgb(216, 210, 180);
+            case "service": case "pedestrian": return Color.rgb(188, 190, 172);
+            case "track": return Color.rgb(172, 164, 146);
+            default: return Color.rgb(152, 164, 156);
+        }
+    }
+
+    private float roadCasingWidth(String kind) {
+        if (compact) return 0.9f * density;
+        switch (kind) {
+            case "trunk": case "trunk_link": case "primary": case "primary_link":
+                return 2.4f * density;
+            case "secondary": case "secondary_link": case "tertiary": case "tertiary_link":
+                return 1.8f * density;
+            case "residential": case "unclassified": case "road": case "living_street":
+                return 1.1f * density;
+            case "service": case "pedestrian": return 0.7f * density;
+            default: return 0.4f * density;
+        }
+    }
+
+    private int roadCasingColor(String kind, boolean compact) {
+        if (compact) return Color.argb(95, 26, 36, 38);
+        switch (kind) {
+            case "trunk": case "trunk_link": return Color.argb(215, 74, 52, 32);
+            case "primary": case "primary_link": return Color.argb(200, 80, 60, 40);
+            case "secondary": case "secondary_link": return Color.argb(180, 58, 50, 40);
+            case "tertiary": case "tertiary_link": return Color.argb(165, 52, 48, 40);
+            case "residential": case "unclassified": case "road": case "living_street":
+                return Color.argb(155, 46, 46, 42);
+            case "service": case "pedestrian": return Color.argb(135, 44, 46, 42);
+            default: return Color.argb(120, 42, 46, 44);
         }
     }
 
@@ -346,8 +404,9 @@ final class RegionMapView extends View {
                 any = true;
             }
             if (!any) continue;
-            paint.setColor(Color.argb(compact ? 70 : 135, 20, 30, 32));
-            paint.setStrokeWidth(width + (compact ? 0.7f : 1.8f) * density);
+            float casing = roadCasingWidth(kind);
+            paint.setColor(roadCasingColor(kind, compact));
+            paint.setStrokeWidth(width + casing);
             c.drawPath(path, paint);
             paint.setColor(roadFillColor(kind, compact));
             paint.setStrokeWidth(width);
@@ -532,7 +591,7 @@ final class RegionMapView extends View {
             float span = (float) Math.hypot(e.getX(1) - e.getX(0), e.getY(1) - e.getY(0));
             float fx = (e.getX(0) + e.getX(1)) / 2, fy = (e.getY(0) + e.getY(1)) / 2;
             if (action == MotionEvent.ACTION_MOVE && previousSpan > 0 && span > 0) {
-                float next = Math.max(1, Math.min(200, zoom * span / previousSpan)), ratio = next / zoom;
+                float next = Math.max(1, Math.min(400, zoom * span / previousSpan)), ratio = next / zoom;
                 panX = fx - getWidth() / 2f - (previousFocusX - getWidth() / 2f - panX) * ratio;
                 panY = fy - getHeight() / 2f - (previousFocusY - getHeight() / 2f - panY) * ratio;
                 zoom = next; clampPan(); invalidate();
