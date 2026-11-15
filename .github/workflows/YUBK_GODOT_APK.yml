@@ -64,7 +64,10 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import 2>&1 | tee /tmp/godot-scripts.log
-          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/godot-scripts.log; then exit 1; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/godot-scripts.log; then
+            sed -n 's/^SCRIPT ERROR: /::error::/p' /tmp/godot-scripts.log
+            exit 1
+          fi
 
       - name: Prepare route assets
         shell: bash
@@ -94,7 +97,10 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import 2>&1 | tee /tmp/godot-import.log
-          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/godot-import.log; then exit 1; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/godot-import.log; then
+            sed -n 's/^SCRIPT ERROR: /::error::/p' /tmp/godot-import.log
+            exit 1
+          fi
 
       - name: Create export directory
         shell: bash
