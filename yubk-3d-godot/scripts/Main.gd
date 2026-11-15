@@ -14,6 +14,10 @@ var camera: Camera3D
 var env: WorldEnvironment
 var tile_root: Node3D
 var map: RegionMap
+var map_chrome: Control
+var resume_button: Button
+var look_hint: Label
+var status_time := 0.0
 var hud: Control
 var loading_label: Label
 var status_label: Label
@@ -57,22 +61,29 @@ func _ready() -> void:
 
 func _build_world() -> void:
 	var environment := Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color(0.62, 0.77, 0.86, 1.0)
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color("4586b3")
+	sky_material.sky_horizon_color = Color("c3d5db")
+	sky_material.ground_horizon_color = Color("c3d5db")
+	sky_material.ground_bottom_color = Color("6d7665")
+	var sky := Sky.new()
+	sky.sky_material = sky_material
+	environment.sky = sky
+	environment.background_mode = Environment.BG_SKY
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.ambient_light_color = Color(0.9, 0.93, 0.95)
 	environment.ambient_light_energy = 1.1
 	environment.fog_enabled = true
 	environment.fog_light_color = Color(0.62, 0.77, 0.86)
-	environment.fog_density = 0.00045
+	environment.fog_density = 0.00022
 	env = WorldEnvironment.new()
 	env.environment = environment
 	add_child(env)
 
 	camera = Camera3D.new()
 	camera.fov = 65.0
-	camera.near = 0.4
-	camera.far = 2400.0
+	camera.near = 0.15
+	camera.far = 4000.0
 	add_child(camera)
 
 	tile_root = Node3D.new()
@@ -82,108 +93,165 @@ func _build_world() -> void:
 func _build_ui() -> void:
 	var ui := CanvasLayer.new()
 	add_child(ui)
+	var root := Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.theme = _theme()
+	ui.add_child(root)
 
 	map = RegionMap.new()
 	map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	map.mouse_filter = Control.MOUSE_FILTER_STOP
 	map.tapped.connect(_on_map_tapped)
-	ui.add_child(map)
+	root.add_child(map)
+
+	map_chrome = Control.new()
+	map_chrome.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map_chrome.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(map_chrome)
+	var title := PanelContainer.new()
+	_place(title, Control.PRESET_TOP_LEFT, Rect2(20, 18, 390, 66))
+	map_chrome.add_child(title)
+	title.add_child(_label("ЮЖНЫЙ БЕРЕГ КРЫМА\nСевастополь — Алушта · 121 км", 17, true))
+	var hint := _label("Выберите точку на золотом маршруте\nДва пальца — масштаб · перетаскивание — сдвиг", 14, false)
+	_place(hint, Control.PRESET_BOTTOM_RIGHT, Rect2(-485, -63, 465, 45))
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	map_chrome.add_child(hint)
+	var credits := _label("© OpenStreetMap · рельеф SRTM", 11, false)
+	_place(credits, Control.PRESET_TOP_RIGHT, Rect2(-310, 22, 290, 24))
+	credits.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	map_chrome.add_child(credits)
+	var zoom_in := _button("+", _map_zoom.bind(1.5))
+	_place(zoom_in, Control.PRESET_CENTER_RIGHT, Rect2(-78, -94, 58, 56))
+	map_chrome.add_child(zoom_in)
+	var zoom_out := _button("−", _map_zoom.bind(1.0 / 1.5))
+	_place(zoom_out, Control.PRESET_CENTER_RIGHT, Rect2(-78, -30, 58, 56))
+	map_chrome.add_child(zoom_out)
+	var reset := _button("Обзор", map.reset_view)
+	_place(reset, Control.PRESET_CENTER_RIGHT, Rect2(-112, 34, 92, 50))
+	map_chrome.add_child(reset)
+	resume_button = _button("Вернуться в 3D", _show_walk)
+	_place(resume_button, Control.PRESET_TOP_RIGHT, Rect2(-230, 56, 210, 54))
+	resume_button.visible = false
+	map_chrome.add_child(resume_button)
 
 	hud = Control.new()
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui.add_child(hud)
-
-	loading_label = _label("Загрузка участка…", 22, true)
-	loading_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	loading_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	loading_label.grow_vertical = Control.GROW_DIRECTION_BOTH
+	root.add_child(hud)
+	loading_label = _label("Загрузка участка…", 24, true)
+	_place(loading_label, Control.PRESET_CENTER, Rect2(-220, -40, 440, 80))
+	loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loading_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hud.add_child(loading_label)
-
+	var status_panel := PanelContainer.new()
+	_place(status_panel, Control.PRESET_TOP_LEFT, Rect2(20, 18, 410, 74))
+	hud.add_child(status_panel)
 	status_label = _label("", 16, true)
-	status_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	status_label.offset_left = 16.0
-	status_label.offset_top = 16.0
-	status_label.offset_right = 680.0
-	status_label.offset_bottom = 96.0
-	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hud.add_child(status_label)
+	status_panel.add_child(status_label)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 10)
+	_place(actions, Control.PRESET_TOP_RIGHT, Rect2(-470, 18, 450, 56))
+	hud.add_child(actions)
+	snap_button = _button("По дорогам", _on_snap_button)
+	snap_button.custom_minimum_size = Vector2(155, 56)
+	actions.add_child(snap_button)
+	speed_button = _button(SPEED_LABELS[speed_index], _on_speed_button)
+	speed_button.custom_minimum_size = Vector2(145, 56)
+	actions.add_child(speed_button)
+	var map_btn := _button("Карта", _on_map_button)
+	map_btn.custom_minimum_size = Vector2(130, 56)
+	actions.add_child(map_btn)
 
-	var map_btn := Button.new()
-	map_btn.text = "Карта"
-	map_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	map_btn.offset_left = -140.0
-	map_btn.offset_top = 16.0
-	map_btn.offset_right = -16.0
-	map_btn.offset_bottom = 76.0
-	map_btn.pressed.connect(_on_map_button)
-	hud.add_child(map_btn)
-
-	speed_button = Button.new()
-	speed_button.text = SPEED_LABELS[speed_index]
-	speed_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	speed_button.offset_left = -320.0
-	speed_button.offset_top = 16.0
-	speed_button.offset_right = -152.0
-	speed_button.offset_bottom = 76.0
-	speed_button.pressed.connect(_on_speed_button)
-	hud.add_child(speed_button)
-
-	snap_button = Button.new()
-	snap_button.text = "По дорогам"
-	snap_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	snap_button.offset_left = -500.0
-	snap_button.offset_top = 16.0
-	snap_button.offset_right = -332.0
-	snap_button.offset_bottom = 76.0
-	snap_button.pressed.connect(_on_snap_button)
-	hud.add_child(snap_button)
-
-	_add_dpad_button("Вперёд", Control.PRESET_BOTTOM_LEFT, Vector2(20, -210), Vector2(150, -150), "fwd")
-	_add_dpad_button("Назад", Control.PRESET_BOTTOM_LEFT, Vector2(20, -70), Vector2(150, -10), "back")
-	_add_dpad_button("Влево", Control.PRESET_BOTTOM_LEFT, Vector2(170, -140), Vector2(290, -80), "left")
-	_add_dpad_button("Вправо", Control.PRESET_BOTTOM_LEFT, Vector2(320, -140), Vector2(440, -80), "right")
+	_add_dpad_button("ВПЕРЁД", Control.PRESET_BOTTOM_LEFT, Vector2(24, -160), Vector2(174, -92), "fwd")
+	_add_dpad_button("НАЗАД", Control.PRESET_BOTTOM_LEFT, Vector2(24, -82), Vector2(174, -24), "back")
+	_add_dpad_button("↶", Control.PRESET_BOTTOM_RIGHT, Vector2(-220, -100), Vector2(-128, -24), "left")
+	_add_dpad_button("↷", Control.PRESET_BOTTOM_RIGHT, Vector2(-116, -100), Vector2(-24, -24), "right")
+	look_hint = _label("Проведите по экрану, чтобы осмотреться", 14, false)
+	_place(look_hint, Control.PRESET_BOTTOM_WIDE, Rect2(200, -49, -440, 26))
+	look_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hud.add_child(look_hint)
 
 	teleport_panel = PanelContainer.new()
-	teleport_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	teleport_panel.offset_left = 16.0
-	teleport_panel.offset_top = -210.0
-	teleport_panel.offset_right = -16.0
-	teleport_panel.offset_bottom = -16.0
-	ui.add_child(teleport_panel)
-
-	var vb := VBoxContainer.new()
-	teleport_panel.add_child(vb)
-	teleport_label = _label("", 15, false)
-	teleport_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vb.add_child(teleport_label)
-	teleport_button = Button.new()
-	teleport_button.text = "Перейти на участок"
-	teleport_button.custom_minimum_size = Vector2(0, 64)
-	teleport_button.pressed.connect(_on_teleport_pressed)
-	vb.add_child(teleport_button)
+	_place(teleport_panel, Control.PRESET_BOTTOM_WIDE, Rect2(210, -157, -420, 82))
+	root.add_child(teleport_panel)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 20)
+	teleport_panel.add_child(row)
+	teleport_label = _label("", 16, false)
+	teleport_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	teleport_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(teleport_label)
+	teleport_button = _button("Открыть в 3D →", _on_teleport_pressed)
+	teleport_button.custom_minimum_size = Vector2(220, 54)
+	row.add_child(teleport_button)
 	teleport_panel.visible = false
 
 
-func _label(text: String, size_px: int, bold: bool) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size_px)
-	l.add_theme_color_override("font_color", Color(0.93, 0.97, 0.93))
-	return l
+func _theme() -> Theme:
+	var theme := Theme.new()
+	theme.default_font_size = 17
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color(0.035, 0.085, 0.12, 0.88)
+		box.border_color = Color("40616c")
+		box.set_border_width_all(1)
+		box.set_corner_radius_all(12)
+		box.content_margin_left = 18
+		box.content_margin_right = 18
+		box.content_margin_top = 10
+		box.content_margin_bottom = 10
+		if state == "pressed":
+			box.bg_color = Color("c18a43")
+			box.border_color = Color("ffca7e")
+		elif state == "hover":
+			box.bg_color = Color("284856")
+		theme.set_stylebox(state, "Button", box)
+		if state == "normal":
+			theme.set_stylebox("panel", "PanelContainer", box)
+	theme.set_color("font_color", "Button", Color("f3f5e9"))
+	theme.set_color("font_pressed_color", "Button", Color("ffffff"))
+	return theme
+
+
+func _place(control: Control, preset: int, rect: Rect2) -> void:
+	control.set_anchors_preset(preset)
+	control.offset_left = rect.position.x
+	control.offset_top = rect.position.y
+	control.offset_right = rect.end.x
+	control.offset_bottom = rect.end.y
+
+
+func _label(text: String, size_px: int, _bold: bool) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", size_px)
+	label.add_theme_color_override("font_color", Color("f3f5e9"))
+	label.add_theme_color_override("font_shadow_color", Color(0.01, 0.03, 0.04, 0.9))
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	return label
+
+
+func _button(text: String, callback: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(callback)
+	return button
+
+
+func _map_zoom(factor: float) -> void:
+	map.zoom_at(factor, map.size / 2.0)
 
 
 func _add_dpad_button(text: String, preset: int, a: Vector2, b: Vector2, action: String) -> void:
-	var btn := Button.new()
+	var btn := DriveButton.new()
 	btn.text = text
-	btn.set_anchors_preset(preset)
-	btn.offset_left = a.x
-	btn.offset_top = a.y
-	btn.offset_right = b.x
-	btn.offset_bottom = b.y
-	btn.custom_minimum_size = Vector2(b.x - a.x, b.y - a.y)
-	btn.button_down.connect(_on_dpad_down.bind(action))
-	btn.button_up.connect(_on_dpad_up.bind(action))
+	btn.focus_mode = Control.FOCUS_NONE
+	_place(btn, preset, Rect2(a, b - a))
+	btn.held.connect(_on_dpad_down.bind(action))
+	btn.released.connect(_on_dpad_up.bind(action))
 	hud.add_child(btn)
 
 
@@ -249,6 +317,7 @@ func _candidate_at(x: float, z: float) -> Dictionary:
 	if route.size() < 2:
 		return {}
 	var best_d := 900.0 * 900.0
+	var found := false
 	var bx := 0.0
 	var bz := 0.0
 	var bh := 0.0
@@ -271,10 +340,13 @@ func _candidate_at(x: float, z: float) -> Dictionary:
 		var d := (x - px) * (x - px) + (z - pz) * (z - pz)
 		if d < best_d:
 			best_d = d
+			found = true
 			bx = px
 			bz = pz
 			bh = float(a[2]) + (float(b[2]) - float(a[2])) * t
 			bm = float(a[3]) + (float(b[3]) - float(a[3])) * t
+	if not found:
+		return {}
 	var tile := _tile_for_route_m(bm)
 	if tile.is_empty():
 		return {}
@@ -308,15 +380,28 @@ func _nearest_place(route_m: float, max_m: float) -> Dictionary:
 
 func _show_map() -> void:
 	mode = "map"
+	forward_input = 0.0
+	turn_input = 0.0
+	tile_root.visible = false
+	map_chrome.visible = true
+	resume_button.visible = not current_tile.is_empty()
+	if not current_tile.is_empty():
+		var origin = current_tile["origin"]
+		map.player = pos + Vector2((float(origin[1]) - ORIGIN_LON) * SX, (ORIGIN_LAT - float(origin[0])) * SZ)
+		map.has_player = true
+		map.queue_redraw()
 	hud.visible = false
 	teleport_panel.visible = false
 	loading_label.visible = false
 	map.visible = true
-	_unload_tile()
 
 
 func _show_walk() -> void:
 	mode = "walk"
+	forward_input = 0.0
+	turn_input = 0.0
+	map_chrome.visible = false
+	tile_root.visible = true
 	map.visible = false
 	hud.visible = true
 	teleport_panel.visible = false
@@ -347,8 +432,9 @@ func _load_tile(tile_id: String, lx: float, lz: float, heading: float) -> void:
 	current_mesh = mi
 	pos = Vector2(lx, lz)
 	heading_deg = heading
-	pitch_deg = 0.0
+	pitch_deg = -4.0
 	_update_camera()
+	_update_status()
 
 
 func _unload_tile() -> void:
@@ -358,7 +444,8 @@ func _unload_tile() -> void:
 	current_tile = {}
 
 
-func _process(delta: float) -> void:
+func _process(frame_delta: float) -> void:
+	var delta := minf(frame_delta, 0.1)
 	if mode != "walk" or current_tile.is_empty():
 		return
 	var speed: float = SPEEDS[speed_index]
@@ -379,7 +466,10 @@ func _process(delta: float) -> void:
 	if turn_input != 0.0:
 		heading_deg += turn_input * 78.0 * delta
 	_update_camera()
-	_update_status()
+	status_time += delta
+	if status_time >= 0.2:
+		status_time = 0.0
+		_update_status()
 
 
 func _update_camera() -> void:
@@ -395,9 +485,10 @@ func _update_status() -> void:
 	if current_tile.is_empty():
 		return
 	var tile_name := str(current_tile.get("name", "ЮБК"))
-	var place := _nearest_place(_route_m_from_local(), 8000.0)
+	var route_m := _route_m_from_local()
+	var place := _nearest_place(route_m, 8000.0)
 	var place_name: String = str(place.get("name", "ЮБК")) if not place.is_empty() else "ЮБК"
-	status_label.text = "%s\n%s · %.1f км" % [tile_name, str(place_name), _route_m_from_local() / 1000.0]
+	status_label.text = "%s\n%s · %.1f км" % [tile_name, str(place_name), route_m / 1000.0]
 
 
 func _route_m_from_local() -> float:
@@ -440,7 +531,7 @@ func _route_m_at(x: float, z: float) -> float:
 
 
 func _snap_to_roads(p: Vector2) -> Vector2:
-	var roads = current_tile.get("roads", [])
+	var roads := TileLoader.nearby(current_tile, "road", p.x, p.y)
 	if roads.is_empty():
 		return p
 	var best := 42.0 * 42.0
@@ -475,5 +566,5 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mode != "walk":
 		return
 	if event is InputEventScreenDrag:
-		heading_deg -= event.relative.x * 0.35
-		pitch_deg = clampf(pitch_deg - event.relative.y * 0.35, -75.0, 75.0)
+		heading_deg += event.relative.x * 0.2
+		pitch_deg = clampf(pitch_deg - event.relative.y * 0.2, -75.0, 75.0)

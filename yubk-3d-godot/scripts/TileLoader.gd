@@ -67,7 +67,9 @@ static func tile_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.cull_mode = BaseMaterial3D.CULL_BACK
+	# Legacy tiles mix triangle winding (terrain, ribbons, roofs and facades).
+	# Java rendered both sides; culling them in Godot opens holes in the world.
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.roughness = 1.0
 	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return mat
@@ -101,7 +103,33 @@ static func tile_world(tile_id: String) -> Dictionary:
 		out["roads"] = nav.get("roads", [])
 	else:
 		out["roads"] = []
+	# Spatial lookups keep collision and road snapping cheap on mobile.
+	out["road_index"] = {}
+	for road in out["roads"]:
+		_index_bounds(out["road_index"], minf(road[0], road[2]) - 42.0, minf(road[1], road[3]) - 42.0, maxf(road[0], road[2]) + 42.0, maxf(road[1], road[3]) + 42.0, road)
+	out["building_index"] = {}
+	for poly in out["buildings"]:
+		if poly.size() < 3:
+			continue
+		var bounds := Rect2(Vector2(poly[0][0], poly[0][1]), Vector2.ZERO)
+		for p in poly:
+			bounds = bounds.expand(Vector2(p[0], p[1]))
+		bounds = bounds.grow(0.6)
+		_index_bounds(out["building_index"], bounds.position.x, bounds.position.y, bounds.end.x, bounds.end.y, poly)
 	return out
+
+
+static func _index_bounds(index: Dictionary, x0: float, z0: float, x1: float, z1: float, item: Array) -> void:
+	for x in range(int(floor(x0 / 64.0)), int(floor(x1 / 64.0)) + 1):
+		for z in range(int(floor(z0 / 64.0)), int(floor(z1 / 64.0)) + 1):
+			var key := Vector2i(x, z)
+			if not index.has(key):
+				index[key] = []
+			index[key].append(item)
+
+
+static func nearby(tile: Dictionary, kind: String, x: float, z: float) -> Array:
+	return tile.get(kind + "_index", {}).get(Vector2i(int(floor(x / 64.0)), int(floor(z / 64.0))), [])
 
 
 static func ground_height(tile: Dictionary, x: float, z: float) -> float:
@@ -167,7 +195,7 @@ static func blocked(tile: Dictionary, px: float, pz: float) -> bool:
 		return true
 	if ground_height(tile, px, pz) < 0.7:
 		return true
-	for poly in tile.get("buildings", []):
+	for poly in nearby(tile, "building", px, pz):
 		if point_in_polygon(px, pz, poly):
 			return true
 		var n: int = int(poly.size())

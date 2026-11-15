@@ -85,13 +85,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import
+          /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import 2>&1 | tee /tmp/godot-import.log
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/godot-import.log; then exit 1; fi
 
       - name: Create export directory
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p yubk-3d-godot/build
+
+      - name: Render and check map and 3D scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a timeout 240 /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 \
+            --path yubk-3d-godot --rendering-method gl_compatibility --audio-driver Dummy \
+            --script res://tests/visual_smoke.gd 2>&1 | tee yubk-3d-godot/build/visual-smoke.log
+          if grep -E 'SCRIPT ERROR|Parse Error|ERROR:' yubk-3d-godot/build/visual-smoke.log; then exit 1; fi
+          grep VISUAL_SMOKE_PASS yubk-3d-godot/build/visual-smoke.log
+
+      - name: Upload visual checks
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yubk-godot-visual-checks
+          path: |
+            yubk-3d-godot/build/*.png
+            yubk-3d-godot/build/*.log
+          retention-days: 14
 
       - name: Export debug APK
         shell: bash
