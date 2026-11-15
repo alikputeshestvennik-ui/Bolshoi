@@ -87,6 +87,12 @@ jobs:
           set -euo pipefail
           /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import
 
+      - name: Create export directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p yubk-3d-godot/build
+
       - name: Export debug APK
         shell: bash
         run: |
