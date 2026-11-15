@@ -1,0 +1,102 @@
+name: Build YUBK 3D Godot APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'yubk-3d-godot/**'
+      - '.github/workflows/YUBK_GODOT_APK.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install Android SDK platform and build-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Download Godot 4.4.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.4.1-stable_linux.x86_64
+          /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --version
+
+      - name: Install Godot export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/templates.tpz \
+            "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.4.1.stable"
+          unzip -q -o /tmp/templates.tpz -d "$HOME/.local/share/godot/export_templates/"
+          mv "$HOME/.local/share/godot/export_templates/templates/"* \
+             "$HOME/.local/share/godot/export_templates/4.4.1.stable/" 2>/dev/null || true
+          ls -la "$HOME/.local/share/godot/export_templates/4.4.1.stable"
+
+      - name: Prepare route assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 yubk-3d-godot/tools/sync_assets.py
+
+      - name: Create debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/debug.keystore" \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA -keysize 2048 -validity 10000
+          {
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$RUNNER_TEMP/debug.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+
+      - name: Import project
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --import
+
+      - name: Export debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/godot/Godot_v4.4.1-stable_linux.x86_64 --headless --path yubk-3d-godot --export-debug "Android"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: yubk-3d-godot-apk
+          path: yubk-3d-godot/build/*.apk
+          if-no-files-found: error
+          retention-days: 14
