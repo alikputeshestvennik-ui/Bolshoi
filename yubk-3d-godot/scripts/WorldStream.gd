@@ -136,7 +136,7 @@ func _update_coverage() -> void:
 		var cell := Vector2i(c[0], c[1])
 		loaded[cell] = int(loaded.get(cell, 0)) + 1
 	for cell in loaded:
-		var complete := int(loaded.get(cell, 0)) == _cells.get(cell, []).size()
+		var complete: bool = int(loaded.get(cell, 0)) == _cells.get(cell, []).size()
 		var neighbor_radius := 1 if _region_grid.is_empty() else 0
 		for dx in range(-neighbor_radius, neighbor_radius + 1):
 			for dz in range(-neighbor_radius, neighbor_radius + 1):
