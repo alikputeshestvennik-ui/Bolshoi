@@ -90,6 +90,9 @@ func _run() -> void:
 		map._gui_input(touch)
 	check(not app.teleport_panel.visible, "Pinch release must not teleport")
 	map.reset_view()
+	if app.region.has("spatial_grid"):
+		await _run_regional()
+		return
 	# Revisit the same area as the user's Gaspra screenshot.
 	var route: Array = app.region["route"]
 	var target: Array = []
@@ -167,5 +170,94 @@ func _run() -> void:
 	await capture("map-16-9")
 	app._show_walk()
 	await capture("walk-16-9")
+	print("VISUAL_SMOKE_", "FAIL" if failed else "PASS")
+	quit(1 if failed else 0)
+
+
+func _run_regional() -> void:
+	var places := [
+		["sevastopol", 44.6054, 33.5221], ["alupka", 44.4194, 34.0557],
+		["koreiz", 44.433, 34.084], ["yalta", 44.499, 34.169],
+		["alushta", 44.6771, 34.4095], ["baidar", 44.446, 33.775],
+		["gurzuf", 44.5479, 34.2737], ["balaklava", 44.5121, 33.5990]]
+	var stream_id := 0
+	for place in places:
+		var point := Vector2((float(place[2]) - app.ORIGIN_LON) * app.SX, (app.ORIGIN_LAT - float(place[1])) * app.SZ)
+		var candidate: Dictionary = app._candidate_at(point.x, point.y)
+		check(not candidate.is_empty(), "Regional teleport unavailable: " + str(place[0]))
+		if candidate.is_empty():
+			continue
+		check(point.distance_to(Vector2(candidate["x"], candidate["z"])) <= 161.0, "Teleport moved to the highway: " + str(place[0]))
+		app._show_walk()
+		app._load_tile(candidate["tile_id"], candidate["local_x"], candidate["local_z"], candidate["heading"])
+		check(not TileLoader.blocked(app.current_tile, app.pos.x, app.pos.y), "Teleport landed in an obstacle")
+		check(not app.current_tile["surfaces"].is_empty(), "Local roads have no pavement height data")
+		if stream_id == 0:
+			stream_id = app.world_stream.get_instance_id()
+		check(app.world_stream.get_instance_id() == stream_id, "Regional teleport recreated the streamer")
+		await wait_for_stream()
+		check(app.world_stream.failed.is_empty(), "A regional geometry job failed")
+		check(not app.world_stream.resident.is_empty(), "Missing local 3D detail")
+		var ground := TileLoader.pavement_height(app.current_tile, app.pos.x, app.pos.y)
+		check(absf(app.camera.position.y - ground - 1.9) < 0.01, "Regional camera is off the pavement")
+		await capture("street-" + str(place[0]))
+		app.set_process(false)
+		app.camera.position = Vector3(app.pos.x, ground + 240, app.pos.y + 200)
+		app.camera.look_at(Vector3(app.pos.x, ground, app.pos.y), Vector3.UP)
+		await capture("area-" + str(place[0]))
+		app._update_camera()
+		app.set_process(true)
+	# Cross a real route/page boundary in both directions with ordinary movement.
+	var crossed := false
+	var route: Array = app.region["route"]
+	for i in range(1, route.size()):
+		var a := Vector2(float(route[i - 1][0]), float(route[i - 1][1]))
+		var b := Vector2(float(route[i][0]), float(route[i][1]))
+		var page_a: Dictionary = app._tile_at(a)
+		var page_b: Dictionary = app._tile_at(b)
+		if page_a.is_empty() or page_b.is_empty() or page_a["id"] == page_b["id"]:
+			continue
+		var lo := a
+		var hi := b
+		for j in range(20):
+			var mid := (lo + hi) / 2.0
+			if app._tile_at(mid).get("id") == page_a["id"]:
+				lo = mid
+			else:
+				hi = mid
+		var direction := (b - a).normalized()
+		var start := lo - direction * 1.0
+		app._load_tile(page_a["id"], start.x, start.y, rad_to_deg(atan2(direction.x, -direction.y)))
+		if TileLoader.blocked(app.current_tile, start.x, start.y):
+			continue
+		app.snap_enabled = false
+		app.forward_input = 1.0
+		app._process(0.1)
+		app.forward_input = 0.0
+		if app.current_tile.get("id") != page_b["id"]:
+			continue
+		check(app.pos.distance_to(start) > 1.5, "Movement stopped at a page border")
+		app.heading_deg += 180.0
+		app.forward_input = 1.0
+		app._process(0.1)
+		app.forward_input = 0.0
+		check(app.current_tile.get("id") == page_a["id"], "Cannot cross back over a page border")
+		check(app.world_stream.get_instance_id() == stream_id, "Page transition recreated the streamer")
+		app.snap_enabled = true
+		crossed = true
+		break
+	check(crossed, "No real page boundary could be crossed")
+	await wait_for_stream()
+	for i in range(24):
+		app.world_stream.update_focus(app.pos + Vector2((i % 3 - 1) * 4200, 0), true)
+		await process_frame
+		check(app.world_stream.resident_vertices <= WorldStream.MAX_VERTICES, "Page changes exceeded geometry budget")
+	app.world_stream.update_focus(app.pos, true)
+	await wait_for_stream()
+	app._show_map()
+	check(root.disable_3d and not app.is_processing(), "Map did not suspend regional rendering")
+	root.size = Vector2i(1280, 720)
+	app.map.reset_view()
+	await capture("map-regional-16-9")
 	print("VISUAL_SMOKE_", "FAIL" if failed else "PASS")
 	quit(1 if failed else 0)

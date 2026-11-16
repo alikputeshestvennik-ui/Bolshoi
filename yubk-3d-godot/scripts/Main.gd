@@ -138,10 +138,10 @@ func _build_ui() -> void:
 	map_chrome.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(map_chrome)
 	var title := PanelContainer.new()
-	_place(title, Control.PRESET_TOP_LEFT, Rect2(20, 18, 390, 66))
+	_place(title, Control.PRESET_TOP_LEFT, Rect2(20, 18, 485, 66))
 	map_chrome.add_child(title)
-	title.add_child(_label("ЮЖНЫЙ БЕРЕГ КРЫМА\nСевастополь — Алушта · 121 км", 17, true))
-	var hint := _label("Выберите точку на золотом маршруте\nДва пальца — масштаб · перетаскивание — сдвиг", 14, false)
+	title.add_child(_label("ЮЖНЫЙ БЕРЕГ КРЫМА\nСевастополь — Алушта · Байдарская долина", 17, true))
+	var hint := _label("Выберите точку на суше или любую улицу\nДва пальца — масштаб · перетаскивание — сдвиг", 14, false)
 	_place(hint, Control.PRESET_BOTTOM_RIGHT, Rect2(-485, -63, 465, 45))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	map_chrome.add_child(hint)
@@ -336,6 +336,9 @@ func _on_teleport_pressed() -> void:
 
 
 func _candidate_text(c: Dictionary) -> String:
+	if region.has("spatial_grid"):
+		var place := _nearest_place_at(Vector2(c["x"], c["z"]))
+		return "%s\n%s" % [str(place.get("name", "Южный Крым")), str(c.get("street", "Свободная прогулка"))]
 	var place := _nearest_place(c.get("route_m", 0.0), 7000.0)
 	var name := str(c.get("tile_name", "ЮБК"))
 	var km := float(c.get("route_m", 0.0)) / 1000.0
@@ -344,6 +347,8 @@ func _candidate_text(c: Dictionary) -> String:
 
 
 func _candidate_at(x: float, z: float) -> Dictionary:
+	if region.has("spatial_grid"):
+		return _regional_candidate(Vector2(x, z))
 	var route = region.get("route", [])
 	if route.size() < 2:
 		return {}
@@ -389,6 +394,67 @@ func _candidate_at(x: float, z: float) -> Dictionary:
 		"local_x": local_x, "local_z": local_z,
 		"tile_id": str(tile["id"]), "tile_name": str(tile["name"])
 	}
+
+
+func _tile_at(point: Vector2) -> Dictionary:
+	for tile in region.get("tiles", []):
+		if point.x >= float(tile["x0"]) and point.x < float(tile["x1"]) and point.y >= float(tile["z0"]) and point.y < float(tile["z1"]):
+			return tile
+	return {}
+
+
+func _inside_region(point: Vector2) -> bool:
+	var bounds: Array = region.get("bounds", [])
+	if bounds.size() < 4:
+		return false
+	var lon := ORIGIN_LON + point.x / SX
+	var lat := ORIGIN_LAT - point.y / SZ
+	return lon >= bounds[0] and lon <= bounds[2] and lat >= bounds[1] and lat <= bounds[3]
+
+
+func _nearest_place_at(point: Vector2) -> Dictionary:
+	var best := {}
+	var distance := INF
+	for place in region.get("places", []):
+		var d := point.distance_squared_to(Vector2(float(place["x"]), float(place["z"])))
+		if d < distance:
+			distance = d
+			best = place
+	return best
+
+
+func _regional_candidate(point: Vector2) -> Dictionary:
+	if not _inside_region(point):
+		return {}
+	var page := _tile_at(point)
+	if page.is_empty():
+		return {}
+	var tile := TileLoader.tile_world(str(page["id"]))
+	if tile.is_empty():
+		return {}
+	var selected := point
+	var heading := 0.0
+	var street := "Свободная прогулка"
+	var distance := 160.0 * 160.0
+	# Select a local street, with every village and side road eligible. The
+	# route polyline has no part in deciding where a regional teleport lands.
+	for road in tile.get("roads", []):
+		var a := Vector2(float(road[0]), float(road[1]))
+		var b := Vector2(float(road[2]), float(road[3]))
+		var v := b - a
+		if v.length_squared() < 0.01:
+			continue
+		var q := a + v * clampf((point - a).dot(v) / v.length_squared(), 0.0, 1.0)
+		var d := q.distance_squared_to(point)
+		if d < distance and not TileLoader.blocked(tile, q.x, q.y):
+			distance = d
+			selected = q
+			heading = rad_to_deg(atan2(v.x, -v.y))
+			street = str(road[4])
+	if TileLoader.blocked(tile, selected.x, selected.y):
+		return {}
+	return {"x": selected.x, "z": selected.y, "local_x": selected.x, "local_z": selected.y,
+		"heading": heading, "tile_id": str(page["id"]), "tile_name": str(page["name"]), "street": street}
 
 
 func _tile_for_route_m(route_m: float) -> Dictionary:
@@ -457,6 +523,9 @@ func _start_walk(c: Dictionary) -> void:
 
 
 func _load_tile(tile_id: String, lx: float, lz: float, heading: float) -> void:
+	if region.has("spatial_grid"):
+		_load_region_tile(tile_id, Vector2(lx, lz), heading)
+		return
 	_unload_tile()
 	current_tile = TileLoader.tile_world(tile_id)
 	if current_tile.is_empty():
@@ -491,6 +560,45 @@ func _load_tile(tile_id: String, lx: float, lz: float, heading: float) -> void:
 	_update_status()
 
 
+func _load_region_tile(tile_id: String, point: Vector2, heading: float) -> void:
+	current_tile = TileLoader.tile_world(tile_id)
+	if current_tile.is_empty():
+		return
+	if world_stream == null:
+		world_stream = WorldStream.new()
+		if not world_stream.setup_region(region, point):
+			world_stream.free()
+			world_stream = null
+			status_label.text = "Ошибка данных региона"
+			return
+		tile_root.add_child(world_stream)
+		var mi := MeshInstance3D.new()
+		mi.mesh = TileLoader.mesh_from_arrays(TileLoader.load_vertex_arrays(TileLoader.ROUTE_DIR + "region.far.bin.gz", 200000))
+		mi.material_override = world_stream.far_material()
+		tile_root.add_child(mi)
+		current_mesh = mi
+	pos = point
+	world_stream.update_focus(pos, true)
+	world_stream.set_process(mode == "walk" and not _suspended)
+	heading_deg = heading
+	pitch_deg = -4.0
+	eye_height = NAN
+	travel_speed = 0.0
+	_update_camera()
+	_update_status()
+
+
+func _ensure_region_page(point: Vector2) -> bool:
+	if not _inside_region(point):
+		return false
+	var page := _tile_at(point)
+	if page.is_empty():
+		return false
+	if str(page["id"]) != str(current_tile.get("id", "")):
+		current_tile = TileLoader.tile_world(str(page["id"]))
+	return not current_tile.is_empty()
+
+
 func _unload_tile() -> void:
 	if world_stream != null:
 		world_stream.stop()
@@ -517,11 +625,17 @@ func _process(frame_delta: float) -> void:
 		for i in range(steps):
 			var nx: float = pos.x + sin(rad) * forward_input * speed * step_dt
 			var nz: float = pos.y - cos(rad) * forward_input * speed * step_dt
+			if region.has("spatial_grid") and not _ensure_region_page(Vector2(nx, nz)):
+				break
 			if snap_enabled:
 				var snapped := _snap_to_roads(Vector2(nx, nz))
 				nx = snapped.x
 				nz = snapped.y
+			if region.has("spatial_grid") and not _ensure_region_page(Vector2(nx, nz)):
+				break
 			if TileLoader.blocked(current_tile, nx, nz):
+				if region.has("spatial_grid"):
+					_ensure_region_page(pos)
 				break
 			pos = Vector2(nx, nz)
 	if turn_input != 0.0:
@@ -554,9 +668,9 @@ func _update_status() -> void:
 		return
 	var tile_name := str(current_tile.get("name", "ЮБК"))
 	var route_m := _route_m_from_local()
-	var place := _nearest_place(route_m, 8000.0)
+	var place := _nearest_place_at(pos) if region.has("spatial_grid") else _nearest_place(route_m, 8000.0)
 	var place_name: String = str(place.get("name", "ЮБК")) if not place.is_empty() else "ЮБК"
-	status_label.text = "%s\n%s · %.1f км" % [tile_name, str(place_name), route_m / 1000.0]
+	status_label.text = "%s\nУлицы и окрестности" % place_name if region.has("spatial_grid") else "%s\n%s · %.1f км" % [tile_name, str(place_name), route_m / 1000.0]
 	instruments.update_state(current_tile, pos, heading_deg, travel_speed, route_m, SPEED_LABELS[speed_index])
 
 

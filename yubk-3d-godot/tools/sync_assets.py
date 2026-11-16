@@ -66,6 +66,7 @@ def convert_tile(tile_id: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--legacy", action="store_true", help="Rebuild the old route-only format")
     parser.add_argument("--tiles", nargs="+", help="Prepare only these tile IDs (default: all)")
     args = parser.parse_args()
     DST.mkdir(parents=True, exist_ok=True)
@@ -74,6 +75,10 @@ def main() -> int:
         src = SRC / name
         if src.exists():
             shutil.copyfile(src, DST / name)
+    if not args.legacy and not args.tiles:
+        from region_assets import main as build_region
+        build_region([])
+        return 0
     bake_map(DST)
 
     for pattern in ["tile_*.json", "tile_*.navigation.json"]:

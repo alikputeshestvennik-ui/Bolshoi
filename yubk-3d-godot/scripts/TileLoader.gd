@@ -122,6 +122,8 @@ static func tile_world(tile_id: String) -> Dictionary:
 	out["id"] = tile_id
 	out["name"] = meta.get("name", "ЮБК")
 	out["origin"] = meta.get("origin", [44.55, 33.95])
+	out["center_x"] = float(meta.get("center_x", 0.0))
+	out["center_z"] = float(meta.get("center_z", 0.0))
 	out["w"] = int(meta.get("w", 0))
 	out["h"] = int(meta.get("h", 0))
 	out["dx"] = float(meta.get("dx", 1.0))
@@ -207,8 +209,8 @@ static func ground_height(tile: Dictionary, x: float, z: float) -> float:
 	var dz := float(tile["dz"])
 	var half_x := float(tile["half_x"])
 	var half_z := float(tile["half_z"])
-	var u := clampf((x + half_x) / dx, 0.0, w - 1.00001)
-	var v := clampf((z + half_z) / dz, 0.0, h - 1.00001)
+	var u := clampf((x - float(tile.get("center_x", 0.0)) + half_x) / dx, 0.0, w - 1.00001)
+	var v := clampf((z - float(tile.get("center_z", 0.0)) + half_z) / dz, 0.0, h - 1.00001)
 	var c := int(u)
 	var r := int(v)
 	u -= c
@@ -291,7 +293,7 @@ static func point_in_polygon(px: float, pz: float, poly: Array) -> bool:
 static func blocked(tile: Dictionary, px: float, pz: float) -> bool:
 	var half_x := float(tile["half_x"])
 	var half_z := float(tile["half_z"])
-	if absf(px) > half_x - 3.0 or absf(pz) > half_z - 3.0:
+	if absf(px - float(tile.get("center_x", 0.0))) > half_x or absf(pz - float(tile.get("center_z", 0.0))) > half_z:
 		return true
 	if ground_height(tile, px, pz) < 0.7:
 		return true
