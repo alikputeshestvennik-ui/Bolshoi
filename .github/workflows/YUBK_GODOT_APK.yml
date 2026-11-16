@@ -19,14 +19,19 @@ jobs:
   sources:
     if: inputs.data_only == true
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [0_0, 1_0, 2_0, 3_0, 4_0, 0_1, 1_1, 2_1, 3_1, 4_1]
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -u yubk-3d-godot/tools/fetch_region.py
+      - run: python3 -u yubk-3d-godot/tools/fetch_region.py --shard ${{ matrix.shard }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: yubk-region-sources
+          name: yubk-region-source-${{ matrix.shard }}
           path: yubk-3d-android/data/region_buildings/*.gz
           retention-days: 14
   build:

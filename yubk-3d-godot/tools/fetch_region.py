@@ -15,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "yubk-3d-android/data/region_buildings"
 BOUNDS = (33.35, 44.35, 34.50, 44.75)
-ENDPOINTS = ["https://overpass.private.coffee/api/interpreter",
-             "https://overpass-api.de/api/interpreter"]
+ENDPOINTS = ["https://overpass-api.de/api/interpreter",
+             "https://overpass.private.coffee/api/interpreter"]
 
 
 def shards():
