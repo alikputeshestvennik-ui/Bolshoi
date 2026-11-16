@@ -2,6 +2,11 @@ name: Build YUBK 3D Godot APK
 
 on:
   workflow_dispatch:
+    inputs:
+      data_only:
+        description: Fetch regional OSM sources only
+        type: boolean
+        default: false
   push:
     paths:
       - 'yubk-3d-godot/**'
@@ -11,7 +16,21 @@ permissions:
   contents: read
 
 jobs:
+  sources:
+    if: inputs.data_only == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -u yubk-3d-godot/tools/fetch_region.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: yubk-region-sources
+          path: yubk-3d-android/data/region_buildings/*.gz
+          retention-days: 14
   build:
+    if: inputs.data_only != true
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
