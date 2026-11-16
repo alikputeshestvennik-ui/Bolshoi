@@ -198,6 +198,9 @@ func _run_regional() -> void:
 		await wait_for_stream()
 		check(app.world_stream.failed.is_empty(), "A regional geometry job failed")
 		check(not app.world_stream.resident.is_empty(), "Missing local 3D detail")
+		var cell := Vector2i(int(floor(app.pos.x / 256.0)), int(floor(app.pos.y / 256.0)))
+		var pixel: Vector2i = cell - app.world_stream._grid_origin
+		check(app.world_stream._coverage.get_pixel(pixel.x, pixel.y).r > 0.5, "Coarse terrain still covers the selected street")
 		var ground := TileLoader.pavement_height(app.current_tile, app.pos.x, app.pos.y)
 		check(absf(app.camera.position.y - ground - 1.9) < 0.01, "Regional camera is off the pavement")
 		await capture("street-" + str(place[0]))

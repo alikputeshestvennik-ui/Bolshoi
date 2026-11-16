@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        shard: [0_0, 1_0, 2_0, 3_0, 4_0, 0_1, 1_1, 2_1, 3_1, 4_1]
+        shard: ["0_0", "1_0", "2_0", "3_0", "4_0", "0_1", "1_1", "2_1", "3_1", "4_1"]
     steps:
       - uses: actions/checkout@v4
       - run: python3 -u yubk-3d-godot/tools/fetch_region.py --shard ${{ matrix.shard }}
@@ -35,7 +35,7 @@ jobs:
           path: yubk-3d-android/data/region_buildings/*.gz
           retention-days: 14
   build:
-    if: inputs.data_only != true
+    if: inputs.data_only != true && !contains(github.event.head_commit.message, '[sources]')
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -93,13 +93,22 @@ jobs:
             exit 1
           fi
 
+      - name: Restore prepared regional geometry
+        id: region-cache
+        uses: actions/cache@v4
+        with:
+          path: yubk-3d-godot/assets/route
+          key: yubk-region-v1-${{ hashFiles('yubk-3d-android/data/region_buildings/*.gz', 'yubk-3d-godot/tools/*.py', 'yubk-3d-android/tools/prepare_route.py') }}
+
       - name: Prepare route assets
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest discover -s yubk-3d-godot/tests -p 'test_*.py' -v
-          python3 -u yubk-3d-godot/tools/fetch_region.py
-          python3 -u yubk-3d-godot/tools/sync_assets.py
+          if [ "${{ steps.region-cache.outputs.cache-hit }}" != "true" ]; then
+            python3 -u yubk-3d-godot/tools/fetch_region.py
+            python3 -u yubk-3d-godot/tools/sync_assets.py
+          fi
           python3 -u yubk-3d-godot/tools/validate_region.py
 
       - name: Create debug keystore

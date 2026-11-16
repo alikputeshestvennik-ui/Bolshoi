@@ -127,7 +127,8 @@ func far_material() -> ShaderMaterial:
 
 func _update_coverage() -> void:
 	# Coarse terrain must not bury the exact roads or rivers. Keep it until
-	# every detailed chunk in this cell and its boundary neighbours is loaded.
+	# all geometry in a regional cell is loaded. Legacy triangles can cross
+	# cell boundaries, so that format also needs neighboring cells.
 	_coverage.fill(Color.BLACK)
 	var loaded := {}
 	for id in resident:
@@ -135,9 +136,10 @@ func _update_coverage() -> void:
 		var cell := Vector2i(c[0], c[1])
 		loaded[cell] = int(loaded.get(cell, 0)) + 1
 	for cell in loaded:
-		var complete := true
-		for dx in range(-1, 2):
-			for dz in range(-1, 2):
+		var complete := int(loaded.get(cell, 0)) == _cells.get(cell, []).size()
+		var neighbor_radius := 1 if _region_grid.is_empty() else 0
+		for dx in range(-neighbor_radius, neighbor_radius + 1):
+			for dz in range(-neighbor_radius, neighbor_radius + 1):
 				var neighbor: Vector2i = cell + Vector2i(dx, dz)
 				if int(loaded.get(neighbor, 0)) < _cells.get(neighbor, []).size():
 					complete = false
@@ -166,10 +168,16 @@ func update_focus(focus: Vector2, force: bool = false) -> void:
 		if failed.has(id):
 			continue
 		var distance := _distance_squared(chunks[id], focus)
+		if not _region_grid.is_empty():
+			var c: Array = chunks[id]["cell"]
+			if Vector2i(int(c[0]), int(c[1])) == Vector2i(int(floor(focus.x / _cell_m)), int(floor(focus.y / _cell_m))):
+				distance = -1.0
 		var radius := DETAIL_RADIUS + (RETAIN_MARGIN if resident.has(id) else 0.0)
 		if distance <= radius * radius:
 			candidates.append({"id": id, "distance": distance})
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["distance"] < b["distance"])
+	if not _region_grid.is_empty():
+		candidates = _whole_cell_candidates(candidates)
 	desired.clear()
 	_pending.clear()
 	var budget := 0
@@ -188,6 +196,35 @@ func update_focus(focus: Vector2, force: bool = false) -> void:
 			resident[id].free()
 			resident.erase(id)
 			_coverage_dirty = true
+
+
+func _whole_cell_candidates(candidates: Array) -> Array:
+	# Terrain is split on the globally aligned 32 m DEM grid. Complete 256 m
+	# cells can hide the coarse background independently of neighboring cells.
+	# Reserving every job in a selected cell prevents a partial dense city cell
+	# from leaving coarse terrain over its streets indefinitely.
+	var seen := {}
+	var selected: Array = []
+	var vertices := 0
+	for candidate in candidates:
+		var c: Array = chunks[candidate["id"]]["cell"]
+		var cell := Vector2i(int(c[0]), int(c[1]))
+		if seen.has(cell):
+			continue
+		seen[cell] = true
+		var ids: Array = _cells[cell]
+		var count := 0
+		var valid := true
+		for id in ids:
+			count += int(chunks[id]["vertices"])
+			if failed.has(id):
+				valid = false
+		if not valid or vertices + count > MAX_VERTICES - MAX_JOB_VERTICES or selected.size() + ids.size() > MAX_CHUNKS:
+			continue
+		vertices += count
+		for id in ids:
+			selected.append({"id": id, "distance": candidate["distance"]})
+	return selected
 
 
 func _process(_delta: float) -> void:

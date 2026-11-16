@@ -1,6 +1,7 @@
 """Fail the export if regional pages or settlement geometry are missing."""
 import json
 import math
+from collections import defaultdict
 from region_assets import DST, PAGE, grid_bounds, page_id, xz
 
 PLACES = [("sevastopol", 44.6054, 33.5221), ("balaklava", 44.5121, 33.5990),
@@ -15,6 +16,8 @@ def main():
     assert "spatial_grid" in region, "Route-only data cannot be exported as regional coverage"
     x0, z0, x1, z1 = grid_bounds()
     chunks = 0
+    cell_vertices = defaultdict(int)
+    cell_jobs = defaultdict(int)
     for row in range(z0, z1):
         for col in range(x0, x1):
             name = page_id(col, row)
@@ -25,6 +28,11 @@ def main():
                 assert 0 < chunk["vertices"] <= 18000 and chunk["vertices"] % 3 == 0
                 assert (DST / chunk["file"]).is_file(), chunk["file"]
                 chunks += 1
+                cell = tuple(chunk["cell"])
+                cell_vertices[cell] += chunk["vertices"]
+                cell_jobs[cell] += 1
+    assert max(cell_vertices.values()) <= 462000, ("A city cell exceeds the runtime geometry budget", max(cell_vertices.values()))
+    assert max(cell_jobs.values()) <= 96, "A city cell exceeds the runtime job budget"
     places = []
     for name, lat, lon in PLACES:
         x, z = xz(lat, lon)
@@ -37,7 +45,7 @@ def main():
         assert nearby_buildings >= 20, (name, "missing buildings", nearby_buildings)
         assert nearby_roads >= 20, (name, "missing roads", nearby_roads)
         places.append({"name": name, "buildings_within_1200m": nearby_buildings, "road_segments_within_1200m": nearby_roads})
-    report = {**region["coverage"], "pages": len(region["tiles"]), "chunks": chunks, "places": places}
+    report = {**region["coverage"], "pages": len(region["tiles"]), "chunks": chunks, "max_cell_vertices": max(cell_vertices.values()), "places": places}
     (DST.parents[1] / "build").mkdir(exist_ok=True)
     (DST.parents[1] / "build/coverage-report.json").write_text(json.dumps(report, indent=2))
     print("REGIONAL_COVERAGE_PASS", json.dumps(report), flush=True)

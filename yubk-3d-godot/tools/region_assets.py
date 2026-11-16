@@ -11,6 +11,8 @@ import argparse
 import gzip
 import json
 import math
+import os
+from concurrent.futures import ProcessPoolExecutor
 import sys
 from array import array
 from collections import defaultdict
@@ -180,12 +182,13 @@ def bake_roads(vertices, meta, features):
         color = (0.53, 0.47, 0.35) if pathlike else (0.39, 0.40, 0.41)
         raised = 5.0 if tags.get("bridge") in ("yes", "viaduct") else 0.0
         for run in clip_runs(local, (-PAGE / 2, -PAGE / 2, PAGE / 2, PAGE / 2)):
+            roads.extend([round(a[0], 3), round(a[1], 3), round(b[0], 3), round(b[1], 3), name]
+                          for a, b in zip(run, run[1:]) if math.dist(a, b) > 0.01)
             dense = densify(run, 8)
             for a, b in zip(dense, dense[1:]):
                 length = math.dist(a, b)
                 if length < 0.01:
                     continue
-                roads.append([round(a[0], 3), round(a[1], 3), round(b[0], 3), round(b[1], 3), name])
                 nx, nz = -(b[1] - a[1]) / length, (b[0] - a[0]) / length
                 ya, yb = ground_height(meta, *a) + raised, ground_height(meta, *b) + raised
                 for half, offset, tint in ((width / 2 + 0.55, 0.20, (0.53, 0.50, 0.42)), (width / 2, 0.34, color)):
@@ -197,7 +200,12 @@ def bake_roads(vertices, meta, features):
                 a, b = run[0], run[-1]
                 streets.append({"name": name, "lx": (a[0] + b[0]) / 2 + cx,
                                 "lz": (a[1] + b[1]) / 2 + cz, "heading": math.degrees(math.atan2(b[0] - a[0], a[1] - b[1]))})
-    return roads, streets
+    unique = {}
+    for street in streets:
+        previous = unique.get(street["name"])
+        if previous is None or math.hypot(street["lx"] - cx, street["lz"] - cz) < math.hypot(previous["lx"] - cx, previous["lz"] - cz):
+            unique[street["name"]] = street
+    return roads, list(unique.values())
 
 
 def roof_triangles(poly, holes):
@@ -265,8 +273,11 @@ def bake_page(col, row, buildings, roads):
     tile_id = page_id(col, row)
     meta = make_meta(col, row)
     vertices = terrain(meta)
+    print(tile_id, "terrain ready", flush=True)
     nav, streets = bake_roads(vertices, meta, roads)
+    print(tile_id, "grading roads", len(nav), flush=True)
     vertices, surfaces, stats = repair_geometry(vertices, meta, nav)
+    print(tile_id, "road grading complete", stats, flush=True)
     vertices, _ = rebuild_water(vertices, meta)
     count = bake_buildings(vertices, meta, buildings)
     cx, cz = meta["center_x"], meta["center_z"]
@@ -311,15 +322,20 @@ def build_background():
     return len(out) // 6
 
 
+def page_job(job):
+    return bake_page(*job)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workers", type=int, default=2 if os.environ.get("CI") else 1)
     parser.add_argument("--page", nargs=2, type=int, help="Bake one page for development")
     args = parser.parse_args(argv)
     DST.mkdir(parents=True, exist_ok=True)
     buildings, roads, total = source_index()
     x0, z0, x1, z1 = grid_bounds()
     counts = defaultdict(int)
-    streets, tiles = [], []
+    streets, tiles, jobs = [], [], []
     for row in range(z0, z1):
         for col in range(x0, x1):
             tile_id = page_id(col, row)
@@ -328,11 +344,19 @@ def main(argv=None):
                           "x1": (col + 1) * PAGE, "z1": (row + 1) * PAGE})
             if args.page and args.page != [col, row]:
                 continue
-            stats, labels = bake_page(col, row, buildings[col, row], roads[col, row])
+            jobs.append((col, row, buildings[col, row], roads[col, row]))
+    executor = ProcessPoolExecutor(max_workers=args.workers) if args.workers > 1 else None
+    try:
+        results = executor.map(page_job, jobs) if executor else map(page_job, jobs)
+        for job, (stats, labels) in zip(jobs, results):
+            tile_id = page_id(job[0], job[1])
             streets.extend({**s, "tile": tile_id} for s in labels)
             for key, value in stats.items():
                 counts[key] += value
             print(tile_id, stats, flush=True)
+    finally:
+        if executor:
+            executor.shutdown()
     if args.page:
         return
     far_count = build_background()
