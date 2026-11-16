@@ -10,7 +10,9 @@ points on the highlighted highway. The sea and building interiors are excluded.
 
 `python3 tools/fetch_region.py` caches ten complete OSM building extracts
 (including multipolygon outlines and courtyards) and the two SRTM tiles.
-A missing or incomplete extract stops preparation. `python3 tools/sync_assets.py`
+A missing or incomplete extract stops preparation. If Overpass is unavailable,
+`python3 tools/fetch_osm_api.py --shard 4_1` obtains bounded OSM API cells,
+resolves complete building relations and writes the same cached shard format. `python3 tools/sync_assets.py`
 bakes the full area using those buildings and the existing complete regional
 street extract. No highway-distance filter or building count cap is applied.
 Building height uses OSM `height` / `building:levels`, with a 6 m default;

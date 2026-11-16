@@ -32,7 +32,7 @@ jobs:
         if: always()
         with:
           name: yubk-region-source-${{ matrix.shard }}
-          path: yubk-3d-android/data/region_buildings/*.gz
+          path: yubk-3d-android/data/region_buildings/${{ matrix.shard }}.json.gz
           retention-days: 14
   build:
     if: inputs.data_only != true && !contains(github.event.head_commit.message, '[sources]')
@@ -95,7 +95,7 @@ jobs:
 
       - name: Restore prepared regional geometry
         id: region-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: yubk-3d-godot/assets/route
           key: yubk-region-v1-${{ hashFiles('yubk-3d-android/data/region_buildings/*.gz', 'yubk-3d-godot/tools/*.py', 'yubk-3d-android/tools/prepare_route.py') }}
@@ -110,6 +110,13 @@ jobs:
             python3 -u yubk-3d-godot/tools/sync_assets.py
           fi
           python3 -u yubk-3d-godot/tools/validate_region.py
+
+      - name: Cache validated regional geometry
+        if: steps.region-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: yubk-3d-godot/assets/route
+          key: ${{ steps.region-cache.outputs.cache-primary-key }}
 
       - name: Create debug keystore
         shell: bash
